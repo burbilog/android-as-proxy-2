@@ -16,6 +16,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Minimal SOCKS5 CONNECT proxy (RFC 1928), intentionally bound to IPv4 loopback.
@@ -32,6 +33,14 @@ class Socks5ProxyServer(
     private val connectTimeoutMs: Int = 15_000
 ) : AutoCloseable {
     private val limit = Semaphore(maxConnections)
+
+    /** Actual payload bytes sent towards the destination and back to the SOCKS client. */
+    private val uplinkCounter = AtomicLong()
+    private val downlinkCounter = AtomicLong()
+    private val activeCounter = AtomicInteger()
+    val bytesToInternet: Long get() = uplinkCounter.get()
+    val bytesFromInternet: Long get() = downlinkCounter.get()
+    val activeConnections: Int get() = activeCounter.get()
     private val openSockets = ConcurrentHashMap.newKeySet<Socket>()
     private val threadNumber = AtomicInteger()
     private val workers = Executors.newCachedThreadPool { runnable ->
@@ -171,17 +180,19 @@ class Socks5ProxyServer(
             output.flush()
 
             client.soTimeout = 0
+            activeCounter.incrementAndGet()
+            try {
             // One side may be idle for hours; never poll it before reading the other direction.
             // Shutdown only the corresponding output after EOF to preserve TCP half-close.
             val responsePump = workers.submit {
                 try {
-                    copy(peer, client)
+                    copy(peer, client, downlinkCounter)
                 } finally {
                     try { client.shutdownOutput() } catch (_: IOException) { }
                 }
             }
             try {
-                copy(client, peer)
+                copy(client, peer, uplinkCounter)
             } finally {
                 try { peer.shutdownOutput() } catch (_: IOException) { }
             }
@@ -192,6 +203,9 @@ class Socks5ProxyServer(
             } catch (_: java.util.concurrent.ExecutionException) {
                 // Peer closed during shutdown/transfer; socket cleanup below is sufficient.
             }
+            } finally {
+                activeCounter.decrementAndGet()
+            }
         } catch (_: IOException) {
             // Connections may disappear normally at any point during SOCKS negotiation.
         } finally {
@@ -199,7 +213,7 @@ class Socks5ProxyServer(
         }
     }
 
-    private fun copy(source: Socket, destination: Socket) {
+    private fun copy(source: Socket, destination: Socket, byteCount: AtomicLong) {
         val buffer = ByteArray(64 * 1024)
         try {
             val input = source.getInputStream()
@@ -208,6 +222,7 @@ class Socks5ProxyServer(
                 val count = input.read(buffer)
                 if (count == -1) break
                 output.write(buffer, 0, count)
+                byteCount.addAndGet(count.toLong())
             }
             output.flush()
         } catch (_: IOException) {
