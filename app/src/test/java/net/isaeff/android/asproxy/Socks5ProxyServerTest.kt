@@ -64,7 +64,8 @@ class Socks5ProxyServerTest {
         }.apply { start() }
 
         val payload = ByteArray(4 * 1024 * 1024) { (it % 251).toByte() }
-        connect(startProxy(), "localhost", echoServer.localPort, true).use { proxyClient ->
+        val proxy = startProxy()
+        connect(proxy, "localhost", echoServer.localPort, true).use { proxyClient ->
             val sender = Thread {
                 proxyClient.getOutputStream().write(payload)
                 proxyClient.shutdownOutput()
@@ -76,6 +77,8 @@ class Socks5ProxyServerTest {
         }
         echoThread.join(10_000)
         assertFalse("echo server hung", echoThread.isAlive)
+        assertEquals(payload.size.toLong(), proxy.bytesToInternet)
+        assertEquals(payload.size.toLong(), proxy.bytesFromInternet)
     }
 
     @Test fun rejectsUnsupportedCommands() {
