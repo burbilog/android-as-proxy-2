@@ -55,61 +55,79 @@ class SSHTunnelManager(
 
         stopping = false
         tunnelJob = scope.launch {
-            try {
-                ConnectionStateHolder.setState(ConnectionState.CONNECTING)
-                val jsch = JSch()
-                val savedHostKey = prefs.getString(SERVER_KEY, null)
-                val hostId = if (sshPort == 22) sshHost else "[${sshHost}]:$sshPort"
-                if (!savedHostKey.isNullOrBlank()) {
-                    val knownHosts = "$hostId $savedHostKey\n"
-                    jsch.setKnownHosts(ByteArrayInputStream(knownHosts.toByteArray(Charsets.UTF_8)))
-                } else {
-                    // DEV-ONLY transitional behaviour. Before shipping to an unattended
-                    // device, the config import wizard must require a verified host key.
-                    AAPLog.append("WARNING: no pinned SSH host key; first connection uses TOFU")
-                }
+            while (isActive && !stopping) {
+                var failure: Exception? = null
+                try {
+                    ConnectionStateHolder.setState(ConnectionState.CONNECTING)
+                    val jsch = JSch()
+                    val savedHostKey = prefs.getString(SERVER_KEY, null)
+                    val hostId = if (sshPort == 22) sshHost else "[${sshHost}]:$sshPort"
+                    if (!savedHostKey.isNullOrBlank()) {
+                        val knownHosts = "$hostId $savedHostKey\n"
+                        jsch.setKnownHosts(ByteArrayInputStream(knownHosts.toByteArray(Charsets.UTF_8)))
+                    } else {
+                        // Development-only TOFU. The import wizard must require explicit
+                        // host-key provisioning before this APK is deployed remotely.
+                        AAPLog.append("WARNING: SSH host key unverified on initial connection (TOFU)")
+                    }
 
-                val candidate = jsch.getSession(sshUser, sshHost, sshPort)
-                session = candidate
-                candidate.setPassword(sshPassword)
-                candidate.setConfig("PreferredAuthentications", "password")
-                candidate.setConfig("StrictHostKeyChecking", if (savedHostKey.isNullOrBlank()) "no" else "yes")
-                candidate.setServerAliveInterval(15_000)
-                candidate.setServerAliveCountMax(2)
+                    val candidate = jsch.getSession(sshUser, sshHost, sshPort)
+                    session = candidate
+                    candidate.setPassword(sshPassword)
+                    candidate.setConfig("PreferredAuthentications", "password")
+                    candidate.setConfig("StrictHostKeyChecking", if (savedHostKey.isNullOrBlank()) "no" else "yes")
+                    candidate.setServerAliveInterval(15_000)
+                    candidate.setServerAliveCountMax(2)
 
-                AAPLog.append("Connecting SSH to $sshHost:$sshPort")
-                candidate.connect(CONNECT_TIMEOUT_MS)
-                coroutineContext.ensureActive()
+                    AAPLog.append("Connecting SSH to $sshHost:$sshPort")
+                    candidate.connect(CONNECT_TIMEOUT_MS)
+                    coroutineContext.ensureActive()
 
-                if (savedHostKey.isNullOrBlank()) {
-                    val hostKey = candidate.hostKey
-                        ?: throw JSchException("Server did not supply an SSH host key")
-                    prefs.edit().putString(SERVER_KEY, "${hostKey.type} ${hostKey.key}").apply()
-                    AAPLog.append("Pinned first-seen SSH host key for subsequent connections")
-                }
+                    if (savedHostKey.isNullOrBlank()) {
+                        val hostKey = candidate.hostKey
+                            ?: throw JSchException("Server did not supply an SSH host key")
+                        prefs.edit().putString(SERVER_KEY, "${hostKey.type} ${hostKey.key}").apply()
+                        AAPLog.append("Pinned first-seen SSH host key")
+                    }
 
-                // SSHD must permit remote forwarding; no broad bind fallback is allowed.
-                candidate.setPortForwardingR("127.0.0.1", remotePort, localHost, localPort)
-                coroutineContext.ensureActive()
-                AAPLog.append("Remote forwarding 127.0.0.1:$remotePort -> $localHost:$localPort")
-                ConnectionStateHolder.setState(ConnectionState.CONNECTED)
+                    candidate.setPortForwardingR("127.0.0.1", remotePort, localHost, localPort)
+                    coroutineContext.ensureActive()
+                    AAPLog.append("Remote forwarding 127.0.0.1:$remotePort -> $localHost:$localPort")
+                    ConnectionStateHolder.setState(ConnectionState.CONNECTED)
 
-                while (isActive) {
-                    delay(5_000)
-                    if (!candidate.isConnected) throw JSchException("SSH session disconnected")
-                }
-            } catch (_: CancellationException) {
-                // Normal stop; no retry notification.
-            } catch (e: Exception) {
-                if (!stopping) {
-                    AAPLog.append("SSH failed: ${e.javaClass.simpleName}: ${e.message}")
+                    while (isActive) {
+                        delay(5_000)
+                        if (!candidate.isConnected) throw JSchException("SSH session disconnected")
+                    }
+                } catch (_: CancellationException) {
+                    break
+                } catch (e: Exception) {
+                    failure = e
+                    if (!stopping) AAPLog.append("SSH connection failed: ${e.javaClass.simpleName}: ${e.message}")
+                } finally {
+                    session?.disconnect()
+                    session = null
                     ConnectionStateHolder.setState(ConnectionState.DISCONNECTED)
-                    onError?.invoke("SSH failed: ${e.message}")
                 }
-            } finally {
-                session?.disconnect()
-                session = null
-                ConnectionStateHolder.setState(ConnectionState.DISCONNECTED)
+
+                if (!isActive || stopping) break
+
+                val retryEnabled = prefs.getBoolean("auto_retry_on_failure", true)
+                val hostKeyError = failure?.message?.contains("HostKey", ignoreCase = true) == true ||
+                    failure?.message?.contains("reject HostKey", ignoreCase = true) == true
+
+                if (!retryEnabled || hostKeyError) {
+                    onError?.invoke(
+                        if (hostKeyError) "SSH host key rejected or changed; re-provision trusted key"
+                        else "SSH connection stopped: ${failure?.message ?: "unknown reason"}"
+                    )
+                    break
+                }
+
+                val retrySeconds = (prefs.getString("retry_timeout_seconds", "30")
+                    ?.toIntOrNull() ?: 30).coerceIn(5, 900)
+                AAPLog.append("Retrying SSH in $retrySeconds seconds")
+                delay(retrySeconds * 1000L)
             }
         }
     }
