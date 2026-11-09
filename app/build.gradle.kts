@@ -54,8 +54,6 @@ dependencies {
  
  
      implementation(libs.jsch)
-     implementation(libs.android.mail)
-     implementation(libs.android.activation)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
