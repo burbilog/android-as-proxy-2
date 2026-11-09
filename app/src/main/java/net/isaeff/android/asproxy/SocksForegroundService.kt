@@ -43,8 +43,10 @@ class SocksForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        val channel = NotificationChannel(CHANNEL_ID, "AAP 2 proxy", NotificationManager.IMPORTANCE_LOW)
-        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(CHANNEL_ID, "AAP 2 proxy", NotificationManager.IMPORTANCE_LOW)
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -87,7 +89,7 @@ class SocksForegroundService : Service() {
 
         try {
             startForeground(NOTIFICATION_ID, createNotification())
-            val proxy = Socks5ProxyServer(1080)
+            val proxy = Socks5ProxyServer(1081)
             proxy.start()
             socksServer = proxy
             prefs.edit().putBoolean("desired_running", true).apply()
