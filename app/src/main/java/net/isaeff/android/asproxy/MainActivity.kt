@@ -84,6 +84,9 @@ class MainActivity : ComponentActivity() {
     private fun runMigrations() {
         val prefs = getSharedPreferences("aap_prefs", Context.MODE_PRIVATE)
         with(prefs.edit()) {
+            if (!prefs.contains("auto_connect")) {
+                putBoolean("auto_connect", true)
+            }
             if (!prefs.contains("auto_retry_on_failure")) {
                 putBoolean("auto_retry_on_failure", true)
                 AAPLog.append("Migration: Set auto_retry_on_failure to default (true)")
