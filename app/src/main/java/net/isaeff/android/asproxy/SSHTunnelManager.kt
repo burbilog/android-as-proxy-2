@@ -1,18 +1,27 @@
 package net.isaeff.android.asproxy
 
 import android.content.Context
-import android.content.SharedPreferences
-import android.os.Build
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.JSchException
 import com.jcraft.jsch.Session
-import com.jcraft.jsch.ChannelExec
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import java.io.ByteArrayInputStream
-import java.net.Socket
-import java.security.AlgorithmParameters
-import java.util.Properties
 
+/**
+ * A single SSH session with a single loopback-only remote TCP forward.
+ *
+ * No remote exec, shell commands, port cleanup, weak cipher fallbacks or wildcard listeners.
+ * On tunnel loss, the owning Android service is notified exactly once; it owns retry policy.
+ */
 class SSHTunnelManager(
     private val context: Context,
     private val sshUser: String,
@@ -20,553 +29,121 @@ class SSHTunnelManager(
     private val sshPort: Int,
     private val sshPassword: String,
     private val remotePort: Int,
-    private val localHost: String = "localhost",
+    private val localHost: String = "127.0.0.1",
     private val localPort: Int = 1080
 ) {
     companion object {
         private const val PREFS_NAME = "aap_prefs"
         private const val SERVER_KEY = "server_key"
-        private const val PREF_WORKING_PROFILE = "ssh_working_profile"
+        private const val CONNECT_TIMEOUT_MS = 30_000
     }
 
-    private val prefs: SharedPreferences by lazy {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    }
     var onError: ((String) -> Unit)? = null
-    private var session: Session? = null
-    private var tunnelJob: Job? = null
+
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val prefs by lazy { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
 
-    // Make config accessible to both try and catch blocks
-    private var connectConfig: Properties? = null
+    @Volatile private var session: Session? = null
+    @Volatile private var stopping = false
+    private var tunnelJob: Job? = null
 
-    // Define algorithm profiles from strongest to broadest compatibility
-    private data class AlgoProfile(
-        val key: String,
-        val desc: String,
-        val config: Properties
-    )
-
-    private fun ecAlgorithmsAvailable(): Boolean {
-        return try {
-            // Some emulators on old API levels lack EC AlgorithmParameters
-            AlgorithmParameters.getInstance("EC")
-            true
-        } catch (_: Throwable) {
-            false
-        }
-    }
-
-    private fun configureJschAlgorithms() {
-        // Ensure RSA-SHA2 signature support and known mappings exist.
-        // Use static JSch.setConfig for broad compatibility across JSch variants.
-        try {
-            JSch.setConfig("server_host_key", "ecdsa-sha2-nistp256,rsa-sha2-512,rsa-sha2-256,ssh-rsa")
-            // Map signature names explicitly (best-effort)
-            JSch.setConfig("signature.rsa-sha2-256", "com.jcraft.jsch.jce.SignatureRSA256")
-            JSch.setConfig("signature.rsa-sha2-512", "com.jcraft.jsch.jce.SignatureRSA512")
-            JSch.setConfig("signature.rsa", "com.jcraft.jsch.jce.SignatureRSA")
-            // KEX mappings (keep defaults sensible)
-            JSch.setConfig("kex", "diffie-hellman-group-exchange-sha256,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group14-sha1")
-        } catch (_: Throwable) {
-            // Best-effort; if the class names are not present, keep going with defaults
-        }
-    }
-
-    private fun buildProfiles(jsch: JSch, storedKey: String?): List<AlgoProfile> {
-        val commonHostKeyProps: (Properties) -> Unit = { p ->
-            if (storedKey.isNullOrBlank()) {
-                p["StrictHostKeyChecking"] = "no"
-            } else {
-                p["StrictHostKeyChecking"] = "yes"
-                val knownHostsEntry = "$sshHost $storedKey"
-                jsch.setKnownHosts(ByteArrayInputStream(knownHostsEntry.toByteArray()))
-            }
-            // Password only; add other methods as needed
-            p["PreferredAuthentications"] = "password"
-        }
-
-        val supportsEC = ecAlgorithmsAvailable()
-        val isApi24 = Build.VERSION.SDK_INT <= Build.VERSION_CODES.N // API 24/25
-
-        // Modern EC-first profile (only if EC available)
-        val modern = Properties().apply {
-            put("kex", "diffie-hellman-group-exchange-sha256,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group14-sha1")
-            put("server_host_key", "ecdsa-sha2-nistp256,rsa-sha2-512,rsa-sha2-256,ssh-rsa")
-            put("cipher.s2c", "aes256-ctr,aes128-ctr,aes256-cbc,aes128-cbc,3des-ctr,3des-cbc")
-            put("cipher.c2s", "aes256-ctr,aes128-ctr,aes256-cbc,aes128-cbc,3des-ctr,3des-cbc")
-            put("mac.s2c", "hmac-sha2-256,hmac-sha1,hmac-md5")
-            put("mac.c2s", "hmac-sha2-256,hmac-sha1,hmac-md5")
-            // Explicitly allow rsa-sha2 signatures
-            put("PubkeyAcceptedAlgorithms", "rsa-sha2-512,rsa-sha2-256,ssh-rsa")
-            commonHostKeyProps(this)
-        }
-
-        // RSA-centric profile without EC
-        val rsaCentric = Properties().apply {
-            put("kex", "diffie-hellman-group-exchange-sha256,diffie-hellman-group14-sha1")
-            // Prefer SHA-2 when available, but keep ssh-rsa for compatibility
-            put("server_host_key", "rsa-sha2-512,rsa-sha2-256,ssh-rsa")
-            put("cipher.s2c", "aes256-ctr,aes128-ctr,aes256-cbc,aes128-cbc,3des-ctr,3des-cbc")
-            put("cipher.c2s", "aes256-ctr,aes128-ctr,aes256-cbc,aes128-cbc,3des-ctr,3des-cbc")
-            put("mac.s2c", "hmac-sha2-256,hmac-sha1,hmac-md5")
-            put("mac.c2s", "hmac-sha2-256,hmac-sha1,hmac-md5")
-            put("PubkeyAcceptedAlgorithms", "rsa-sha2-512,rsa-sha2-256,ssh-rsa")
-            commonHostKeyProps(this)
-        }
-
-        // Compatibility profile for older Android and servers (no EC, safe-ish)
-        val compat = Properties().apply {
-            put("kex", "diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha256")
-            // Important: force ssh-rsa first to avoid rsa-sha2 verification on API 24 emulator
-            put("server_host_key", "ssh-rsa,rsa-sha2-256")
-            put("cipher.s2c", "aes128-ctr,aes256-ctr,3des-ctr,aes128-cbc,3des-cbc")
-            put("cipher.c2s", "aes128-ctr,aes256-ctr,3des-ctr,aes128-cbc,3des-cbc")
-            put("mac.s2c", "hmac-sha1,hmac-sha2-256")
-            put("mac.c2s", "hmac-sha1,hmac-sha2-256")
-            put("PubkeyAcceptedAlgorithms", "ssh-rsa,rsa-sha2-256")
-            commonHostKeyProps(this)
-        }
-
-        // API 24-focused minimal profile to avoid verify:false on emulator
-        val api24 = Properties().apply {
-            // Keep to algorithms most likely supported/verified on Android 7 emulator
-            put("kex", "diffie-hellman-group14-sha1")
-            put("server_host_key", "ssh-rsa")
-            put("cipher.s2c", "aes128-ctr,aes128-cbc,3des-ctr,3des-cbc")
-            put("cipher.c2s", "aes128-ctr,aes128-cbc,3des-ctr,3des-cbc")
-            put("mac.s2c", "hmac-sha1")
-            put("mac.c2s", "hmac-sha1")
-            put("PubkeyAcceptedAlgorithms", "ssh-rsa")
-            commonHostKeyProps(this)
-        }
-
-        // Very legacy catch-all (use only if needed)
-        val legacy = Properties().apply {
-            put("kex", "diffie-hellman-group14-sha1,diffie-hellman-group1-sha1")
-            put("server_host_key", "ssh-rsa") // Avoid ssh-dss
-            put("cipher.s2c", "aes128-ctr,aes128-cbc,3des-ctr,3des-cbc")
-            put("cipher.c2s", "aes128-ctr,aes128-cbc,3des-ctr,3des-cbc")
-            put("mac.s2c", "hmac-sha1")
-            put("mac.c2s", "hmac-sha1")
-            put("PubkeyAcceptedAlgorithms", "ssh-rsa")
-            commonHostKeyProps(this)
-        }
-
-        val profiles = mutableListOf<AlgoProfile>()
-        val last = prefs.getString(PREF_WORKING_PROFILE, null)
-
-        // Construct ordered list
-        val all = buildList {
-            if (supportsEC) add(AlgoProfile("modern", "Modern EC + RSA", modern))
-            // On API 24/25, prefer the api24 minimal profile first
-            if (isApi24) add(AlgoProfile("api24", "API24 minimal (ssh-rsa only)", api24))
-            add(AlgoProfile("rsa", "RSA-centric", rsaCentric))
-            add(AlgoProfile("compat", "Compatibility (no EC, safe)", compat))
-            add(AlgoProfile("legacy", "Legacy compatibility", legacy))
-        }
-
-        // If we previously recorded a working profile, try it first
-        if (last != null) {
-            val preferred = all.find { it.key == last }
-            if (preferred != null) profiles.add(preferred)
-        }
-        all.forEach { if (profiles.none { p -> p.key == it.key }) profiles.add(it) }
-
-        return profiles
-    }
-
-    private fun tryConnectWithProfile(profile: AlgoProfile, jsch: JSch): Session {
-        val s = jsch.getSession(sshUser, sshHost, sshPort)
-        s.setPassword(sshPassword)
-        s.setConfig(profile.config)
-        // Aggressive keep-alive so stale sessions on server are closed fast
-        // After one missed keep-alive (≈15 s) the server drops the connection,
-        // freeing the remote port before our next boot attempt.
-        try {
-            s.serverAliveInterval = 15_000      // 15 s between keep-alives
-            s.serverAliveCountMax = 1           // disconnect after first failure
-        } catch (_: Throwable) { /* older JSch fallback */ }
-        AAPLog.append("Attempting SSH with profile '${profile.key}' (${profile.desc})")
-        s.connect(30000)
-        return s
-    }
-
-    private suspend fun clearStalePortForwardings(sess: Session) {
-        // Multi-strategy approach to clear stale server-side port listeners
-        AAPLog.append("Attempting to clear any stale server-side port listeners on $remotePort...")
-        
-        // Strategy 1: Use netcat/telnet to trigger stale connection cleanup
-        val cleanupCommands = listOf(
-            // Telnet approach (mimics manual fix)
-            "timeout 2 telnet localhost $remotePort < /dev/null 2>/dev/null || true",
-            // Netcat approaches (more reliable on some systems)
-            "timeout 2 nc -w 1 localhost $remotePort < /dev/null 2>/dev/null || true",
-            "timeout 2 nc -z localhost $remotePort 2>/dev/null || true",
-            // Direct connection attempts
-            "timeout 2 bash -c 'exec 3<>/dev/tcp/localhost/$remotePort; exec 3<&-; exec 3>&-' 2>/dev/null || true"
-        )
-        
-        for (cmd in cleanupCommands) {
-            try {
-                val channel = sess.openChannel("exec") as ChannelExec
-                channel.setCommand(cmd)
-                channel.connect(3000)
-                
-                // Brief wait for execution
-                delay(500)
-                
-                if (channel.isConnected) {
-                    channel.disconnect()
-                }
-                AAPLog.append("Executed cleanup command: $cmd")
-                
-                // Small delay between commands
-                delay(200)
-            } catch (e: Throwable) {
-                AAPLog.append("Cleanup command failed (often expected): $cmd - ${e.message}")
-            }
-        }
-        
-        // Strategy 2: Kill any processes listening on the port (aggressive cleanup)
-        try {
-            val killCmd = "pkill -f 'sshd:.*$remotePort' 2>/dev/null || " +
-                         "lsof -ti:$remotePort | xargs -r kill 2>/dev/null || " +
-                         "fuser -k $remotePort/tcp 2>/dev/null || true"
-            
-            val channel = sess.openChannel("exec") as ChannelExec
-            channel.setCommand(killCmd)
-            channel.connect(3000)
-            
-            delay(500)
-            
-            if (channel.isConnected) {
-                channel.disconnect()
-            }
-            AAPLog.append("Executed aggressive port cleanup")
-        } catch (e: Throwable) {
-            AAPLog.append("Aggressive cleanup failed (often expected): ${e.message}")
-        }
-
-        // Strategy 3: Standard JSch cleanup (existing logic)
-        try {
-            sess.delPortForwardingR(remotePort)
-            AAPLog.append("Cleared existing remote port forwarding on $remotePort (if any)")
-        } catch (_: Throwable) {
-            // ignore - likely not set
-        }
-
-        // Attempt to clear possible host-bound entries too
-        listOf("127.0.0.1", "localhost", "0.0.0.0", "::", "::1").forEach { host ->
-            try {
-                sess.delPortForwardingR(host, remotePort)
-                AAPLog.append("Cleared existing remote port forwarding on $host:$remotePort (if any)")
-            } catch (_: Throwable) { }
-        }
-        
-        // Give server time to clean up before attempting new forwarding
-        delay(1000)
-        AAPLog.append("Completed stale port forwarding cleanup")
-    }
-
-    private suspend fun setupRemoteForwardingWithFallbacks(sess: Session) {
-        val bindCandidates = listOf(
-            "localhost",
-            "127.0.0.1",
-            // IPv6 localhost
-            "::1",
-            // Empty host lets server default decide
-            "",
-            // As a last resort (requires GatewayPorts clientspecified or yes):
-            "0.0.0.0",
-            // IPv6 any
-            "::"
-        )
-
-        var lastError: Throwable? = null
-        
-        // Retry up to 2 times if we hit "address already in use" errors
-        repeat(2) { attempt ->
-            for (bind in bindCandidates) {
-                try {
-                    if (bind.isEmpty()) {
-                        AAPLog.append("Trying remote forward: [default bind] $remotePort -> $localHost:$localPort (attempt ${attempt + 1})")
-                        sess.setPortForwardingR(remotePort, localHost, localPort)
-                    } else {
-                        AAPLog.append("Trying remote forward: $bind:$remotePort -> $localHost:$localPort (attempt ${attempt + 1})")
-                        sess.setPortForwardingR(bind, remotePort, localHost, localPort)
-                    }
-                    AAPLog.append("Remote port forwarding established on ${if (bind.isEmpty()) "[default]" else bind}:$remotePort")
-                    return
-                } catch (e: Throwable) {
-                    lastError = e
-                    AAPLog.append("Remote forward failed for bind '${if (bind.isEmpty()) "default" else bind}': ${e.message}")
-                    
-                    // On "address already in use", try aggressive cleanup and retry
-                    if (e.message?.contains("address already in use", ignoreCase = true) == true && attempt == 0) {
-                        AAPLog.append("Port still in use, attempting emergency cleanup...")
-                        
-                        // Quick emergency cleanup
-                        try {
-                            val killCmd = "timeout 1 telnet localhost $remotePort < /dev/null 2>/dev/null || " +
-                                         "lsof -ti:$remotePort | xargs -r kill -9 2>/dev/null || " +
-                                         "fuser -k $remotePort/tcp 2>/dev/null || true"
-                            
-                            val channel = sess.openChannel("exec") as ChannelExec
-                            channel.setCommand(killCmd)
-                            channel.connect(2000)
-                            delay(300)
-                            if (channel.isConnected) channel.disconnect()
-                            
-                            delay(500) // Give time for cleanup
-                            AAPLog.append("Executed emergency port cleanup")
-                        } catch (_: Throwable) {
-                            AAPLog.append("Emergency cleanup failed, continuing...")
-                        }
-                        
-                        // Try JSch cleanup too
-                        try { sess.delPortForwardingR(remotePort) } catch (_: Throwable) {}
-                        try { if (bind.isNotEmpty()) sess.delPortForwardingR(bind, remotePort) } catch (_: Throwable) {}
-                        
-                        break // Break inner loop to retry with next attempt
-                    }
-                    
-                    // Standard cleanup for other errors
-                    if (e.message?.contains("administratively prohibited", ignoreCase = true) == true ||
-                        e.message?.contains("remote port forwarding failed", ignoreCase = true) == true
-                    ) {
-                        try { sess.delPortForwardingR(remotePort) } catch (_: Throwable) {}
-                        try { if (bind.isNotEmpty()) sess.delPortForwardingR(bind, remotePort) } catch (_: Throwable) {}
-                        AAPLog.append("Attempted to clear remote forwarding after failure; will try next candidate...")
-                    }
-                }
-            }
-            
-            // If we reach here and it's not the last attempt, wait before retrying
-            if (attempt == 0) {
-                AAPLog.append("All bind candidates failed on attempt ${attempt + 1}, retrying after delay...")
-                delay(2000)
-            }
-        }
-        
-        throw JSchException(lastError?.message ?: "remote port forwarding failed after all attempts")
-    }
-
+    @Synchronized
     fun startSSHTunnel() {
-        // Cancel any existing job
-        tunnelJob?.cancel()
+        if (tunnelJob?.isActive == true) return
+        require(remotePort in 1..65535) { "Invalid remote port" }
+        require(sshPort in 1..65535) { "Invalid SSH port" }
 
-        // Start a new job for the SSH tunnel
+        stopping = false
         tunnelJob = scope.launch {
-            try {
-                AAPLog.append("Starting SSH tunnel to $sshHost:$sshPort for user $sshUser, forwarding remote $remotePort to local $localHost:$localPort")
-                ConnectionStateHolder.setState(ConnectionState.CONNECTING)
-
-                val jsch = JSch()
-                configureJschAlgorithms()
-                // For key-based authentication:
-                // jsch.addIdentity("/path/to/private/key")
-
-                val storedKey = prefs.getString(SERVER_KEY, null)
-                val profiles = buildProfiles(jsch, storedKey)
-
-                // Attempt connection using the profiles in order
-                var connectedSession: Session? = null
-                var usedProfile: AlgoProfile? = null
-                var lastError: Throwable? = null
-                for (p in profiles) {
-                    try {
-                        connectConfig = p.config
-                        connectedSession = tryConnectWithProfile(p, jsch)
-                        usedProfile = p
-                        break
-                    } catch (e: Throwable) {
-                        lastError = e
-                        AAPLog.append("Profile '${p.key}' failed: ${e.message}")
-                    }
-                }
-                if (connectedSession == null) {
-                    throw lastError ?: JSchException("SSH connect failed for all profiles")
-                }
-                session = connectedSession
-
-                // If a new key was accepted, store it now
-                if (storedKey.isNullOrBlank()) {
-                    val hostKey = session?.hostKey
-                    if (hostKey != null) {
-                        val keyString = "${hostKey.type} ${hostKey.key}"
-                        prefs.edit().putString(SERVER_KEY, keyString).apply()
-                        AAPLog.append("Stored new server key for $sshHost: $keyString")
+            while (isActive && !stopping) {
+                var failure: Exception? = null
+                try {
+                    ConnectionStateHolder.setState(ConnectionState.CONNECTING)
+                    val jsch = JSch()
+                    val savedHostKey = prefs.getString(SERVER_KEY, null)
+                    val hostId = if (sshPort == 22) sshHost else "[${sshHost}]:$sshPort"
+                    if (!savedHostKey.isNullOrBlank()) {
+                        val knownHosts = "$hostId $savedHostKey\n"
+                        jsch.setKnownHosts(ByteArrayInputStream(knownHosts.toByteArray(Charsets.UTF_8)))
                     } else {
-                        AAPLog.append("Warning: No host key received after connection for $sshHost.")
+                        // Development-only TOFU. The import wizard must require explicit
+                        // host-key provisioning before this APK is deployed remotely.
+                        AAPLog.append("WARNING: SSH host key unverified on initial connection (TOFU)")
                     }
-                }
 
-                // Remember which profile worked
-                usedProfile?.let {
-                    prefs.edit().putString(PREF_WORKING_PROFILE, it.key).apply()
-                    AAPLog.append("SSH connected using profile '${it.key}' (${it.desc})")
-                }
+                    val candidate = jsch.getSession(sshUser, sshHost, sshPort)
+                    session = candidate
+                    candidate.setPassword(sshPassword)
+                    candidate.setConfig("PreferredAuthentications", "password")
+                    candidate.setConfig("StrictHostKeyChecking", if (savedHostKey.isNullOrBlank()) "no" else "yes")
+                    candidate.setServerAliveInterval(15_000)
+                    candidate.setServerAliveCountMax(2)
 
-                // Clear any stale port forwardings first, then set up new ones
-                session?.let {
-                    clearStalePortForwardings(it)
-                    setupRemoteForwardingWithFallbacks(it)
-                }
+                    AAPLog.append("Connecting SSH to $sshHost:$sshPort")
+                    candidate.connect(CONNECT_TIMEOUT_MS)
+                    coroutineContext.ensureActive()
 
-                withContext(Dispatchers.Main) {
-                    AAPLog.append("SSH tunnel started successfully")
+                    if (savedHostKey.isNullOrBlank()) {
+                        val hostKey = candidate.hostKey
+                            ?: throw JSchException("Server did not supply an SSH host key")
+                        prefs.edit().putString(SERVER_KEY, "${hostKey.type} ${hostKey.key}").apply()
+                        AAPLog.append("Pinned first-seen SSH host key")
+                    }
+
+                    candidate.setPortForwardingR("127.0.0.1", remotePort, localHost, localPort)
+                    coroutineContext.ensureActive()
+                    AAPLog.append("Remote forwarding 127.0.0.1:$remotePort -> $localHost:$localPort")
                     ConnectionStateHolder.setState(ConnectionState.CONNECTED)
-                }
 
-                while (isActive) {
-                    if (session?.isConnected != true) {
-                        withContext(Dispatchers.Main) {
-                            AAPLog.append("SSH connection lost, attempting reconnect...")
-                            ConnectionStateHolder.setState(ConnectionState.CONNECTING)
-                        }
-                        reconnect()
+                    while (isActive) {
+                        delay(5_000)
+                        if (!candidate.isConnected) throw JSchException("SSH session disconnected")
                     }
-                    delay(30000)
-                }
-            } catch (e: JSchException) {
-                withContext(Dispatchers.Main) {
-                    if (e.message?.contains("HostKey") == true) {
-                        val storedKey = prefs.getString(SERVER_KEY, "")
-                        val currentKey = session?.hostKey?.let { "${it.type} ${it.key}" } ?: "unknown"
-                        AAPLog.append("SSH host key verification failed!\nStored key: $storedKey\nCurrent key: $currentKey")
-                        onError?.invoke("Server key changed! Potential security issue. Clear key to accept new.")
-                    } else {
-                        AAPLog.append("SSH tunnel failed: ${e.message}")
-                        // Log the actual config being used to help debug
-                        val cfg = connectConfig
-                        val configDump = cfg?.entries?.joinToString("\n") { "${it.key}=${it.value}" } ?: "No config available"
-                        AAPLog.append("Current SSH config:\n$configDump")
-                        onError?.invoke("SSH tunnel failed: ${e.message}")
-                    }
-                    ConnectionStateHolder.setState(ConnectionState.DISCONNECTED)
-                }
-                stopSSHTunnel()
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    AAPLog.append("SSH tunnel failed: ${e.message}")
-                    ConnectionStateHolder.setState(ConnectionState.DISCONNECTED)
-                }
-                onError?.invoke("SSH tunnel failed: ${e.message}")
-            }
-        }
-    }
-
-    private suspend fun reconnect() {
-        try {
-            session?.disconnect()
-
-            val jsch = JSch()
-            configureJschAlgorithms()
-            val storedKey = prefs.getString(SERVER_KEY, null)
-            val profiles = buildProfiles(jsch, storedKey)
-
-            var connectedSession: Session? = null
-            var usedProfile: AlgoProfile? = null
-            var lastError: Throwable? = null
-            for (p in profiles) {
-                try {
-                    connectConfig = p.config
-                    val s = jsch.getSession(sshUser, sshHost, sshPort)
-                    s.setPassword(sshPassword)
-                    s.setConfig(p.config)
-                    AAPLog.append("Reconnecting with profile '${p.key}' (${p.desc})")
-                    s.connect(30000)
-                    connectedSession = s
-                    usedProfile = p
+                } catch (_: CancellationException) {
                     break
-                } catch (e: Throwable) {
-                    lastError = e
-                    AAPLog.append("Reconnect profile '${p.key}' failed: ${e.message}")
+                } catch (e: Exception) {
+                    failure = e
+                    if (!stopping) AAPLog.append("SSH connection failed: ${e.javaClass.simpleName}: ${e.message}")
+                } finally {
+                    session?.disconnect()
+                    session = null
+                    ConnectionStateHolder.setState(ConnectionState.DISCONNECTED)
                 }
-            }
-            if (connectedSession == null) {
-                throw lastError ?: JSchException("SSH reconnect failed for all profiles")
-            }
-            session = connectedSession
 
-            if (storedKey.isNullOrBlank()) {
-                val hostKey = session?.hostKey
-                if (hostKey != null) {
-                    val keyString = "${hostKey.type} ${hostKey.key}"
-                    prefs.edit().putString(SERVER_KEY, keyString).apply()
-                    AAPLog.append("Stored new server key for $sshHost during reconnect: $keyString")
-                } else {
-                    AAPLog.append("Warning: No host key received after reconnect for $sshHost.")
+                if (!isActive || stopping) break
+
+                val retryEnabled = prefs.getBoolean("auto_retry_on_failure", true)
+                val hostKeyError = failure?.message?.contains("HostKey", ignoreCase = true) == true ||
+                    failure?.message?.contains("reject HostKey", ignoreCase = true) == true
+
+                if (!retryEnabled || hostKeyError) {
+                    onError?.invoke(
+                        if (hostKeyError) "SSH host key rejected or changed; re-provision trusted key"
+                        else "SSH connection stopped: ${failure?.message ?: "unknown reason"}"
+                    )
+                    break
                 }
-            }
 
-            // Remember which profile worked
-            usedProfile?.let {
-                prefs.edit().putString(PREF_WORKING_PROFILE, it.key).apply()
-                AAPLog.append("SSH reconnected using profile '${it.key}' (${it.desc})")
+                val retrySeconds = (prefs.getString("retry_timeout_seconds", "30")
+                    ?.toIntOrNull() ?: 30).coerceIn(5, 900)
+                AAPLog.append("Retrying SSH in $retrySeconds seconds")
+                delay(retrySeconds * 1000L)
             }
-
-            // Clear any stale port forwardings first, then re-establish
-            session?.let {
-                clearStalePortForwardings(it)
-                setupRemoteForwardingWithFallbacks(it)
-            }
-
-            withContext(Dispatchers.Main) {
-                AAPLog.append("SSH tunnel reconnected successfully")
-                ConnectionStateHolder.setState(ConnectionState.CONNECTED)
-            }
-        } catch (e: Exception) {
-            withContext(Dispatchers.Main) {
-                AAPLog.append("Reconnection failed: ${e.message}")
-                ConnectionStateHolder.setState(ConnectionState.DISCONNECTED)
-            }
-            onError?.invoke("Reconnection failed: ${e.message}")
-            delay(5000)
         }
     }
 
+    @Synchronized
     fun stopSSHTunnel() {
-        scope.launch(Dispatchers.IO) {
-            try {
-                AAPLog.append("Stopping SSH tunnel...")
-                ConnectionStateHolder.setState(ConnectionState.DISCONNECTING)
-
-                tunnelJob?.cancel()
-                tunnelJob = null
-
-                try {
-                    session?.delPortForwardingR(remotePort)
-                } catch (_: Throwable) {
-                    // ignore
-                }
-                // Attempt to clean bound entries too
-                listOf("127.0.0.1", "localhost", "0.0.0.0", "::", "::1").forEach { host ->
-                    try { session?.delPortForwardingR(host, remotePort) } catch (_: Throwable) {}
-                }
-
-                session?.disconnect()
-                session = null
-
-                withContext(Dispatchers.Main) {
-                    AAPLog.append("SSH tunnel stopped")
-                    ConnectionStateHolder.setState(ConnectionState.DISCONNECTED)
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    AAPLog.append("Failed to stop SSH tunnel: ${e.message}")
-                    ConnectionStateHolder.setState(ConnectionState.DISCONNECTED)
-                }
-                e.printStackTrace()
-            }
-        }
+        stopping = true
+        tunnelJob?.cancel()
+        tunnelJob = null
+        session?.disconnect()
+        session = null
+        ConnectionStateHolder.setState(ConnectionState.DISCONNECTED)
     }
 
     fun destroy() {
+        stopSSHTunnel()
         scope.cancel()
-        session?.disconnect()
-        session = null
-        AAPLog.append("SSHTunnelManager destroyed")
     }
 }

@@ -84,6 +84,9 @@ class MainActivity : ComponentActivity() {
     private fun runMigrations() {
         val prefs = getSharedPreferences("aap_prefs", Context.MODE_PRIVATE)
         with(prefs.edit()) {
+            if (!prefs.contains("auto_connect")) {
+                putBoolean("auto_connect", true)
+            }
             if (!prefs.contains("auto_retry_on_failure")) {
                 putBoolean("auto_retry_on_failure", true)
                 AAPLog.append("Migration: Set auto_retry_on_failure to default (true)")
@@ -477,11 +480,10 @@ fun MainScreen() {
 
                                 // Start the foreground service with parameters
                                 try {
+                                    // Service reads the already saved configuration from private app storage.
+                                    // Never put passwords into Intent extras / PendingIntents.
                                     val intent = Intent(context, SocksForegroundService::class.java).apply {
-                                        putExtra("ssh_server", sshServer)
-                                        putExtra("remote_port", remotePort.toInt()) // Ensure it's an Int
-                                        putExtra("username", username)
-                                        putExtra("password", password)
+                                        action = "net.isaeff.android.asproxy.action.START_SERVICE"
                                     }
                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                                         AAPLog.append("Starting foreground service")

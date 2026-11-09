@@ -9,11 +9,11 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "net.isaeff.android.asproxy"
+        applicationId = "net.isaeff.android.asproxy2"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 20000
+        versionName = "2.0.0-dev"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -54,9 +54,6 @@ dependencies {
  
  
      implementation(libs.jsch)
-     implementation(libs.android.mail)
-     implementation(libs.android.activation)
-    implementation(libs.java.socks.proxy.server)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
