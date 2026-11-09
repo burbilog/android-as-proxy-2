@@ -7,7 +7,6 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.net.TrafficStats
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
@@ -147,17 +146,12 @@ class SocksForegroundService : Service() {
     }
 
     private fun monitorTraffic() {
-        val uid = android.os.Process.myUid()
-        val rxBaseline = TrafficStats.getUidRxBytes(uid)
-        val txBaseline = TrafficStats.getUidTxBytes(uid)
         trafficJob = serviceScope.launch {
             while (isActive) {
-                val rx = TrafficStats.getUidRxBytes(uid)
-                val tx = TrafficStats.getUidTxBytes(uid)
-                if (rx >= 0 && tx >= 0 && rxBaseline >= 0 && txBaseline >= 0) {
+                socksServer?.let { proxy ->
                     ConnectionStateHolder.setTrafficBytes(
-                        (rx - rxBaseline).coerceAtLeast(0L),
-                        (tx - txBaseline).coerceAtLeast(0L)
+                        proxy.bytesFromInternet,
+                        proxy.bytesToInternet
                     )
                 }
                 delay(1000)
