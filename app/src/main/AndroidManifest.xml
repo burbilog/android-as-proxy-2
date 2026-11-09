@@ -52,15 +52,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- Handle connection retry attempts -->
-        <receiver
-            android:name=".RetryConnectionReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="net.isaeff.android.asproxy.action.RETRY_CONNECTION" />
-            </intent-filter>
-        </receiver>
-
         <activity
             android:name=".MainActivity"
             android:exported="true"
