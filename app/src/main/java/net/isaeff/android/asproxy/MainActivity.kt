@@ -477,11 +477,10 @@ fun MainScreen() {
 
                                 // Start the foreground service with parameters
                                 try {
+                                    // Service reads the already saved configuration from private app storage.
+                                    // Never put passwords into Intent extras / PendingIntents.
                                     val intent = Intent(context, SocksForegroundService::class.java).apply {
-                                        putExtra("ssh_server", sshServer)
-                                        putExtra("remote_port", remotePort.toInt()) // Ensure it's an Int
-                                        putExtra("username", username)
-                                        putExtra("password", password)
+                                        action = "net.isaeff.android.asproxy.action.START_SERVICE"
                                     }
                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                                         AAPLog.append("Starting foreground service")
