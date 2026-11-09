@@ -89,7 +89,7 @@ class SocksForegroundService : Service() {
 
         try {
             startForeground(NOTIFICATION_ID, createNotification())
-            val proxy = Socks5ProxyServer(1081)
+            val proxy = Socks5ProxyServer(11080)
             proxy.start()
             socksServer = proxy
             prefs.edit().putBoolean("desired_running", true).apply()
