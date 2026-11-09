@@ -11,7 +11,6 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import org.bbottema.javasocksproxyserver.SocksServer
 import android.net.TrafficStats
 import kotlinx.coroutines.*
 
@@ -21,7 +20,7 @@ class SocksForegroundService : Service() {
     private val NOTIFICATION_ID = 1
     private val ACTION_STOP_SERVICE = "net.isaeff.android.asproxy.action.STOP_SERVICE"
 
-    private var socksServer: SocksServer? = null
+    private var socksServer: Socks5ProxyServer? = null
     private var sshTunnelManager: SSHTunnelManager? = null // Make it nullable
 
     // Traffic monitoring
@@ -329,43 +328,16 @@ class SocksForegroundService : Service() {
     }
 
 
-    // TODO: listen on 127.0.0.1 for security, currently it listens on 0.0.0.0 by default
     private fun startJsocks() {
-        try {
-            // The SOCKS server should listen on the local port (1080)
-            // and forward requests through the SSH tunnel which is forwarding
-            // the remote port (e.g., 10800) back to the local port (1080).
-            // This setup is reversed. Typically, the SOCKS server listens locally (e.g., 1080)
-            // and connects to the SSH server's *local* forwarding port (e.g., 10800 on localhost)
-            // which is then forwarded *remotely* by SSH.
-            // The traffic arriving at the SSH server on port 10800 is forwarded to
-            // localhost:1080 *on the Android device*. The SOCKS server should listen on 1080
-            // *on the Android device*.
-            // The current SSHTunnelManager sets up -R remotePort:localhost:localPort (10800:localhost:1080).
-            // The SocksServer is created with port 1080.
-            socksServer = SocksServer(1080).apply {
-                start()
-                AAPLog.append("SOCKS proxy started on local port 1080")
-            }
-        } catch (e: Exception) {
-            socksServer = null
-            AAPLog.append("Failed to start SOCKS proxy: ${e.message}")
-            throw e
-        }
+        val proxy = Socks5ProxyServer(port = 1080)
+        proxy.start()
+        socksServer = proxy
+        AAPLog.append("SOCKS5 CONNECT listening on 127.0.0.1:1080")
     }
 
     private fun stopJsocks() {
-        try {
-            socksServer?.let { server ->
-                server.stop()
-                socksServer = null
-                AAPLog.append("SOCKS proxy stopped")
-            } ?: run {
-                AAPLog.append("No running SOCKS proxy to stop")
-            }
-        } catch (e: Exception) {
-            AAPLog.append("Failed to stop SOCKS proxy: ${e.message}")
-            throw e
-        }
+        socksServer?.close()
+        socksServer = null
+        AAPLog.append("SOCKS5 listener stopped")
     }
 }
