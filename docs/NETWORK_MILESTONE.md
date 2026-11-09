@@ -5,9 +5,9 @@ This document describes the current **test-only** development state. Do **not** 
 ## Changes from AAP 1
 
 - Android package ID: `net.isaeff.android.asproxy2`. It installs beside v1 without overwriting it.
-- Local SOCKS5 listener: `127.0.0.1:1081` (v1 uses 1080). SOCKS5 CONNECT only; no UDP/BIND/SOCKS4.
+- Local SOCKS5 listener: `127.0.0.1:11080` (v1 uses 1080). SOCKS5 CONNECT only; no UDP/BIND/SOCKS4.
 - SSH library: `com.github.mwiede:jsch:2.28.8`.
-- Remote SSH port forwarding: **only** `127.0.0.1:<remote_port> -> 127.0.0.1:1081`.
+- Remote SSH port forwarding: **only** `127.0.0.1:<remote_port> -> 127.0.0.1:11080`.
 - No SSH exec channels, remote `kill`, `fuser`, `pkill`, or fallback bind to all interfaces.
 - One long-running SSH reconnect loop inside the Android foreground service. No retry alarms, broadcasts or Intent extras with the SSH password.
 - Bounded in-memory log (1000 entries); removed plaintext SMTP report sender.
