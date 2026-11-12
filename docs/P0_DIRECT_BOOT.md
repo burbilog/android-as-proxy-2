@@ -179,7 +179,96 @@ and `200`. A new default network may become available during an
 in-progress SSH connect timeout; the callback will wake the next retry
 after that attempt fails. If no network changes occur, normal backoff applies.
 The already observed ~80-second recovery on 2026-11-12 is the baseline;
-the improved result needs a new real-device test before acceptance.
+the improved result was later confirmed on the real Zebra: network callback at 00:16:25.497, wake at 00:16:25.498, SSH forward ready at 00:17:01.412 and subsequent HTTPS 200.
+
+## Remaining fail-closed tests (non-destructive)
+
+The tests below require a **new matching debug + androidTest APK pair** from
+PR #2 CI. **Do not update the Zebra just to run these during the unattended
+soak test**: a debug-signature mismatch may require reinstalling AAP2 and
+re-provisioning its real Keystore identity. Finish the soak window first.
+
+The missing-key test checks the production read-only Keystore lookup with a
+random **absent alias**, *not* the real alias. It must throw without creating a
+new entry. The auth-rejection test uses the real trusted server and P-256 key,
+but a random non-existent SSH username. It runs an isolated manager without
+saving a replacement profile or requesting a remote forward. The manager must
+stop retries on `Auth fail`. No SSH server accounts, sshd configuration or
+private keys are modified.
+
+Run after provisioning the identity on the *new* debug APK. Before the auth
+test, use AAP2 notification **Stop** (do not force-stop Android's app).
+
+```zsh
+TEST_RUNNER=net.isaeff.android.asproxy2.test/androidx.test.runner.AndroidJUnitRunner
+TEST_CLASS=net.isaeff.android.asproxy.P0SshIntegrationTest
+HOST_KEY_B64=$(incus exec aap2-test -- awk '{print $2}' /etc/ssh/ssh_host_ecdsa_key.pub)
+
+adb logcat -c
+adb shell am instrument -w \
+  -e class "${TEST_CLASS}#missingKeystoreIdentityFailsClosed" \
+  "$TEST_RUNNER"
+
+adb shell am instrument -w \
+  -e class "${TEST_CLASS}#rejectedPublickeyAuthenticationStopsRetryLoop" \
+  -e host 192.168.0.242 -e port 22222 -e remote_port 10909 \
+  -e host_key_base64 "$HOST_KEY_B64" \
+  "$TEST_RUNNER"
+
+adb logcat -d -s AAP2-P0:I '*:S'
+```
+
+Expected: both `OK (1 test)`, `MISSING_KEYSTORE_REJECTED_NO_REGEN`,
+`AUTH_REJECTED_FATAL_NO_RETRY`. After the tests, provision again with the
+existing `sh x` helper, then reboot. Provisioning is idempotent with the
+current key. Confirm real HTTPS over SOCKS5 before the next test.
+
+These are **non-destructive negative-path tests**. A real device with its
+actual Keystore entry erased must still fail closed, but that separate
+destructive scenario should only be tested on a spare device or after a
+planned APK uninstall (never as an incidental part of the soak).
+
+## Unattended soak while continuing development
+
+The long-running test does **not** need to hold up coding. Leave Zebra running
+the *already proven APK*, with Wi-Fi and power connected, ideally with the
+screen off. Develop and run CI in GitHub in parallel. Only installing a new
+debug APK onto that *same* Zebra interrupts this run. Do not count a deliberate
+update/reboot as an uptime failure.
+
+A small POSIX shell script on `marduk` polls real HTTPS via the Android SOCKS
+endpoint **from the Incus VM**, recording UTC timestamp, curl exit code, HTTP
+status and duration as CSV. It neither reads Android logs nor alters the app,
+SSH server or firewall.
+
+On `marduk`:
+
+```zsh
+curl -fsSL https://raw.githubusercontent.com/burbilog/android-as-proxy-2/feature/p0-keystore-ssh-proof/scripts/soak-monitor.sh -o ~/aap2-soak-monitor.sh
+sh -n ~/aap2-soak-monitor.sh
+screen -dmS aap2-soak sh -c 'sh "$HOME/aap2-soak-monitor.sh" 300 >> "$HOME/aap2-soak.csv"'
+```
+
+This checks the tunnel every **5 minutes**. It requires no running ADB and
+does not depend on the Android screen staying awake. At any time:
+
+```zsh
+tail -n 12 ~/aap2-soak.csv
+awk -F, '$1 != "utc" && NF >= 4 {n++; if ($2 != 0 || $3 != 200) bad++} END {printf "checks=%d failures=%d\\n", n, bad}' ~/aap2-soak.csv
+```
+
+Stop only the monitor when finished:
+
+```zsh
+screen -S aap2-soak -X quit
+```
+
+Run for an overnight period first, then 24–48 hours or longer if convenient.
+Interpret a failed HTTP check as an end-to-end outage *observation*, not
+proof the Android app caused it: the upstream website, VM and local network
+are also involved. This checks data-plane availability; additionally inspect
+Android's actual app/service state after the trial. Screen-off soak and a
+**genuine physical power-off/power-on** test are separate checks.
 
 ## Confirm that Stop prevents a boot reconnect
 
@@ -206,10 +295,10 @@ storage. This is a debug instrumentation provisioning tool, not a user UI.
 - [ ] Keystore remains stable; no password, PIN or SSH private key exists in DE storage.
 - [x] Notification **Stop** persisted device-protected `desired_running=false`; after `adb reboot` `ss` showed `No listener` on the VM.
 - [x] Mismatched host key rejected pre-auth on Zebra (`OK (1 test)`; `HOST_KEY_MISMATCH_REJECTED_PREAUTH`, 2026-11-13 00:11:37). Stored pin and identity unchanged by the test.
-- [ ] Missing Keystore identity / actual auth rejection fail-closed test remains separate.
+- [ ] Missing Keystore identity / auth rejection fail-closed: new non-destructive instrumentation tests added; real Zebra execution pending.
 - [x] Wi-Fi off (60 seconds) / on: SSH reconnected by itself, `BOOT_FORWARD_READY` 21:41:25 and subsequent SOCKS5 HTTPS request returned HTTP 200. Baseline reconnect PASS, but exponential backoff caused a long recovery delay.
 - [x] Network-callback backoff wake tested on Zebra: `BOOT_NETWORK_AVAILABLE` 00:16:25.497, `BOOT_RETRY_NETWORK_WAKE` 00:16:25.498, `BOOT_FORWARD_READY` 00:17:01.412 (~36 seconds after network notification). Connection attempts failed until the network path was usable. After restoration, the Debian VM's curl through SOCKS5 returned **HTTP 200** at 00:20 on 2026-11-13; end-to-end recovery PASS.
-- [ ] Observe full **physical power cycle** and extended unattended idle separately; an `adb reboot` or Wi-Fi toggle does not prove these cases.
+- [ ] Observe full **physical power cycle** and extended unattended idle separately; independent 5-minute SOCKS monitor script is available. An `adb reboot` or Wi-Fi toggle does not prove these cases.
 
 The boot and Stop tests were performed on Zebra TC21 on 2026-11-12 (Android 11); observed: `DIRECT_BOOT_KEYSTORE_OK` 20:29:18.543, `BOOT_RECEIVER_START` 20:29:18.570, `BOOT_TUNNEL_STARTED` 20:29:18.782, `BOOT_FORWARD_READY` 20:29:19.291. Remaining unchecked checklist items are unverified. Note: stopping the application from Android system settings is not the same as AAP2 notification Stop and does not call `ACTION_STOP`.
 
