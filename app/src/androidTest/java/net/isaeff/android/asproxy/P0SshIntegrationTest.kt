@@ -7,6 +7,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.jcraft.jsch.JSchException
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -101,6 +102,67 @@ class P0SshIntegrationTest {
             socks.close()
         }
     }
+    /**
+     * Non-destructive MITM/changed-host-key simulation.
+     * Connect to the REAL test sshd with a deliberately incorrect local pin.
+     * No remote host key is modified; neither AAP2's stored pin nor the
+     * Android Keystore identity is changed.
+     */
+    @Test
+    fun changedHostKeyRejectedBeforePublickeyAuth() {
+        val host = requireNotNull(arguments.getString("host")) { "Missing host" }
+        val user = requireNotNull(arguments.getString("user")) { "Missing user" }
+        val trustedBase64 = requireNotNull(arguments.getString("host_key_base64")) {
+            "Missing independently trusted SSH server host-key blob"
+        }
+        val port = arguments.getString("port")?.toIntOrNull() ?: 22
+        val trusted = Base64.decode(trustedBase64, Base64.DEFAULT)
+
+        // First prove this test is against the expected, reachable sshd.
+        val actual = VerifiedSshHostKey.probe(host, port)
+        assertArrayEquals("Test sshd host key has actually changed", trusted, actual.blob)
+
+        val wrongPin = trusted.copyOf()
+        wrongPin[wrongPin.lastIndex] =
+            (wrongPin.last().toInt() xor 0x01).toByte()
+        val originalProfile = DirectBootTunnelProfile.load(context)
+        val originalIdentity = AndroidKeystoreIdentity.getExisting(context).getPublicKeyBlob()
+
+        val jsch = VerifiedSshHostKey.pinnedJsch(host, port, wrongPin)
+        jsch.addIdentity(AndroidKeystoreIdentity.getExisting(context), null)
+        val session = jsch.getSession(user, host, port)
+        session.setConfig("StrictHostKeyChecking", "yes")
+        session.setConfig("PreferredAuthentications", "publickey")
+        session.setConfig("NumberOfPasswordPrompts", "0")
+        try {
+            var rejectedByHostKey = false
+            try {
+                session.connect(15_000)
+            } catch (e: JSchException) {
+                rejectedByHostKey =
+                    e.message.orEmpty().contains("HostKey", ignoreCase = true)
+                assertTrue("Expected host-key rejection, got: " +
+                    e.javaClass.simpleName, rejectedByHostKey)
+            }
+            assertTrue("Changed host key was accepted", rejectedByHostKey)
+            assertFalse("No SSH login may survive an untrusted host key", session.isConnected)
+        } finally {
+            session.disconnect()
+        }
+
+        assertArrayEquals(originalIdentity,
+            AndroidKeystoreIdentity.getExisting(context).getPublicKeyBlob())
+        val afterProfile = DirectBootTunnelProfile.load(context)
+        assertEquals(originalProfile == null, afterProfile == null)
+        if (originalProfile != null && afterProfile != null) {
+            assertArrayEquals("Stored host key must never be repinned",
+                originalProfile.verifiedHostKey, afterProfile.verifiedHostKey)
+            assertEquals(originalProfile.host, afterProfile.host)
+            assertEquals(originalProfile.remotePort, afterProfile.remotePort)
+        }
+        Log.i("AAP2-P0", "HOST_KEY_MISMATCH_REJECTED_PREAUTH")
+    }
+
     /**
      * One-time explicit opt-in for automatic SSH before first unlock.
      * The trusted fingerprint and raw host key must be sourced from the VM console;
