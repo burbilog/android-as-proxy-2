@@ -148,11 +148,10 @@ ssh_other() {
         -i "$TMP/other" "$@" "$PROXY@127.0.0.1"
 }
 reject() {
-    if timeout 8 "$@" >/dev/null 2>&1; then
+    # All tests below have explicit connect/forward failure handling.
+    # Do not run a shell function through coreutils timeout(1).
+    if "$@" >/dev/null 2>&1; then
         die "Unexpected success: $1"
-    else
-        rc=$?
-        [ "$rc" -ne 124 ] || die "Test timed out: $1"
     fi
 }
 
