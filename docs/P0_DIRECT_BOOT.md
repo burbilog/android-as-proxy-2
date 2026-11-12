@@ -205,9 +205,12 @@ storage. This is a debug instrumentation provisioning tool, not a user UI.
 - [x] SOCKS5 `curl` via the VM succeeded before first unlock (`https://example.org/`, HTTP/2 200, TLS 1.3, DNS via socks5h).
 - [ ] Keystore remains stable; no password, PIN or SSH private key exists in DE storage.
 - [x] Notification **Stop** persisted device-protected `desired_running=false`; after `adb reboot` `ss` showed `No listener` on the VM.
-- [ ] Mismatched host key rejected pre-auth (new non-destructive test; awaiting Zebra run). Missing Keystore key remains a separate negative test.
+- [x] Mismatched host key rejected pre-auth on Zebra (`OK (1 test)`; `HOST_KEY_MISMATCH_REJECTED_PREAUTH`, 2026-11-13 00:11:37). Stored pin and identity unchanged by the test.
+- [ ] Missing Keystore identity / actual auth rejection fail-closed test remains separate.
 - [x] Wi-Fi off (60 seconds) / on: SSH reconnected by itself, `BOOT_FORWARD_READY` 21:41:25 and subsequent SOCKS5 HTTPS request returned HTTP 200. Baseline reconnect PASS, but exponential backoff caused a long recovery delay.
 - [ ] Network-callback fast reconnect (new code): verify the next Wi-Fi off/on test wakes an in-progress backoff.
 - [ ] Observe full **physical power cycle** and extended unattended idle separately; an `adb reboot` or Wi-Fi toggle does not prove these cases.
 
 The boot and Stop tests were performed on Zebra TC21 on 2026-11-12 (Android 11); observed: `DIRECT_BOOT_KEYSTORE_OK` 20:29:18.543, `BOOT_RECEIVER_START` 20:29:18.570, `BOOT_TUNNEL_STARTED` 20:29:18.782, `BOOT_FORWARD_READY` 20:29:19.291. Remaining unchecked checklist items are unverified. Note: stopping the application from Android system settings is not the same as AAP2 notification Stop and does not call `ACTION_STOP`.
+
+On 2026-11-13 after a debug-APK reinstall and Keystore re-provisioning, the host-key mismatch test passed. The subsequent reboot initially gave SOCKS curl `Connection refused` while boot/network/SSH were still coming up, then returned HTTP `200` automatically. This confirms delayed startup eventually succeeded, but does **not** verify the new network-callback reconnect speedup under Wi-Fi loss.
