@@ -31,11 +31,23 @@ class AndroidKeystoreIdentity private constructor(
         @Synchronized
         fun getExisting(context: Context): AndroidKeystoreIdentity = load(context, allowCreation = false)
 
-        private fun load(context: Context, allowCreation: Boolean): AndroidKeystoreIdentity {
+        /**
+         * Negative instrumentation only: exercise the existing-key path with a missing
+         * alias without deleting or changing the device's real SSH identity.
+         */
+        @Synchronized
+        internal fun getMissingAliasForTest(context: Context, alias: String): AndroidKeystoreIdentity {
+            require(alias != ALIAS) { "Test must not substitute the production alias" }
+            return load(context, allowCreation = false, alias = alias)
+        }
+
+        private fun load(
+            context: Context, allowCreation: Boolean, alias: String = ALIAS
+        ): AndroidKeystoreIdentity {
             val protectedContext = context.createDeviceProtectedStorageContext()
             val prefs = protectedContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-            if (!store.containsAlias(ALIAS)) {
+            if (!store.containsAlias(alias)) {
                 check(!prefs.getBoolean(WAS_CREATED, false)) {
                     "AAP2 SSH identity was lost; refusing silent regeneration"
                 }
@@ -44,7 +56,7 @@ class AndroidKeystoreIdentity private constructor(
                     KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore"
                 )
                 generator.initialize(
-                    KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_SIGN)
+                    KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_SIGN)
                         .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
                         .setDigests(KeyProperties.DIGEST_SHA256)
                         .setUserAuthenticationRequired(false)
@@ -56,9 +68,9 @@ class AndroidKeystoreIdentity private constructor(
             check(prefs.edit().putBoolean(WAS_CREATED, true).commit()) {
                 "Could not persist AAP2 Keystore identity marker"
             }
-            val key = store.getKey(ALIAS, null) as? PrivateKey
+            val key = store.getKey(alias, null) as? PrivateKey
                 ?: error("AAP2 private key unavailable")
-            val public = store.getCertificate(ALIAS)?.publicKey as? ECPublicKey
+            val public = store.getCertificate(alias)?.publicKey as? ECPublicKey
                 ?: error("AAP2 P-256 public key unavailable")
             require(public.params.curve.field.fieldSize == 256) { "Wrong Keystore curve" }
             return AndroidKeystoreIdentity(key, public)
