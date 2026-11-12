@@ -121,7 +121,10 @@ python3 -m http.server 18887 --bind 127.0.0.1 --directory "$TMP/web" \
     >/dev/null 2>&1 &
 HTTP_PID=$!
 sleep 1
-kill -0 "$SSHD_PID" 2>/dev/null || die 'Isolated sshd could not start'
+if ! kill -0 "$SSHD_PID" 2>/dev/null; then
+    cat "$TMP/sshd.stderr" >&2
+    die 'Isolated sshd could not start'
+fi
 
 # Helper commands; all SSH clients enforce the independent ephemeral host key.
 ssh_perm() {
