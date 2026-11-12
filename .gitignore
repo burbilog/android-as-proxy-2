@@ -19,3 +19,10 @@ local.properties
 .idea/deploymentTargetSelector.xml
 .kotlin/
 .vscode/
+
+# Local AAP2 release signing material; never commit private signing keys.
+*.jks
+*.keystore
+*.p12
+*.pfx
+signing.properties
