@@ -51,7 +51,8 @@ local test ports are already occupied.
 On a fresh Debian 13 VM or a disposable snapshot:
 
 ```zsh
-incus exec aap2-test -- apt-get install -y openssh-server openssh-client sshpass python3 curl openssl
+# On the existing test VM OpenSSH is already installed; do not upgrade/restart it during the soak.
+incus exec aap2-test -- apt-get install -y sshpass
 incus exec aap2-test -- runuser -u aapdev -- git clone --branch feature/s0-openssh-isolated-test --depth 1 \
   https://github.com/burbilog/android-as-proxy-2.git /tmp/aap2-s0-source
 incus exec aap2-test -- sh -n /tmp/aap2-s0-source/server/test-s0.sh
