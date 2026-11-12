@@ -115,7 +115,7 @@ for spec in "$PROXY:maxsessions 0" "$PROXY:allowtcpforwarding remote" \
         | grep -Fx "$expected" >/dev/null || die "sshd -T: $user lacks [$expected]"
 done
 
-sshd -D -e -f "$TMP/sshd_config" 2>"$TMP/sshd.stderr" &
+"$(command -v sshd)" -D -e -f "$TMP/sshd_config" 2>"$TMP/sshd.stderr" &
 SSHD_PID=$!
 python3 -m http.server 18887 --bind 127.0.0.1 --directory "$TMP/web" \
     >/dev/null 2>&1 &
