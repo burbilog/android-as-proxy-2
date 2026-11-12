@@ -94,7 +94,7 @@ Port $PORT
 ListenAddress 127.0.0.1
 HostKey $TMP/hostkey
 PidFile $TMP/sshd.pid
-UsePAM no
+UsePAM yes
 PermitRootLogin no
 PasswordAuthentication no
 KbdInteractiveAuthentication no
