@@ -5,7 +5,7 @@
 set -eu
 
 [ "$(id -u)" -eq 0 ] || { echo 'Run as root in the test VM only' >&2; exit 2; }
-for cmd in ssh sshd ssh-keygen sshpass sftp python3 curl timeout useradd userdel groupadd groupdel chpasswd; do
+for cmd in ssh sshd ssh-keygen sshpass sftp python3 curl timeout openssl useradd userdel groupadd groupdel chpasswd; do
     command -v "$cmd" >/dev/null || { echo "Missing test dependency: $cmd" >&2; exit 2; }
 done
 
@@ -45,7 +45,8 @@ cleanup() {
     [ "$MADE_G1" -eq 0 ] || groupdel aap2-enroll
     rm -rf -- "$TMP"
 }
-trap cleanup EXIT HUP INT TERM
+trap cleanup EXIT
+trap 'exit 1' HUP INT TERM
 
 # Avoid adopting, altering or deleting pre-existing users/groups.
 getent passwd "$ENROLL" >/dev/null && die "Existing account $ENROLL; refusing to touch it"
@@ -124,17 +125,35 @@ kill -0 "$SSHD_PID" 2>/dev/null || die 'Isolated sshd could not start'
 
 # Helper commands; all SSH clients enforce the independent ephemeral host key.
 ssh_perm() {
-    ssh -F /dev/null -p "$PORT" -T \
-        -o UserKnownHostsFile="$TMP/known_hosts" -o GlobalKnownHostsFile=/dev/null \
-        -o StrictHostKeyChecking=yes -o BatchMode=yes -o IdentitiesOnly=yes \
-        -o ConnectTimeout=5 -o ExitOnForwardFailure=yes \
-        -i "$TMP/id" "$PROXY@127.0.0.1" "$@"
+    if [ "${1:-}" = exec ]; then
+        shift
+        ssh -F /dev/null -p "$PORT" -T \
+            -o UserKnownHostsFile="$TMP/known_hosts" -o GlobalKnownHostsFile=/dev/null \
+            -o StrictHostKeyChecking=yes -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o ConnectTimeout=5 -o ExitOnForwardFailure=yes \
+            -i "$TMP/id" "$PROXY@127.0.0.1" "$@"
+    else
+        ssh -F /dev/null -p "$PORT" -T \
+            -o UserKnownHostsFile="$TMP/known_hosts" -o GlobalKnownHostsFile=/dev/null \
+            -o StrictHostKeyChecking=yes -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o ConnectTimeout=5 -o ExitOnForwardFailure=yes \
+            -i "$TMP/id" "$@" "$PROXY@127.0.0.1"
+    fi
 }
 ssh_other() {
     ssh -F /dev/null -p "$PORT" -T \
         -o UserKnownHostsFile="$TMP/known_hosts" -o GlobalKnownHostsFile=/dev/null \
         -o StrictHostKeyChecking=yes -o BatchMode=yes -o IdentitiesOnly=yes \
-        -o ConnectTimeout=5 -i "$TMP/other" "$PROXY@127.0.0.1" "$@"
+        -o ConnectTimeout=5 -o ExitOnForwardFailure=yes \
+        -i "$TMP/other" "$@" "$PROXY@127.0.0.1"
+}
+reject() {
+    if timeout 8 "$@" >/dev/null 2>&1; then
+        die "Unexpected success: $1"
+    else
+        rc=$?
+        [ "$rc" -ne 124 ] || die "Test timed out: $1"
+    fi
 }
 
 # Positive: exactly one loopback -R, traffic really reaches the client.
@@ -147,21 +166,13 @@ printf 'PASS: allowed -R and TCP data\n'
 
 # Negative: mismatched port, wildcard, implicit "localhost" listener.
 for listen in "127.0.0.1:10908" "0.0.0.0:$REMOTE_PORT" "$REMOTE_PORT"; do
-    if timeout 8 ssh_perm -fN -R "$listen:127.0.0.1:18887" >/dev/null 2>&1; then
-        die "Unexpected -R permission: $listen"
-    fi
+    reject ssh_perm -fN -R "$listen:127.0.0.1:18887"
 done
 printf 'PASS: wrong port, wildcard and implicit localhost denied\n'
 
-if timeout 8 ssh_perm -W 127.0.0.1:18887 >/dev/null 2>&1; then
-    die 'Unauthorized -W direct-tcpip succeeded'
-fi
-if timeout 8 ssh_perm 'true' >/dev/null 2>&1; then
-    die 'Unexpected shell/exec access'
-fi
-if timeout 8 ssh_other 'true' >/dev/null 2>&1; then
-    die 'Unknown key authenticated'
-fi
+reject ssh_perm -W 127.0.0.1:18887
+reject ssh_perm exec true
+reject ssh_other -fN -R 127.0.0.1:10911:127.0.0.1:18887
 if timeout 8 sftp -F /dev/null -P "$PORT" -b /dev/null \
     -o UserKnownHostsFile="$TMP/known_hosts" -o StrictHostKeyChecking=yes \
     -o BatchMode=yes -o IdentitiesOnly=yes -i "$TMP/id" \
