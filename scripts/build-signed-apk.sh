@@ -6,7 +6,7 @@ umask 077
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 SDK=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-"$HOME/Android/Sdk"}}
 TOOLS=${AAP2_BUILD_TOOLS:-"$SDK/build-tools/35.0.0"}
-KEYSTORE=${AAP2_KEYSTORE:-"$HOME/.local/share/aap2/aap2-release.p12"}
+KEYSTORE=${AAP2_KEYSTORE:-"$HOME/aap2/aap2-release.p12"}
 ALIAS=${AAP2_KEY_ALIAS:-aap2}
 OUTPUT_DIR="$ROOT/app/build/outputs/apk/local-release"
 UNSIGNED="$ROOT/app/build/outputs/apk/release/app-release-unsigned.apk"
