@@ -88,7 +88,6 @@ class AndroidKeystoreIdentity private constructor(
 
     fun authorizedKey(): String =
         SshEcWire.ALGORITHM + " " +
-            Base64.encodeToString(publicKeyBlob, Base64.NO_WRAP) + " aap2"
+            Base64.encodeToString(getPublicKeyBlob(), Base64.NO_WRAP) + " aap2"
 
-    private val publicKeyBlob: ByteArray get() = getPublicKeyBlob()
 }
