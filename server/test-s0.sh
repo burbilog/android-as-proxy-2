@@ -5,7 +5,7 @@
 set -eu
 
 [ "$(id -u)" -eq 0 ] || { echo 'Run as root in the test VM only' >&2; exit 2; }
-for cmd in ssh sshd ssh-keygen sshpass sftp python3 curl timeout openssl useradd userdel groupadd groupdel usermod chpasswd; do
+for cmd in ssh sshd ssh-keygen sshpass sftp python3 curl timeout openssl pkill useradd userdel groupadd groupdel usermod chpasswd; do
     command -v "$cmd" >/dev/null || { echo "Missing test dependency: $cmd" >&2; exit 2; }
 done
 
@@ -40,6 +40,12 @@ cleanup() {
     fi
     [ -z "$HTTP_PID" ] || { kill "$HTTP_PID" 2>/dev/null || :; wait "$HTTP_PID" 2>/dev/null || :; }
     [ -z "$SSHD_PID" ] || { kill "$SSHD_PID" 2>/dev/null || :; wait "$SSHD_PID" 2>/dev/null || :; }
+    # sshd can leave short-lived PAM/session workers after the daemon exits.
+    # These isolated accounts were created by this harness and did not exist
+    # beforehand; terminate only their processes before removing the accounts.
+    [ "$MADE_PROXY" -eq 0 ] || pkill -TERM -u "$PROXY" 2>/dev/null || :
+    [ "$MADE_ENROLL" -eq 0 ] || pkill -TERM -u "$ENROLL" 2>/dev/null || :
+    sleep 1
     if [ "$MADE_PROXY" -eq 1 ]; then
         uid=$(id -u "$PROXY" 2>/dev/null || echo 0)
         [ "$uid" -lt 1001 ] || userdel "$PROXY"
