@@ -79,7 +79,7 @@ class P0SshIntegrationTest {
         assertArrayEquals("Remote host key differs from independently trusted key", pinned, actual.blob)
         val identity = AndroidKeystoreIdentity.getExisting(context)
         val jsch = VerifiedSshHostKey.pinnedJsch(host, port, pinned)
-        jsch.addIdentity(identity)
+        jsch.addIdentity(identity, null)
         val session = jsch.getSession(user, host, port)
         session.setConfig("StrictHostKeyChecking", "yes")
         session.setConfig("PreferredAuthentications", "publickey")
