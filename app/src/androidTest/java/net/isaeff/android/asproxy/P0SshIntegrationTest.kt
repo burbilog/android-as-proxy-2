@@ -8,12 +8,16 @@ import com.jcraft.jsch.JSchException
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.security.KeyStore
 import java.security.Signature
+import java.util.UUID
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 
 /**
  * Explicit on-device P0 test (never run against production sshd).
@@ -161,6 +165,90 @@ class P0SshIntegrationTest {
             assertEquals(originalProfile.remotePort, afterProfile.remotePort)
         }
         Log.i("AAP2-P0", "HOST_KEY_MISMATCH_REJECTED_PREAUTH")
+    }
+
+    /**
+     * Negative key-loss path without deleting or invalidating the real key.
+     * A random, absent alias is looked up through the same read-only Keystore
+     * loading branch used at unattended boot. Nothing is ever generated.
+     */
+    @Test
+    fun missingKeystoreIdentityFailsClosed() {
+        val original = AndroidKeystoreIdentity.getExisting(context).getPublicKeyBlob()
+        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        val missing = "aap2-test-absent-" + UUID.randomUUID().toString()
+        assertFalse(store.containsAlias(missing))
+
+        var rejected = false
+        try {
+            AndroidKeystoreIdentity.getMissingAliasForTest(context, missing)
+        } catch (e: IllegalStateException) {
+            rejected = true
+        }
+        assertTrue("Absent Keystore alias must fail closed", rejected)
+        store.load(null)
+        assertFalse("No replacement alias may be silently generated", store.containsAlias(missing))
+        assertArrayEquals("Real SSH identity must survive negative test",
+            original, AndroidKeystoreIdentity.getExisting(context).getPublicKeyBlob())
+        Log.i("AAP2-P0", "MISSING_KEYSTORE_REJECTED_NO_REGEN")
+    }
+
+    /**
+     * The real sshd denies an unknown user while the host key is pinned and
+     * the genuine Keystore identity is used. Exercise the production manager's
+     * fatal-error classification without changing stored config or sshd.
+     *
+     * Stop the running AAP2 service through its notification first.
+     */
+    @Test
+    fun rejectedPublickeyAuthenticationStopsRetryLoop() {
+        val host = requireNotNull(arguments.getString("host")) { "Missing host" }
+        val trustedBase64 = requireNotNull(arguments.getString("host_key_base64")) {
+            "Missing independently trusted SSH server host-key blob"
+        }
+        val sshPort = arguments.getString("port")?.toIntOrNull() ?: 22
+        val remotePort = arguments.getString("remote_port")?.toIntOrNull() ?: 10909
+        val trusted = Base64.decode(trustedBase64, Base64.DEFAULT)
+
+        // The actual host must still match the trusted key, or this test is invalid.
+        val observed = VerifiedSshHostKey.probe(host, sshPort)
+        assertArrayEquals("Cannot test auth against an unexpected sshd host key",
+            trusted, observed.blob)
+
+        val original = AndroidKeystoreIdentity.getExisting(context).getPublicKeyBlob()
+        val profileBefore = DirectBootTunnelProfile.load(context)
+        val desiredBefore = DirectBootTunnelProfile.wantsConnection(context)
+        val nonexistentUser = "aap2_no_" + UUID.randomUUID().toString().replace("-", "").take(12)
+        val config = DirectBootTunnelProfile.Config(
+            host, sshPort, nonexistentUser, remotePort, trusted
+        )
+        val errors = LinkedBlockingQueue<String>()
+        val manager = KeystoreSshTunnelManager(context, config, localPort = 0)
+        manager.onFatalError = { errors.offer(it) }
+        try {
+            manager.start()
+            val error = errors.poll(25, TimeUnit.SECONDS)
+            assertNotNull("Unknown SSH user must produce a fatal auth error", error)
+            assertTrue("Authentication rejection must be fatal, got: " + error,
+                error!!.startsWith("SSH rejected:"))
+            // A fatal auth error must terminate the loop, not trigger repeated
+            // login attempts which would cause a fail2ban problem.
+            Thread.sleep(6_000)
+            assertTrue("Fatal authentication must not be retried", errors.isEmpty())
+        } finally {
+            manager.destroy()
+        }
+
+        assertArrayEquals(original, AndroidKeystoreIdentity.getExisting(context).getPublicKeyBlob())
+        val profileAfter = DirectBootTunnelProfile.load(context)
+        assertEquals(profileBefore == null, profileAfter == null)
+        if (profileBefore != null && profileAfter != null) {
+            assertArrayEquals(profileBefore.verifiedHostKey, profileAfter.verifiedHostKey)
+            assertEquals(profileBefore.username, profileAfter.username)
+            assertEquals(profileBefore.remotePort, profileAfter.remotePort)
+        }
+        assertEquals(desiredBefore, DirectBootTunnelProfile.wantsConnection(context))
+        Log.i("AAP2-P0", "AUTH_REJECTED_FATAL_NO_RETRY")
     }
 
     /**
