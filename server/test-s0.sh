@@ -16,7 +16,7 @@ CONF="$DIR/sshd-aap2-match.conf"
 ENROLL=aap2s0enroll
 PROXY=aap2s0proxy
 PORT=22223
-REMOTE_PORT=10909
+REMOTE_PORT=11909
 TMP=$(mktemp -d /var/lib/aap2-s0.XXXXXXXX)
 MADE_ENROLL=0
 MADE_PROXY=0
@@ -164,14 +164,14 @@ body=$(curl -fsS --max-time 5 "http://127.0.0.1:$REMOTE_PORT/" || :)
 printf 'PASS: allowed -R and TCP data\n'
 
 # Negative: mismatched port, wildcard, implicit "localhost" listener.
-for listen in "127.0.0.1:10908" "0.0.0.0:$REMOTE_PORT" "$REMOTE_PORT"; do
+for listen in "127.0.0.1:11908" "0.0.0.0:$REMOTE_PORT" "$REMOTE_PORT"; do
     reject ssh_perm -fN -R "$listen:127.0.0.1:18887"
 done
 printf 'PASS: wrong port, wildcard and implicit localhost denied\n'
 
 reject ssh_perm -W 127.0.0.1:18887
 reject ssh_perm exec true
-reject ssh_other -fN -R 127.0.0.1:10911:127.0.0.1:18887
+reject ssh_other -fN -R 127.0.0.1:11911:127.0.0.1:18887
 if timeout 8 sftp -F /dev/null -P "$PORT" -b /dev/null \
     -o UserKnownHostsFile="$TMP/known_hosts" -o StrictHostKeyChecking=yes \
     -o BatchMode=yes -o IdentitiesOnly=yes -i "$TMP/id" \
@@ -205,7 +205,7 @@ if timeout 8 sshpass -e ssh -F /dev/null -T -fN -p "$PORT" \
     -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
     -o PubkeyAuthentication=no -o PreferredAuthentications=password \
     -o ExitOnForwardFailure=yes \
-    -R 127.0.0.1:10910:127.0.0.1:18887 \
+    -R 127.0.0.1:11910:127.0.0.1:18887 \
     "$ENROLL@127.0.0.1" >/dev/null 2>&1; then
     die 'Enrollment account unexpectedly allowed forwarding'
 fi
