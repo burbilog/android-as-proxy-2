@@ -34,6 +34,8 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 "$TOOLS/zipalign" -f -p 4 "$UNSIGNED" "$ALIGNED"
+# Never leave a previously signed APK behind after a failed new signing attempt.
+rm -f -- "$OUTPUT"
 "$TOOLS/apksigner" sign \
     --ks "$KEYSTORE" \
     --ks-key-alias "$ALIAS" \
