@@ -28,9 +28,13 @@ MADE_G2=0
 SSHD_PID=
 HTTP_PID=
 CLIENT_CTL=
+LOCAL_CTL=
 
 die() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 cleanup() {
+    if [ -n "$LOCAL_CTL" ]; then
+        ssh -F /dev/null -S "$LOCAL_CTL" -O exit -p "$PORT" "$PROXY@127.0.0.1" >/dev/null 2>&1 || :
+    fi
     if [ -n "$CLIENT_CTL" ]; then
         ssh -F /dev/null -S "$CLIENT_CTL" -O exit -p "$PORT" "$PROXY@127.0.0.1" >/dev/null 2>&1 || :
     fi
@@ -176,6 +180,16 @@ done
 printf 'PASS: wrong port, wildcard and implicit localhost denied\n'
 
 reject ssh_perm -W 127.0.0.1:18887
+# -L may bind locally even if the server refuses actual direct-tcpip data.
+# Exercise it: the HTTP request must be rejected by the server.
+LOCAL_CTL="$TMP/local_control"
+ssh_perm -M -S "$LOCAL_CTL" -fN -L 127.0.0.1:11912:127.0.0.1:18887 ||
+    die 'Cannot open isolated -L test client'
+if curl -fsS --max-time 4 http://127.0.0.1:11912/ >/dev/null 2>&1; then
+    die 'Unauthorized -L carried HTTP data'
+fi
+ssh -F /dev/null -S "$LOCAL_CTL" -O exit -p "$PORT" "$PROXY@127.0.0.1" >/dev/null 2>&1 || :
+LOCAL_CTL=
 reject ssh_perm exec true
 reject ssh_other -fN -R 127.0.0.1:11911:127.0.0.1:18887
 if timeout 8 sftp -F /dev/null -P "$PORT" -b /dev/null \
@@ -184,7 +198,7 @@ if timeout 8 sftp -F /dev/null -P "$PORT" -b /dev/null \
     "$PROXY@127.0.0.1" >/dev/null 2>&1; then
     die 'Permanent account unexpectedly allowed SFTP'
 fi
-printf 'PASS: -W, shell/exec, SFTP and other publickey denied\n'
+printf 'PASS: -W/-L, shell/exec, SFTP and other publickey denied\n'
 
 # Enrollment account: actual password login, SFTP upload to PRECREATED file only.
 SSHPASS=$TEST_PIN
