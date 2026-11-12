@@ -1,3 +1,9 @@
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+}
+
 // Version overrides are intentionally non-secret; signing is local and separate.
 val aap2VersionCodeOverride = System.getenv("AAP2_VERSION_CODE")
 val aap2VersionCode = aap2VersionCodeOverride?.toIntOrNull() ?: 20000
@@ -8,11 +14,6 @@ require(aap2VersionCodeOverride == null ||
 val aap2VersionName = System.getenv("AAP2_VERSION_NAME") ?: "2.0.0-dev"
 require(aap2VersionName.isNotBlank()) { "AAP2_VERSION_NAME must not be blank" }
 
-plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.compose)
-}
 
 android {
     namespace = "net.isaeff.android.asproxy"
