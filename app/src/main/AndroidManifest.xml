@@ -20,6 +20,7 @@
         <!-- https://stackoverflow.com/questions/77520968/why-am-i-encountering-the-error-starting-fgs-without-a-type-when-executing-the -->
         <service
             android:name=".SocksForegroundService"
+            android:directBootAware="true"
             android:exported="false"
             android:foregroundServiceType="specialUse"
             android:enabled="true"
@@ -34,8 +35,10 @@
         <!-- Start service automatically at boot if enabled -->
         <receiver
             android:name=".BootCompletedReceiver"
+            android:directBootAware="true"
             android:exported="false">
             <intent-filter>
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>

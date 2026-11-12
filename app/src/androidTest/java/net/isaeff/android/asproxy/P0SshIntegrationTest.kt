@@ -101,4 +101,46 @@ class P0SshIntegrationTest {
             socks.close()
         }
     }
+    /**
+     * One-time explicit opt-in for automatic SSH before first unlock.
+     * The trusted fingerprint and raw host key must be sourced from the VM console;
+     * never provision the unverified value captured by a first-seen network probe.
+     */
+    @Test
+    fun provisionDirectBootTunnel() {
+        val host = requireNotNull(arguments.getString("host")) { "Missing host" }
+        val user = requireNotNull(arguments.getString("user")) { "Missing user" }
+        val hostKey64 = requireNotNull(arguments.getString("host_key_base64")) {
+            "Missing trusted host key"
+        }
+        val trustedFingerprint = requireNotNull(arguments.getString("trusted_sha256")) {
+            "Missing independent SHA256 fingerprint"
+        }
+        val port = arguments.getString("port")?.toIntOrNull() ?: 22
+        val remotePort = arguments.getString("remote_port")?.toIntOrNull() ?: 10909
+        val key = Base64.decode(hostKey64, Base64.DEFAULT)
+
+        // Test the currently reachable host against the independently trusted key
+        // before committing the profile. No userauth during this KEX probe.
+        val observed = VerifiedSshHostKey.probe(host, port)
+        assertArrayEquals("SSH server key not trusted", key, observed.blob)
+
+        DirectBootTunnelProfile.provision(
+            context,
+            DirectBootTunnelProfile.Config(host, port, user, remotePort, key),
+            trustedFingerprint
+        )
+        val loaded = requireNotNull(DirectBootTunnelProfile.load(context))
+        assertArrayEquals(key, loaded.verifiedHostKey)
+        assertTrue(DirectBootTunnelProfile.wantsConnection(context))
+        Log.i("AAP2-P0", "BOOT_PROFILE_CONFIGURED port=" + remotePort)
+    }
+
+    @Test
+    fun disableDirectBootTunnel() {
+        DirectBootTunnelProfile.disable(context)
+        assertTrue(!DirectBootTunnelProfile.hasProfile(context))
+        Log.i("AAP2-P0", "BOOT_PROFILE_DISABLED")
+    }
+
 }
