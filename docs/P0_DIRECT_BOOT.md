@@ -129,12 +129,12 @@ storage. This is a debug instrumentation provisioning tool, not a user UI.
 
 ## Acceptance
 
-- [ ] Profiling test passes and pinned host key matches independently obtained fingerprint.
-- [ ] After actual cold reboot, before first unlock, `ss` shows `127.0.0.1:10909`.
-- [ ] SOCKS5 `curl` via the VM succeeds before first unlock.
+- [x] Provisioning test passed (`OK (1 test)`), pinned host key matched independently obtained fingerprint.
+- [x] After `adb reboot`, **before first unlock**, `ss` showed `127.0.0.1:10909` on `aap2-test`.
+- [x] SOCKS5 `curl` via the VM succeeded before first unlock (`https://example.org/`, HTTP/2 200, TLS 1.3, DNS via socks5h).
 - [ ] Keystore remains stable; no password, PIN or SSH private key exists in DE storage.
 - [ ] Stop disables new boot reconnect, including after a further reboot.
 - [ ] Missing/changed host key or missing Keystore identity fails closed.
 - [ ] Observe Wi-Fi reconnect behavior across a real power cycle, not only `adb reboot`.
 
-None of these checks are considered passed until performed on the real Zebra.
+The three checked boot tests were performed on Zebra TC21 on 2026-11-12 (Android 11); observed: `DIRECT_BOOT_KEYSTORE_OK` 20:29:18.543, `BOOT_RECEIVER_START` 20:29:18.570, `BOOT_TUNNEL_STARTED` 20:29:18.782, `BOOT_FORWARD_READY` 20:29:19.291. Remaining checklist items are unverified.
