@@ -18,6 +18,9 @@ PROXY=aap2s0proxy
 PORT=22223
 REMOTE_PORT=11909
 TMP=$(mktemp -d /var/lib/aap2-s0.XXXXXXXX)
+# sshd reads AuthorizedKeysFile as the target user; parent must be traversable.
+# Root retains ownership, other users cannot write or read 0600 private keys.
+chmod 755 "$TMP"
 MADE_ENROLL=0
 MADE_PROXY=0
 MADE_G1=0
