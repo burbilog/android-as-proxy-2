@@ -135,6 +135,7 @@ storage. This is a debug instrumentation provisioning tool, not a user UI.
 - [ ] Keystore remains stable; no password, PIN or SSH private key exists in DE storage.
 - [x] Notification **Stop** persisted device-protected `desired_running=false`; after `adb reboot` `ss` showed `No listener` on the VM.
 - [ ] Missing/changed host key or missing Keystore identity fails closed.
-- [ ] Observe Wi-Fi reconnect behavior across a real power cycle, not only `adb reboot`.
+- [x] Wi-Fi off (60 seconds) / on: SSH reconnected by itself, `BOOT_FORWARD_READY` 21:41:25 and subsequent SOCKS5 HTTPS request returned HTTP 200. Reconnect is functional but exponential backoff caused a long recovery delay.
+- [ ] Observe full **physical power cycle** and extended unattended idle separately; an `adb reboot` or Wi-Fi toggle does not prove these cases.
 
 The boot and Stop tests were performed on Zebra TC21 on 2026-11-12 (Android 11); observed: `DIRECT_BOOT_KEYSTORE_OK` 20:29:18.543, `BOOT_RECEIVER_START` 20:29:18.570, `BOOT_TUNNEL_STARTED` 20:29:18.782, `BOOT_FORWARD_READY` 20:29:19.291. Remaining unchecked checklist items are unverified. Note: stopping the application from Android system settings is not the same as AAP2 notification Stop and does not call `ACTION_STOP`.
