@@ -2,7 +2,7 @@ name: Android debug APK
 
 on:
   pull_request:
-    branches: [master]
+    branches: [master, develop]
   workflow_dispatch:
 
 concurrency:
@@ -38,10 +38,13 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build and unit tests
+      - name: Validate local signing script syntax
+        run: sh -n scripts/build-signed-apk.sh
+
+      - name: Build and unit tests (unsigned release; no signing secrets in CI)
         run: |
           chmod +x ./gradlew
-          ./gradlew --no-daemon --stacktrace :app:assembleDebug :app:testDebugUnitTest
+          ./gradlew --no-daemon --stacktrace :app:assembleDebug :app:assembleRelease :app:testDebugUnitTest
 
       - name: Upload debug APK
         if: success()
