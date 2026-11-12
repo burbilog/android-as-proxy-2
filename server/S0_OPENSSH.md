@@ -43,12 +43,10 @@ temporary files. If either account/group already exists, the script
 The test script deliberately does not touch `aapdev`,
 the running `sshd`, `/etc/ssh/sshd_config`, `/etc/ssh/aap2-*`,
 port `22`, Incus host port `22222` or existing AAP2 forward `10909`
-in the VM: `10909` in the test daemon is bound to its **separate SSH session**
-and may collide with a currently active AAP2 forward, because both daemons
-share the network namespace. **Therefore STOP the test** unless the current
-AAP2 forward is absent, or adjust the isolated S0 remote test port to a
-non-conflicting value before running. The script defaults to `10909`;
-**CI is isolated and does not collide.**
+in the VM. The isolated S0 test uses **11909**, not AAP2's **10909**, for
+its remote forward. The separate sshd is bound to `127.0.0.1:22223` and
+needs no external firewall or Incus proxy changes. Stop the test if these
+local test ports are already occupied.
 
 On a fresh Debian 13 VM or a disposable snapshot:
 
@@ -67,7 +65,7 @@ before the VM exercise.
 **Expected minimum checks:**
 
 1. `sshd -t` accepts isolated config; `sshd -T -C` resolves both Match groups.
-2. Permanent account: permitted `-R 127.0.0.1:PORT` carries HTTP traffic.
+2. Permanent account: permitted `-R 127.0.0.1:11909` carries HTTP traffic.
 3. Wrong port, wildcard and implicit `localhost` listener are denied.
 4. `-W` / local direct-TCP, shell/exec, SFTP and unknown key are denied.
 5. Temporary PIN user can overwrite its **precreated** SFTP file but cannot
