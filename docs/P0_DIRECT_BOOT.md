@@ -35,6 +35,7 @@ adb install -r app-debug-androidTest.apk
 If the signature error occurs:
 
 ```sh
+adb uninstall net.isaeff.android.asproxy2.test
 adb uninstall net.isaeff.android.asproxy2
 adb install app-debug.apk
 adb install app-debug-androidTest.apk
