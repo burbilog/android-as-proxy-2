@@ -5,7 +5,7 @@
 set -eu
 
 [ "$(id -u)" -eq 0 ] || { echo 'Run as root in the test VM only' >&2; exit 2; }
-for cmd in ssh sshd ssh-keygen sshpass sftp python3 curl timeout openssl useradd userdel groupadd groupdel chpasswd; do
+for cmd in ssh sshd ssh-keygen sshpass sftp python3 curl timeout openssl useradd userdel groupadd groupdel usermod chpasswd; do
     command -v "$cmd" >/dev/null || { echo "Missing test dependency: $cmd" >&2; exit 2; }
 done
 
@@ -17,7 +17,7 @@ ENROLL=aap2s0enroll
 PROXY=aap2s0proxy
 PORT=22223
 REMOTE_PORT=10909
-TMP=$(mktemp -d /tmp/aap2-s0.XXXXXXXX)
+TMP=$(mktemp -d /var/lib/aap2-s0.XXXXXXXX)
 MADE_ENROLL=0
 MADE_PROXY=0
 MADE_G1=0
@@ -56,7 +56,7 @@ getent group aap2-proxy >/dev/null && die "Existing aap2-proxy group; use a fres
 
 groupadd aap2-enroll; MADE_G1=1
 groupadd aap2-proxy; MADE_G2=1
-useradd -M -d /nonexistent -s /usr/sbin/nologin -g aap2-enroll "$ENROLL"; MADE_ENROLL=1
+useradd -M -d / -s /usr/sbin/nologin -g aap2-enroll "$ENROLL"; MADE_ENROLL=1
 useradd -M -d /nonexistent -s /usr/sbin/nologin -g aap2-proxy "$PROXY"; MADE_PROXY=1
 [ "$(id -u "$ENROLL")" -ge 1001 ] || die 'Test enroll UID unsafe'
 [ "$(id -u "$PROXY")" -ge 1001 ] || die 'Test proxy UID unsafe'
