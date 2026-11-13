@@ -47,6 +47,47 @@ class A1EnrollmentIntegrationTest {
     }
 
     @Test
+    fun a1_0_malformedServerJsonRejectedBeforeProvisioning() {
+        val client = EnrollmentClient(context)
+        val validConfig = """{"schema":1,"username":"aap2p123456abcdef","remote_port":11010}"""
+        val validStatus = """{"schema":1,"status":"pending","expires_at":1790000000}"""
+        client.parseConfig(validConfig.toByteArray())
+        client.parseStatus(validStatus.toByteArray())
+
+        val badConfigs = listOf(
+            """{"schema":"1","username":"aap2p123456abcdef","remote_port":11010}""",
+            """{"schema":1.5,"username":"aap2p123456abcdef","remote_port":11010}""",
+            """{"schema":1,"username":"aap2p123456abcdef","remote_port":11010.5}""",
+            """{"schema":1,"username":"aap2p123456abcdef","remote_port":"11010"}""",
+            """{"schema":1,"username":"root","remote_port":11010}""",
+            """{"schema":1,"username":"aap2p123456abcdef","remote_port":11009}""",
+            """{"schema":1,"username":"aap2p123456abcdef","remote_port":11010,"extra":true}""",
+            """{"schema":1,"username":"aap2p123456abcdef"}""",
+            """not JSON"""
+        )
+        val badStatuses = listOf(
+            """{"schema":"1","status":"pending","expires_at":1790000000}""",
+            """{"schema":1,"status":"approved","expires_at":"1790000000"}""",
+            """{"schema":1,"status":"approved","expires_at":1790000000.5}""",
+            """{"schema":1,"status":"rejected","expires_at":1790000000}""",
+            """{"schema":1,"status":"approved","expires_at":0}""",
+            """{"schema":1,"status":"pending","expires_at":1790000000,"extra":true}""",
+            """[]"""
+        )
+        for (json in badConfigs) {
+            assertTrue("Malformed S2 config accepted: $json",
+                runCatching { client.parseConfig(json.toByteArray()) }.isFailure)
+        }
+        for (json in badStatuses) {
+            assertTrue("Malformed S2 status accepted: $json",
+                runCatching { client.parseStatus(json.toByteArray()) }.isFailure)
+        }
+        assertFalse(DirectBootTunnelProfile.hasProfile(context))
+        assertTrue(EnrollmentPending.load(context) == null)
+        Log.i("AAP2-A1", "A1_MALFORMED_SFTP_JSON_REJECTED")
+    }
+
+    @Test
     fun a1_1_wrongPinnedHostRejectedBeforeAuthenticationOrKeyCreation() = runBlocking<Unit> {
         assertFalse("Disposable emulator must have no existing profile",
             DirectBootTunnelProfile.hasProfile(context))
