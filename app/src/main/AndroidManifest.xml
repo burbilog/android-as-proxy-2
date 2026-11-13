@@ -55,6 +55,11 @@
         </receiver>
 
         <activity
+            android:name=".EnrollmentActivity"
+            android:exported="false"
+            android:label="Activate AAP2" />
+
+        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
