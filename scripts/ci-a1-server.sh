@@ -76,6 +76,28 @@ EOF
     test -s "$INVITE"
     printf 'A1 ephemeral invitation created (PIN redacted)\n'
     ;;
+  expire)
+    # Disposable fixture only: simulate passage of 10-minute PIN TTL by
+    # backdating root-owned metadata, then use the REAL S2 cleanup command.
+    ID=$(cat "$IDENTIFIER")
+    python3 - "$ID" <<'PY'
+import json
+from pathlib import Path
+import sys
+import time
+path = Path('/var/lib/aap2/state') / sys.argv[1] / 'metadata.json'
+record = json.loads(path.read_text())
+assert record['state'] == 'active' and not record.get('temp_removed')
+record['expires_at'] = int(time.time()) - 1
+path.write_text(json.dumps(record, sort_keys=True, separators=(',', ':')) + '\n')
+path.chmod(0o600)
+PY
+    aap2-setup cleanup > "$STATE/expire-output"
+    grep -q "Expired temporary enrollment: $ID" "$STATE/expire-output"
+    ! getent passwd "$(sed -n 's/^Setup username: //p' "$INVITE")" >/dev/null ||
+      { echo 'Expired SFTP account still exists' >&2; exit 1; }
+    printf 'A1 disposable PIN expired and setup account removed by real cleanup\n'
+    ;;
   watch-approve)
     ID=$(cat "$IDENTIFIER")
     USERNAME=$(sed -n 's/^Setup username: //p' "$INVITE")
@@ -111,7 +133,7 @@ EOF
     printf 'A1 ephemeral approved device revoked\n'
     ;;
   *)
-    echo 'Usage: ci-a1-server.sh SERVER_DIR {init|invite|watch-approve|approve|revoke}' >&2
+    echo 'Usage: ci-a1-server.sh SERVER_DIR {init|invite|expire|watch-approve|approve|revoke}' >&2
     exit 2
     ;;
 esac
