@@ -764,6 +764,9 @@ def stop_user(uid):
 def remove_account(record, role):
     """Never force userdel. Revalidate NSS/UID/GID/group/home on every retry."""
     name = record['users'][role]['name']
+    # Verify again immediately before signalling processes; a previously
+    # checked UID must never be reused to signal an unrelated account.
+    check_real_identity(record, role)
     stop_user(record['users'][role]['uid'])
     for attempt in range(4):
         check_real_identity(record, role)
