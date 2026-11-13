@@ -116,15 +116,25 @@ PY
   fi
   [ ! -s "/etc/ssh/aap2-authorized-keys/$P" ] ||
     { echo 'S2 ERROR: unauthorized key was installed' >&2; exit 1; }
+  echo 'S2 PASS: injected key rejected before approval'
   cp "$TMP/device.pub" "/var/lib/aap2/enroll/$E/inbox/public_key"
 
   # Real SSH key fingerprint and explicit administrator approval; no PIN
   # used to authenticate the permanent account.
   printf 'y\n' | aap2-setup approve "$ID" > "$TMP/approve.out"
-  grep -q '^APPROVED:' "$TMP/approve.out"
-  grep -q '^restrict,port-forwarding,permitlisten="127.0.0.1:' \
-    "/etc/ssh/aap2-authorized-keys/$P"
-  grep -q '"status":"approved"' "/var/lib/aap2/enroll/$E/status.json"
+  if ! grep -q '^APPROVED:' "$TMP/approve.out"; then
+    echo 'S2 ERROR: approval did not report APPROVED:' >&2
+    cat "$TMP/approve.out" >&2
+    exit 1
+  fi
+  if ! grep -q '^restrict,port-forwarding,permitlisten="127.0.0.1:' \
+      "/etc/ssh/aap2-authorized-keys/$P"; then
+    echo 'S2 ERROR: restricted authorized key missing' >&2; exit 1
+  fi
+  if ! grep -q '"status":"approved"' "/var/lib/aap2/enroll/$E/status.json"; then
+    echo 'S2 ERROR: status.json not approved' >&2; exit 1
+  fi
+  echo 'S2 PASS: approved snapshot published to restricted key and status'
 
   mkdir -p "$TMP/web"
   printf 'S2 forwarding works\n' > "$TMP/web/index.html"
