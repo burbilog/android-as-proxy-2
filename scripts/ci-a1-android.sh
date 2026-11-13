@@ -37,6 +37,22 @@ run_test() {
 run_test a1_0_malformedServerJsonRejectedBeforeProvisioning
 run_test a1_1_wrongPinnedHostRejectedBeforeAuthenticationOrKeyCreation
 
+# Exercise the real ten-minute TTL cleanup without waiting ten minutes:
+# in the disposable fixture only, backdate the new invitation, invoke real
+# S2 cleanup, then prove Android cannot enroll using its original PIN.
+sudo env GITHUB_ACTIONS=true AAP2_A1_DISPOSABLE=YES sh "$FIXTURE" "$SERVER" invite
+SETUP_USER=$(sudo sed -n 's/^Setup username: //p' "$STATE/invite.txt")
+DISPLAY_PIN=$(sudo sed -n 's/^One-time PIN: //p' "$STATE/invite.txt")
+PIN="${DISPLAY_PIN//-/}"
+FINGERPRINT=$(sudo ssh-keygen -lf /etc/ssh/ssh_host_ecdsa_key.pub -E sha256 | awk '{print $2}')
+[ "${#PIN}" = 10 ] && [ -n "$SETUP_USER" ] && [ -n "$FINGERPRINT" ] || exit 1
+unset DISPLAY_PIN
+sudo env GITHUB_ACTIONS=true AAP2_A1_DISPOSABLE=YES sh "$FIXTURE" "$SERVER" expire
+printf '%s\n%s\n%s\n' "$SETUP_USER" "$PIN" "$FINGERPRINT" |
+  adb shell -T "run-as $PKG sh -c 'mkdir -p files && umask 077 && cat > files/a1-ci-expired-invitation && chmod 600 files/a1-ci-expired-invitation'"
+unset PIN
+run_test a1_1b_expiredPinCannotCreatePendingProfile
+
 # Invitation is created AFTER emulator boots. PIN is kept only in a
 # root-owned file and the debug application's temporary test sandbox.
 sudo env GITHUB_ACTIONS=true AAP2_A1_DISPOSABLE=YES sh "$FIXTURE" "$SERVER" invite
