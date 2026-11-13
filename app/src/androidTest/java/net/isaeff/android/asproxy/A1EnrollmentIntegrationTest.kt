@@ -123,7 +123,15 @@ class A1EnrollmentIntegrationTest {
         }
         assertEquals(ConnectionState.CONNECTED, ConnectionStateHolder.connectionState.value)
         Log.i("AAP2-A1", "A1_PIN_SFTP_APPROVAL_KEYSTORE_R_READY remote=" + profile.remotePort)
-        // Do NOT stop the foreground service: CI host will now curl through
-        // this exact reverse SOCKS5 forward and then revoke in the fixture.
+        // Keep the instrumented target process alive while the CI host curls
+        // through this real Android foreground SOCKS and then revokes it.
+        // Android's test runner can stop the target process after a test ends,
+        // so post-test network checks alone can be a false negative.
+        val release = File(context.filesDir, "a1-ci-release-test")
+        withTimeout(90_000) {
+            while (!release.exists()) delay(250)
+        }
+        release.delete()
+        // Do NOT stop the service ourselves; server revoke owns teardown.
     }
 }
