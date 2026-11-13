@@ -7,6 +7,8 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import os
+import base64
+import struct
 import types
 import unittest
 from unittest import mock
@@ -301,6 +303,92 @@ class LifecycleTests(unittest.TestCase):
             self.assertEqual(calls[1], ('/usr/sbin/userdel', user))
             self.assertFalse(any('aap2p' in str(cmd) for cmd in calls))
             self.assertEqual(record['state'], 'expired')
+
+
+
+class ApprovalTests(unittest.TestCase):
+    @staticmethod
+    def example_key(comment='aap2'):
+        def field(data):
+            return struct.pack('>I', len(data)) + data
+        blob = field(b'ecdsa-sha2-nistp256') + field(b'nistp256') + \
+            field(b'\x04' + b'\x00' * 64)
+        value = 'ecdsa-sha2-nistp256 ' + base64.b64encode(blob).decode('ascii')
+        return (value + (' ' + comment if comment else '') + '\n').encode('ascii')
+
+    def test_strict_p256_canonical_and_authorized_options(self):
+        key = self.example_key()
+        canonical = aap.canonical_public_key(key)
+        self.assertEqual(canonical.encode('ascii'), self.example_key(''))
+        record = {'remote_port': 11010}
+        authorized = aap.authorized_line(record, canonical)
+        self.assertEqual(authorized.count('\n'), 1)
+        self.assertTrue(authorized.startswith(
+            'restrict,port-forwarding,permitlisten="127.0.0.1:11010" '))
+
+    def test_reject_ssh_authorized_keys_option_injection(self):
+        key = self.example_key()
+        for bad in (b'command="true" ' + key, b'no-pty ' + key,
+                    key + key, key.replace(b' ', b'  ', 1),
+                    key.replace(b'\n', b'\r\n'),
+                    b'ssh-rsa AAAA\n', b'',
+                    key + b'\x00', key[:-1],
+                    key.replace(b'aap2', b'aap2;rm'),
+                    b' ' * 1025):
+            with self.subTest(bad=bad[:50]):
+                with self.assertRaises(aap.SetupError):
+                    aap.canonical_public_key(bad)
+
+    def test_reject_wrong_curve_blob(self):
+        def field(data):
+            return struct.pack('>I', len(data)) + data
+        blob = field(b'ecdsa-sha2-nistp256') + field(b'other') + \
+            field(b'\x04' + b'\x00' * 64)
+        line = b'ecdsa-sha2-nistp256 ' + base64.b64encode(blob) + b'\n'
+        with self.assertRaisesRegex(aap.SetupError, 'structure'):
+            aap.canonical_public_key(line)
+
+    def test_metadata_blocks_unknown_state(self):
+        with tempfile.TemporaryDirectory() as d:
+            ident = '123456abcdef'
+            root = Path(d) / ident
+            root.mkdir()
+            (root / 'metadata.json').write_text(json.dumps({
+                'id': ident, 'state': 'unknown', 'expires_at': 9999,
+                'users': {}}))
+            with mock.patch.object(aap, 'STATE', Path(d)), \
+                 mock.patch.object(aap, 'verified_dir'), \
+                 mock.patch.object(aap, 'verified_file'):
+                with self.assertRaises(aap.SetupError):
+                    aap.read_metadata(ident)
+
+    def test_expired_approved_status_kept_on_temp_cleanup(self):
+        record = {
+            'id': '123456abcdef', 'state': 'approved', 'temp_removed': False,
+            'users': {aap.GROUP_ENROLL: {'name': 'aap2e123456abcdef'}}
+        }
+        with mock.patch.object(aap, 'check_real_identity'), \
+             mock.patch.object(aap, 'call_mutation'), \
+             mock.patch.object(aap, 'remove_account'), \
+             mock.patch.object(aap, 'remove_chroot'), \
+             mock.patch.object(aap, 'atomic_json'):
+            aap.remove_temporary(record)
+        self.assertTrue(record['temp_removed'])
+        self.assertEqual(record['state'], 'approved')
+
+    def test_revoke_requires_confirmation_before_key_change(self):
+        record = {'id': '123456abcdef', 'state': 'approved', 'device_name': 'TC21',
+                  'users': {aap.GROUP_PROXY: {'name': 'aap2p123456abcdef'}},
+                  'remote_port': 11010}
+        with mock.patch.object(aap, 'require_root'), \
+             mock.patch.object(aap, 'state_lock', side_effect=contextlib.nullcontext), \
+             mock.patch.object(aap, 'read_metadata', return_value=record), \
+             mock.patch('builtins.input', return_value='N'), \
+             mock.patch.object(aap, 'atomic_json',
+                               side_effect=AssertionError('must not mutate')):
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(aap.revoke(types.SimpleNamespace(
+                    enrollment_id=record['id'])), 1)
 
 
 
