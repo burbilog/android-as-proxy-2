@@ -53,11 +53,6 @@ printf '%s\n%s\n%s\n' "$SETUP_USER" "$PIN" "$FINGERPRINT" |
   adb shell -T "run-as $PKG sh -c 'mkdir -p files && umask 077 && cat > files/a1-ci-invitation && chmod 600 files/a1-ci-invitation'"
 unset PIN
 
-# Ephemeral administrator approves a complete uploaded PUBLIC key.
-sudo env GITHUB_ACTIONS=true AAP2_A1_DISPOSABLE=YES sh "$FIXTURE" "$SERVER" watch-approve \
-  >/tmp/aap2-a1-approval-watch.log 2>&1 &
-WATCH_PID=$!
-
 mkdir -p /tmp/aap2-a1-http
 printf 'AAP2-A1-E2E-OK\n' > /tmp/aap2-a1-http/index.html
 python3 -m http.server 18887 --bind 127.0.0.1 \
@@ -69,7 +64,6 @@ cleanup() {
   adb shell -T "run-as $PKG sh -c 'touch files/a1-ci-release-test'" \
     >/dev/null 2>&1 || true
   kill "$HTTP_PID" >/dev/null 2>&1 || true
-  kill "$WATCH_PID" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -78,8 +72,37 @@ trap cleanup EXIT
 # and its foreground service before this script has tested the tunnel.
 run_test a1_2_realPinSftpApprovalAndPersistentKeystoreTunnel &
 TEST_PID=$!
-wait "$WATCH_PID"
-cat /tmp/aap2-a1-approval-watch.log
+
+# Test callback publishes this file ONLY after the public-key SFTP put has
+# completed. Kill the disposable setup-account session while it polls status.
+# Do not touch the publickey account, any real host, or the emulator service.
+wait_app_marker() {
+  local marker="$1"
+  for i in $(seq 1 240); do
+    if adb shell -T "run-as $PKG test -f files/$marker" >/dev/null 2>&1; then
+      return 0
+    fi
+    if ! kill -0 "$TEST_PID" 2>/dev/null; then
+      echo "Android instrumentation exited before $marker" >&2
+      wait "$TEST_PID" || true
+      return 1
+    fi
+    sleep 0.5
+  done
+  echo "Android marker not reached: $marker" >&2
+  return 1
+}
+wait_app_marker a1-ci-key-uploaded
+sudo pkill -KILL -u "$SETUP_USER" ||
+  { echo 'No disposable SFTP session to interrupt' >&2; exit 1; }
+echo 'A1 CI: disconnected disposable setup SSH session after completed key upload'
+wait_app_marker a1-ci-awaiting-approval
+
+# Approval is intentionally later than the failed PIN/SFTP session. Android
+# has stored only non-secret pending state and must use resume() without PIN.
+sudo env GITHUB_ACTIONS=true AAP2_A1_DISPOSABLE=YES sh "$FIXTURE" "$SERVER" approve
+adb shell -T "run-as $PKG sh -c 'touch files/a1-ci-approval-done'"
+echo 'A1 CI: approved existing public key; Android must resume with original identity'
 
 ID=$(sudo cat "$STATE/id")
 PORT=$(sudo python3 - "$ID" <<'PY'
