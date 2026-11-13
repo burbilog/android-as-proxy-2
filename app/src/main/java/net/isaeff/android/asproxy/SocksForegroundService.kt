@@ -5,7 +5,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
@@ -36,7 +35,6 @@ class SocksForegroundService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var socksServer: Socks5ProxyServer? = null
-    private var sshTunnelManager: SSHTunnelManager? = null
     private var keystoreTunnelManager: KeystoreSshTunnelManager? = null
     private var trafficJob: Job? = null
     private var running = false
@@ -88,76 +86,12 @@ class SocksForegroundService : Service() {
             return startKeystoreTunnel(bootProfile)
         }
 
-        // Legacy password mode remains credential-protected and starts after unlock only.
-        if (!isUnlocked()) {
-            stopSelf()
-            return START_NOT_STICKY
-        }
-
-        val prefs = getSharedPreferences("aap_prefs", Context.MODE_PRIVATE)
-        when (intent?.action) {
-            ACTION_BOOT -> if (!prefs.getBoolean("auto_connect", false) ||
-                !prefs.getBoolean("desired_running", false)) {
-                stopSelf()
-                return START_NOT_STICKY
-            }
-            null -> if (!prefs.getBoolean("desired_running", false)) {
-                stopSelf()
-                return START_NOT_STICKY
-            }
-            else -> Unit // Explicit user-initiated launch from MainActivity
-        }
-
-        val hostAndPort = try {
-            parseEndpoint(prefs.getString("ssh_server", "") ?: "")
-        } catch (e: IllegalArgumentException) {
-            AAPLog.append("Invalid SSH address: " + e.message)
-            stopSelf()
-            return START_NOT_STICKY
-        }
-        val username = prefs.getString("username", "") ?: ""
-        val password = prefs.getString("password", "") ?: ""
-        val remotePort = prefs.getString("remote_port", "")?.toIntOrNull()
-        if (username.isBlank() || password.isBlank() || remotePort == null || remotePort !in 1..65535) {
-            AAPLog.append("SSH configuration incomplete or invalid")
-            stopSelf()
-            return START_NOT_STICKY
-        }
-
-        try {
-            startForeground(NOTIFICATION_ID, createNotification())
-            val proxy = Socks5ProxyServer(11080)
-            proxy.start()
-            socksServer = proxy
-            prefs.edit().putBoolean("desired_running", true).apply()
-
-            sshTunnelManager = SSHTunnelManager(
-                context = this,
-                sshUser = username,
-                sshHost = hostAndPort.first,
-                sshPort = hostAndPort.second,
-                sshPassword = password,
-                remotePort = remotePort,
-                localHost = "127.0.0.1",
-                localPort = proxy.boundPort
-            ).apply {
-                onError = { message ->
-                    AAPLog.append(message)
-                    stopSelf()
-                }
-                startSSHTunnel()
-            }
-
-            running = true
-            monitorTraffic()
-            AAPLog.append("AAP2 SOCKS5 listening on 127.0.0.1:" + proxy.boundPort)
-            return START_STICKY
-        } catch (e: Exception) {
-            AAPLog.append("Unable to start proxy: " + e.message)
-            ConnectionStateHolder.setState(ConnectionState.DISCONNECTED)
-            stopSelf()
-            return START_NOT_STICKY
-        }
+        // AAP2 deliberately has no password/TOFU fallback. In particular a
+        // stale desired_running flag or legacy credentials must never launch
+        // an unaudited SSH connection after boot or an APK update.
+        AAPLog.append("No verified enrollment profile; refusing SSH startup")
+        stopSelf()
+        return START_NOT_STICKY
     }
 
     private fun startKeystoreTunnel(profile: DirectBootTunnelProfile.Config): Int {
@@ -180,29 +114,6 @@ class SocksForegroundService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-    }
-
-    private fun parseEndpoint(value: String): Pair<String, Int> {
-        val address = value.trim()
-        require(address.isNotBlank()) { "empty host" }
-        val host: String
-        val port: Int
-        if (address.startsWith("[")) {
-            val end = address.indexOf(']')
-            require(end > 1) { "invalid bracketed IPv6 address" }
-            host = address.substring(1, end)
-            val suffix = address.substring(end + 1)
-            require(suffix.isEmpty() || suffix.startsWith(":")) { "invalid IPv6 port" }
-            port = if (suffix.isEmpty()) 22 else suffix.substring(1).toIntOrNull() ?: -1
-        } else if (address.count { it == ':' } == 1) {
-            host = address.substringBeforeLast(":")
-            port = address.substringAfterLast(":").toIntOrNull() ?: -1
-        } else {
-            host = address // Bare IPv6 or hostname, default SSH port.
-            port = 22
-        }
-        require(host.isNotBlank() && port in 1..65535) { "invalid host or port" }
-        return host to port
     }
 
     private fun monitorTraffic() {
@@ -242,8 +153,6 @@ class SocksForegroundService : Service() {
     override fun onDestroy() {
         running = false
         trafficJob?.cancel()
-        sshTunnelManager?.destroy()
-        sshTunnelManager = null
         keystoreTunnelManager?.destroy()
         keystoreTunnelManager = null
         socksServer?.close()
