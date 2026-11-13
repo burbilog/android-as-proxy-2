@@ -295,7 +295,7 @@ storage. This is a debug instrumentation provisioning tool, not a user UI.
 - [ ] Keystore remains stable; no password, PIN or SSH private key exists in DE storage.
 - [x] Notification **Stop** persisted device-protected `desired_running=false`; after `adb reboot` `ss` showed `No listener` on the VM.
 - [x] Mismatched host key rejected pre-auth on Zebra (`OK (1 test)`; `HOST_KEY_MISMATCH_REJECTED_PREAUTH`, 2026-11-13 00:11:37). Stored pin and identity unchanged by the test.
-- [ ] Missing Keystore identity / auth rejection fail-closed: new non-destructive instrumentation tests added; real Zebra execution pending.
+- [x] **Missing Keystore / SSH authentication fail-closed** verified on physical Zebra TC21 with locally signed integrated P0-A/P0-B APKs (2026-11-13): `missingKeystoreIdentityFailsClosed` — `OK (1 test)` in 0.123 s; `rejectedPublickeyAuthenticationStopsRetryLoop` — `OK (1 test)` in 6.824 s. Tests did not mutate live SSH config or installed key.
 - [x] Wi-Fi off (60 seconds) / on: SSH reconnected by itself, `BOOT_FORWARD_READY` 21:41:25 and subsequent SOCKS5 HTTPS request returned HTTP 200. Baseline reconnect PASS, but exponential backoff caused a long recovery delay.
 - [x] Network-callback backoff wake tested on Zebra: `BOOT_NETWORK_AVAILABLE` 00:16:25.497, `BOOT_RETRY_NETWORK_WAKE` 00:16:25.498, `BOOT_FORWARD_READY` 00:17:01.412 (~36 seconds after network notification). Connection attempts failed until the network path was usable. After restoration, the Debian VM's curl through SOCKS5 returned **HTTP 200** at 00:20 on 2026-11-13; end-to-end recovery PASS.
 - [x] Overnight unattended soak **observed**: 2026-11-12 21:40:14Z through 2026-11-13 11:32:20Z (13h 52m 06s); 163/167 successful HTTP 200 SOCKS5 checks, 4 isolated failures, subsequent samples succeeded without manual recovery. This is recovery/availability observation, **not** continuous uptime or failure-free PASS.
@@ -332,3 +332,14 @@ with the five-minute HTTPS-over-SOCKS5 probe.
 ### Physical cold start and deliberate soak interruption — 2026-11-13
 
 The user confirmed a genuine **power-off / hardware power-on** of Zebra TC21 followed by successful HTTPS-through-SOCKS5 HTTP **200** without manually starting the app. Exact cold-boot recovery time not available. The five-minute monitor was accidentally left running during this deliberate power outage, creating an **expected, induced failure interval** in the post-soak CSV. It must be annotated/excluded from the earlier strictly unattended baseline (167 probes; 4 spontaneous failures), not merged with those spontaneous failures. No second CSV has been supplied, so the interruption size is unmeasured.
+
+### Final P0-A negative tests on locally signed integrated APK — 2026-11-13
+
+After explicit one-time CI-debug → permanent-signing migration of **AAP2 only**, the user generated a new Android Keystore P-256 key via `keystorePublicKeyAndPersistence` (`OK (1 test)`), installed its public key in `aap2-test:/home/aapdev/.ssh/authorized_keys`, and reprovisioned the Direct Boot profile via `~/aap2/x` (`OK (1 test)`).
+
+On Zebra TC21 Android 11, the two **non-destructive** negative tests then passed:
+
+- `missingKeystoreIdentityFailsClosed`: `OK (1 test)`, 0.123 s; absent test alias rejected without automatic key generation.
+- `rejectedPublickeyAuthenticationStopsRetryLoop`: `OK (1 test)`, 6.824 s; pinned real test sshd rejects an unknown login and manager fails fatally instead of retrying.
+
+The user did not supply marker-specific logcat; instrumentation success is evidence of test assertions passing. No claims of an end-to-end SOCKS probe **after** this reprovisioning or of in-place update preservation are made yet. Those are separate P0-B gates.
