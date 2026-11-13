@@ -7,6 +7,14 @@ MUST require a full doctor against actual temporary/permanent accounts.
 """
 
 import argparse
+import contextlib
+import datetime
+import fcntl
+import json
+import secrets
+import socket
+import tempfile
+import time
 import grp
 import os
 import ipaddress
@@ -288,8 +296,11 @@ def doctor(args):
     if shutil.which('fail2ban-client', path='/usr/sbin:/usr/bin:/sbin:/bin') is None:
         checks.warn('fail2ban not found: short-lived PIN susceptible to online guessing')
 
-    # Expiry must be real systemd cleanup, NOT a decorative TTL field.
-    checks.wait('cleanup timer and actual PIN expiry are not implemented in S1-A')
+    # Real systemd timer, not a decorative expiry field.
+    if timer_active():
+        checks.ok('aap2-cleanup.timer is active (TTL enforced by periodic sweep)')
+    else:
+        checks.wait('aap2-cleanup.timer inactive/missing; PIN enrollment forbidden')
 
     print('Doctor summary: {} failures, {} outstanding enrollment gates'.format(
         checks.failed, checks.pending))
@@ -304,6 +315,503 @@ def print_config(_args):
     print('# MANUAL TEMPLATE ONLY: do NOT paste into sshd_config without review.')
     print('# Check existing Include/Match/AllowGroups, then sshd -t, sshd -T -C.')
     print(path.read_text(encoding='utf-8'), end='')
+    return 0
+
+
+
+# S1-B lifecycle. Only operations on verified, registered AAP2 accounts are
+# permitted. The state root and chroots are never writable by those accounts.
+ID_RE = re.compile(r'^[0-9a-f]{12}
+    parser = argparse.ArgumentParser(prog='aap2-setup',
+        description='AAP2 server admin CLI (S1-A: read-only foundation; no enroll yet)')
+    sub = parser.add_subparsers(dest='action', required=True)
+    pc = sub.add_parser('print-config', help='print manual-only SSH Match template')
+    pc.set_defaults(func=print_config)
+    doc = sub.add_parser('doctor', help='read-only preflight and effective OpenSSH checks')
+    doc.add_argument('--enroll-user', help='existing AAP2 temporary test account')
+    doc.add_argument('--proxy-user', help='existing AAP2 permanent test account')
+    doc.add_argument('--client-addr', default='127.0.0.1', help='SSH client source IP (not server)')
+    doc.add_argument('--client-host', default='localhost', help='SSH client hostname (not server)')
+    doc.add_argument('--server-addr', default='127.0.0.1', help='sshd local address')
+    doc.add_argument('--server-port', default='22', help='sshd *guest-local* port')
+    doc.set_defaults(func=doctor)
+    en = sub.add_parser('enroll', help='create 10-minute PIN/SFTP invitation (NO approval yet)')
+    en.add_argument('device_name', help='admin-facing device label')
+    en.add_argument('--server', required=True, help='external SSH host[:port] shown to user')
+    en.add_argument('--client-addr', required=True, help='real expected SSH client source IP')
+    en.add_argument('--client-host', default='unknown', help='client hostname for sshd -T -C')
+    en.add_argument('--server-addr', required=True, help='actual sshd local listen IP')
+    en.add_argument('--server-port', default='22', help='actual sshd LOCAL port')
+    en.set_defaults(func=enroll)
+    cl = sub.add_parser('cleanup', help='expire temporary PIN users (systemd timer)')
+    cl.set_defaults(func=cleanup)
+    li = sub.add_parser('list', help='list AAP2 root-owned invitation metadata')
+    li.set_defaults(func=list_enrollments)
+    args = parser.parse_args()
+    return args.func(args)
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(main())
+    except (SetupError, OSError, ValueError, json.JSONDecodeError) as exc:
+        print('AAP2 ERROR: {}'.format(exc), file=sys.stderr)
+        sys.exit(1)
+)
+PORT_LOW, PORT_HIGH = 11010, 11509
+PIN_TTL = 600
+SAFE_ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C'}
+LOCK = STATE / '.lock'
+
+
+class SetupError(Exception):
+    pass
+
+
+def require_root():
+    if os.geteuid() != 0:
+        raise SetupError('root required (via su or sudo; no SUDO_USER trust)')
+
+
+def verified_dir(path, mode):
+    try:
+        st = path.lstat()
+    except OSError as exc:
+        raise SetupError('{}: {}'.format(path, exc))
+    if not stat.S_ISDIR(st.st_mode) or st.st_uid != 0 or st.st_gid != 0:
+        raise SetupError('{}: root-owned real directory required'.format(path))
+    if stat.S_IMODE(st.st_mode) != mode:
+        raise SetupError('{}: required mode {:04o}'.format(path, mode))
+
+
+def verified_file(path, uid, gid, mode):
+    try:
+        st = path.lstat()
+    except OSError as exc:
+        raise SetupError('{}: {}'.format(path, exc))
+    if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
+        raise SetupError('{}: must be ordinary single-link file'.format(path))
+    if (st.st_uid, st.st_gid, stat.S_IMODE(st.st_mode)) != (uid, gid, mode):
+        raise SetupError('{}: owner/mode mismatch'.format(path))
+
+
+def call_mutation(argv, input_text=None):
+    # Explicit program names/argv, NEVER shell=True, and no secrets in argv.
+    try:
+        result = subprocess.run(argv, input=input_text, text=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                check=False, timeout=20, env=SAFE_ENV)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise SetupError('system command {} failed: {}'.format(argv[0], exc))
+    if result.returncode:
+        # Do not print chpasswd stderr; never risk leaking a supplied PIN.
+        if argv[0].endswith('/chpasswd'):
+            raise SetupError('chpasswd failed; account requires operator inspection')
+        raise SetupError('{} exit {}: {}'.format(argv[0], result.returncode,
+                                                 result.stderr.strip()[:200]))
+
+
+def timer_active():
+    try:
+        result = subprocess.run(['/usr/bin/systemctl', 'is-active', '--quiet',
+                                 'aap2-cleanup.timer'], stdin=subprocess.DEVNULL,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                timeout=6, env=SAFE_ENV)
+        return result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+@contextlib.contextmanager
+def state_lock():
+    require_root()
+    verified_dir(STATE, 0o700)
+    flags = os.O_CREAT | os.O_RDWR | getattr(os, 'O_NOFOLLOW', 0)
+    fd = os.open(str(LOCK), flags, 0o600)
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1 or st.st_uid != 0 or st.st_gid != 0 \
+                or stat.S_IMODE(st.st_mode) != 0o600:
+            raise SetupError('unsafe state lock: {}'.format(LOCK))
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
+def atomic_file(path, data, mode=0o600):
+    """Write in a root-only directory, replace in one step. No fsync journal."""
+    fd, temp = tempfile.mkstemp(prefix='.aap2-new-', dir=str(path.parent))
+    try:
+        os.fchmod(fd, mode)
+        with os.fdopen(fd, 'wb') as output:
+            output.write(data)
+        fd = -1
+        os.replace(temp, str(path))
+    finally:
+        if fd != -1:
+            os.close(fd)
+        if os.path.exists(temp):
+            os.unlink(temp)
+
+
+def atomic_json(path, value, mode=0o600):
+    data = (json.dumps(value, sort_keys=True, separators=(',', ':')) + '\n').encode('utf-8')
+    atomic_file(path, data, mode)
+
+
+def identity_for(enrollment_id, role):
+    return 'aap2e' + enrollment_id if role == GROUP_ENROLL else 'aap2p' + enrollment_id
+
+
+def record_path(enrollment_id):
+    if not ID_RE.fullmatch(enrollment_id):
+        raise SetupError('invalid state ID')
+    return STATE / enrollment_id
+
+
+def read_metadata(enrollment_id):
+    directory = record_path(enrollment_id)
+    verified_dir(directory, 0o700)
+    path = directory / 'metadata.json'
+    verified_file(path, 0, 0, 0o600)
+    with path.open('r', encoding='utf-8') as source:
+        record = json.load(source)
+    if record.get('id') != enrollment_id or record.get('state') not in (
+            'creating', 'active', 'approved', 'expired'):
+        raise SetupError('metadata ID/state mismatch for {}'.format(enrollment_id))
+    users = record.get('users', {})
+    for role in (GROUP_ENROLL, GROUP_PROXY):
+        u = users.get(role, {})
+        name = identity_for(enrollment_id, role)
+        home = '/' if role == GROUP_ENROLL else '/nonexistent'
+        if u.get('name') != name or u.get('home') != home:
+            raise SetupError('metadata account name/home mismatch for {}'.format(enrollment_id))
+        if not isinstance(u.get('uid'), int) or u['uid'] < MIN_UID:
+            raise SetupError('metadata UID unsafe: {}'.format(enrollment_id))
+        if not isinstance(u.get('gid'), int) or u['gid'] == 0:
+            raise SetupError('metadata GID unsafe: {}'.format(enrollment_id))
+        if not isinstance(u.get('verified'), bool):
+            raise SetupError('metadata missing account validation state')
+    if not isinstance(record.get('expires_at'), int):
+        raise SetupError('metadata invalid expiry for {}'.format(enrollment_id))
+    if not isinstance(record.get('remote_port'), int) or not (
+            PORT_LOW <= record['remote_port'] <= PORT_HIGH):
+        raise SetupError('invalid reserved remote port')
+    return record
+
+
+def all_records():
+    verified_dir(STATE, 0o700)
+    for path in sorted(STATE.iterdir()):
+        if path.name == '.lock':
+            continue
+        if not ID_RE.fullmatch(path.name):
+            raise SetupError('unexpected entry under state: {}'.format(path))
+        yield read_metadata(path.name)
+
+
+def unused_uid(reserved):
+    candidate = MIN_UID
+    while candidate <= 60000:
+        if candidate not in reserved:
+            try:
+                pwd.getpwuid(candidate)
+            except KeyError:
+                return candidate
+        candidate += 1
+    raise SetupError('no available UID >= 1001')
+
+
+def unused_port(reserved):
+    for port in range(PORT_LOW, PORT_HIGH + 1):
+        if port in reserved:
+            continue
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.bind(('127.0.0.1', port))
+            return port
+        except OSError:
+            continue
+    raise SetupError('no unreserved/free loopback port')
+
+
+def check_real_identity(record, role):
+    """Must be called immediately before EVERY account modification."""
+    account = record['users'][role]
+    if not account['verified']:
+        raise SetupError('{} UID was never verified; MANUAL repair required'.format(account['name']))
+    if account['uid'] < MIN_UID:
+        raise SetupError('protected UID {}'.format(account['uid']))
+    try:
+        user = pwd.getpwnam(account['name'])
+        group = grp.getgrnam(role)
+    except KeyError:
+        raise SetupError('managed account/group missing: {}'.format(account['name']))
+    expected = (account['uid'], account['gid'], account['home'])
+    actual = (user.pw_uid, user.pw_gid, user.pw_dir)
+    if actual != expected or group.gr_gid != account['gid'] or user.pw_shell not in SHELLS:
+        raise SetupError('NSS identity changed for {}; REFUSING mutation'.format(account['name']))
+    if set(os.getgrouplist(user.pw_name, user.pw_gid)) != {group.gr_gid}:
+        raise SetupError('unexpected group memberships for {}'.format(account['name']))
+    return user
+
+
+def require_preflight():
+    require_root()
+    if sys.version_info < (3, 9):
+        raise SetupError('requires Python 3.9+')
+    for role in (GROUP_ENROLL, GROUP_PROXY):
+        try:
+            group = grp.getgrnam(role)
+        except KeyError:
+            raise SetupError('missing group {}'.format(role))
+        if group.gr_gid == 0:
+            raise SetupError('AAP2 group {} unexpectedly has GID 0'.format(role))
+    for path, mode in ((BASE, 0o755), (STATE, 0o700), (ENROLL, 0o755),
+                       (AUTHORIZED, 0o755)):
+        verified_dir(path, mode)
+    if not timer_active():
+        raise SetupError('aap2-cleanup.timer is not active; NO PIN may be activated')
+    checks = Checks()
+    sshd = sshd_binary(checks)
+    if sshd is None or command_output(checks, [sshd, '-t']) is None:
+        raise SetupError('sshd -t failed (on-disk config); NO user created')
+    return sshd
+
+
+def verify_enrollment_policy(record, sshd, args):
+    checks = Checks()
+    for role in (GROUP_ENROLL, GROUP_PROXY):
+        name = record['users'][role]['name']
+        check_real_identity(record, role)
+        actual = read_effective_config(checks, sshd, name, args.client_addr,
+                                       args.client_host, args.server_addr,
+                                       args.server_port)
+        if actual is not None:
+            check_policy(checks, actual, role)
+    if checks.failed:
+        raise SetupError('{} effective SSH policy errors; PIN NOT activated'.format(checks.failed))
+
+
+def new_root_dir(path, mode):
+    path.mkdir(mode=mode)
+    os.chmod(str(path), mode)
+    verified_dir(path, mode)
+
+
+def new_file(path, data, mode, uid=0, gid=0):
+    # CREATE EXCLUSIVE; no preexisting user-controlled names may be adopted.
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                 getattr(os, 'O_NOFOLLOW', 0), mode)
+    with os.fdopen(fd, 'wb') as output:
+        os.fchmod(output.fileno(), mode)
+        os.fchown(output.fileno(), uid, gid)
+        output.write(data)
+    verified_file(path, uid, gid, mode)
+
+
+def make_chroot(record):
+    name = record['users'][GROUP_ENROLL]['name']
+    u = record['users'][GROUP_ENROLL]
+    path = ENROLL / name
+    new_root_dir(path, 0o755)
+    new_root_dir(path / 'inbox', 0o755)
+    config = {
+        'schema': 1, 'username': record['users'][GROUP_PROXY]['name'],
+        'remote_port': record['remote_port'],
+    }
+    status = {
+        'schema': 1, 'status': 'pending', 'expires_at': record['expires_at'],
+    }
+    new_file(path / 'config.json',
+             (json.dumps(config, separators=(',', ':')) + '\n').encode(), 0o644)
+    new_file(path / 'status.json',
+             (json.dumps(status, separators=(',', ':')) + '\n').encode(), 0o644)
+    new_file(path / 'inbox' / 'public_key', b'', 0o600, u['uid'], u['gid'])
+
+
+def enroll(args):
+    require_root()
+    name = args.device_name
+    if not (1 <= len(name) <= 64) or any(ord(c) < 32 or ord(c) > 126 for c in name):
+        raise SetupError('device name must be 1-64 printable ASCII characters')
+    if not re.fullmatch(r'[A-Za-z0-9.:\[\]-]{1,255}', args.server):
+        raise SetupError('invalid server endpoint (use hostname/IP[:port])')
+    # Verify sshd -C context BEFORE any account creation; CLI does not
+    # accept arbitrary SSH condition fragments such as comma-injected addr.
+    try:
+        ipaddress.ip_address(args.client_addr)
+        ipaddress.ip_address(args.server_addr)
+    except ValueError:
+        raise SetupError('client/server SSH context addresses must be literal IPs')
+    if not re.fullmatch(r'[A-Za-z0-9.-]{1,253}', args.client_host):
+        raise SetupError('invalid SSH client hostname')
+    try:
+        if not (1 <= int(args.server_port) <= 65535):
+            raise ValueError
+    except ValueError:
+        raise SetupError('invalid server-local SSH port')
+
+    sshd = require_preflight()
+    # Hold flock only during account/state setup; NOT while waiting for
+    # administrator approval (S2). No PIN exists until the final step.
+    with state_lock():
+        existing = list(all_records())
+        reserved_uid = set()
+        reserved_ports = set()
+        for previous in existing:
+            reserved_ports.add(previous['remote_port'])
+            for user in previous['users'].values():
+                reserved_uid.add(user['uid'])
+        enrollment_id = secrets.token_hex(6)
+        while (STATE / enrollment_id).exists():
+            enrollment_id = secrets.token_hex(6)
+        usernames = {role: identity_for(enrollment_id, role)
+                     for role in (GROUP_ENROLL, GROUP_PROXY)}
+        for username in usernames.values():
+            try:
+                pwd.getpwnam(username)
+            except KeyError:
+                continue
+            raise SetupError('generated username already exists: {}'.format(username))
+
+        g_enroll = grp.getgrnam(GROUP_ENROLL).gr_gid
+        g_proxy = grp.getgrnam(GROUP_PROXY).gr_gid
+        euid = unused_uid(reserved_uid)
+        puid = unused_uid(reserved_uid | {euid})
+        port = unused_port(reserved_ports)
+        expiry = int(time.time()) + PIN_TTL
+        record = {
+            'schema': 1, 'id': enrollment_id, 'device_name': name,
+            'state': 'creating', 'created_at': int(time.time()),
+            'expires_at': expiry, 'remote_port': port,
+            'users': {
+                GROUP_ENROLL: {'name': usernames[GROUP_ENROLL], 'uid': euid,
+                               'gid': g_enroll, 'home': '/', 'verified': False},
+                GROUP_PROXY: {'name': usernames[GROUP_PROXY], 'uid': puid,
+                              'gid': g_proxy, 'home': '/nonexistent', 'verified': False},
+            },
+        }
+        state_dir = record_path(enrollment_id)
+        new_root_dir(state_dir, 0o700)
+        atomic_json(state_dir / 'metadata.json', record)
+        for role in (GROUP_ENROLL, GROUP_PROXY):
+            account = record['users'][role]
+            password_marker = '!' if role == GROUP_ENROLL else 'NP'
+            argv = ['/usr/sbin/useradd', '-M', '-u', str(account['uid']),
+                    '-g', role, '-d', account['home'], '-s',
+                    '/usr/sbin/nologin', '-p', password_marker, account['name']]
+            call_mutation(argv)
+            # Independent NSS confirmation, stored before next useradd.
+            user = pwd.getpwnam(account['name'])
+            if (user.pw_uid, user.pw_gid, user.pw_dir, user.pw_shell) != (
+                    account['uid'], account['gid'], account['home'],
+                    '/usr/sbin/nologin'):
+                raise SetupError('new user identity mismatch; MANUAL repair required')
+            if set(os.getgrouplist(account['name'], account['gid'])) != {account['gid']}:
+                raise SetupError('new user has unexpected groups; MANUAL repair required')
+            account['verified'] = True
+            atomic_json(state_dir / 'metadata.json', record)
+
+        make_chroot(record)
+        proxy = record['users'][GROUP_PROXY]
+        new_file(AUTHORIZED / proxy['name'], b'', 0o644)
+        verify_enrollment_policy(record, sshd, args)
+
+        # Must remain active immediately before exposing a bearer PIN.
+        if not timer_active() or int(time.time()) >= expiry:
+            raise SetupError('cleanup timer stopped or invitation already expired; NO PIN activated')
+        record['state'] = 'active'
+        atomic_json(state_dir / 'metadata.json', record)
+        pin = '{:010d}'.format(secrets.randbelow(10000000000))
+        check_real_identity(record, GROUP_ENROLL)
+        call_mutation(['/usr/sbin/chpasswd'],
+                      input_text='{}:{}\n'.format(usernames[GROUP_ENROLL], pin))
+
+    print('Enrollment created. The PIN is valid for up to 10 minutes.')
+    print('Server: {}'.format(args.server))
+    print('Setup username: {}'.format(usernames[GROUP_ENROLL]))
+    print('One-time PIN: {}-{}-{}'.format(pin[:4], pin[4:8], pin[8:]))
+    print('Enrollment ID: {}'.format(enrollment_id))
+    for path in sorted(Path('/etc/ssh').glob('ssh_host_*_key.pub')):
+        if path.is_file() and not path.is_symlink():
+            output = command_output(Checks(),
+                                    ['/usr/bin/ssh-keygen', '-lf', str(path), '-E', 'sha256'])
+            if output:
+                print('Host key fingerprint (match ALGORITHM on phone): {}'.format(output.strip()))
+    print('PUBLIC key upload/Approve not yet implemented in S1-B; '
+          'timer will expire this temporary PIN.')
+    return 0
+
+
+def remove_chroot(record):
+    """Unlink ONLY exact previously-created files. No recursive userdel -r."""
+    username = record['users'][GROUP_ENROLL]['name']
+    user = record['users'][GROUP_ENROLL]
+    root = ENROLL / username
+    verified_dir(root, 0o755)
+    verified_dir(root / 'inbox', 0o755)
+    for path, uid, gid, mode in (
+            (root / 'inbox' / 'public_key', user['uid'], user['gid'], 0o600),
+            (root / 'config.json', 0, 0, 0o644),
+            (root / 'status.json', 0, 0, 0o644)):
+        verified_file(path, uid, gid, mode)
+    (root / 'inbox' / 'public_key').unlink()
+    (root / 'inbox').rmdir()
+    (root / 'config.json').unlink()
+    (root / 'status.json').unlink()
+    root.rmdir()
+
+
+def cleanup(_args):
+    require_root()
+    errors = 0
+    with state_lock():
+        for record in list(all_records()):
+            if record['state'] == 'expired' or record['expires_at'] > int(time.time()):
+                continue
+            # Never touch a permanent user/key from the timer (even if
+            # approval status publication was interrupted).
+            name = record['users'][GROUP_ENROLL]['name']
+            try:
+                check_real_identity(record, GROUP_ENROLL)
+                # Password removal FIRST, before sending signals/cleanup.
+                call_mutation(['/usr/sbin/usermod', '-L', name])
+                check_real_identity(record, GROUP_ENROLL)
+                try:
+                    result = subprocess.run(['/usr/bin/pkill', '-TERM', '-u',
+                                             str(record['users'][GROUP_ENROLL]['uid'])],
+                                            stdin=subprocess.DEVNULL,
+                                            stdout=subprocess.DEVNULL,
+                                            stderr=subprocess.DEVNULL, timeout=8,
+                                            env=SAFE_ENV)
+                    if result.returncode not in (0, 1):
+                        raise SetupError('pkill unexpected return {}'.format(result.returncode))
+                except (OSError, subprocess.TimeoutExpired) as exc:
+                    raise SetupError('failed to terminate temporary sessions: {}'.format(exc))
+                # Avoid reusing a now-stale UID while deleting the account.
+                check_real_identity(record, GROUP_ENROLL)
+                call_mutation(['/usr/sbin/userdel', name])
+                remove_chroot(record)
+                record['state'] = 'expired'
+                atomic_json(record_path(record['id']) / 'metadata.json', record)
+                print('Expired temporary enrollment: {}'.format(record['id']))
+            except (SetupError, OSError, ValueError) as exc:
+                errors += 1
+                print('FAIL CLOSED: {}: {}'.format(record['id'], exc), file=sys.stderr)
+    return 1 if errors else 0
+
+
+def list_enrollments(_args):
+    require_root()
+    with state_lock():
+        for record in all_records():
+            print('{}  {}  {}  port={}  expires={}'.format(
+                record['id'], record['state'], record['device_name'],
+                record['remote_port'],
+                datetime.datetime.fromtimestamp(record['expires_at'],
+                                                datetime.timezone.utc).isoformat()))
     return 0
 
 
