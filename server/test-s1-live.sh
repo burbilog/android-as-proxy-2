@@ -145,6 +145,29 @@ PY
   cmp "$TMP/original-authorized" "/etc/ssh/aap2-authorized-keys/$P"
   echo 'S2 PASS: subsequent SFTP upload cannot replace approved snapshot'
 
+  if [ "${AAP2_S2_DEBIAN_GATES:-}" = YES ]; then
+    # Crash after key install but before status/metadata publication.
+    # Later upload must not supplant the original immutable candidate.
+    python3 - "$ID" "$E" <<'PY'
+import json
+from pathlib import Path
+import sys
+ident, username = sys.argv[1:]
+metadata = Path('/var/lib/aap2/state') / ident / 'metadata.json'
+data = json.loads(metadata.read_text())
+data['state'] = 'active'
+metadata.write_text(json.dumps(data) + '\n')
+status = Path('/var/lib/aap2/enroll') / username / 'status.json'
+status.write_text('{"schema":1,"status":"pending"}\n')
+PY
+    printf 'y\n' | aap2-setup approve "$ID" > "$TMP/crash-reapprove.out"
+    grep -q 'APPROVED:' "$TMP/crash-reapprove.out"
+    cmp "$TMP/original-authorized" "/etc/ssh/aap2-authorized-keys/$P"
+    grep -q '"state":"approved"' "/var/lib/aap2/state/$ID/metadata.json"
+    grep -q '"status":"approved"' "/var/lib/aap2/enroll/$E/status.json"
+    echo 'S2 Debian 13 PASS: interrupted approval replays the original key only'
+  fi
+
   mkdir -p "$TMP/web"
   printf 'S2 forwarding works\n' > "$TMP/web/index.html"
   python3 -m http.server 18887 --bind 127.0.0.1 --directory "$TMP/web" >/dev/null 2>&1 &
@@ -160,6 +183,48 @@ PY
   [ "$(curl -fsS --max-time 6 "http://127.0.0.1:$PORT/")" = 'S2 forwarding works' ] ||
     { echo 'S2 ERROR: authorized -R did not carry TCP' >&2; exit 1; }
   echo 'S2 PASS: approved restricted permanent key opens actual -R and carries TCP'
+
+  if [ "${AAP2_S2_DEBIAN_GATES:-}" = YES ]; then
+    # UID=0 metadata forgery must never let revoke touch root.
+    # A live NSS home mismatch must also fail even when name/groups match.
+    cp -p "/var/lib/aap2/state/$ID/metadata.json" "$TMP/pristine-metadata"
+    python3 - "$ID" <<'PY'
+import json
+from pathlib import Path
+import sys
+p = Path('/var/lib/aap2/state') / sys.argv[1] / 'metadata.json'
+data = json.loads(p.read_text())
+data['users']['aap2-proxy']['uid'] = 0
+p.write_text(json.dumps(data) + '\n')
+PY
+    if printf 'REVOKE\n' | aap2-setup revoke "$ID" > "$TMP/uid-tamper.out" 2>&1; then
+      echo 'S2 ERROR: UID=0 metadata forgery accepted by revoke' >&2
+      exit 1
+    fi
+    getent passwd root >/dev/null
+    cmp "$TMP/original-authorized" "/etc/ssh/aap2-authorized-keys/$P"
+    cp -p "$TMP/pristine-metadata" "/var/lib/aap2/state/$ID/metadata.json"
+
+    usermod -d /tmp/aap2-foreign-home "$P"
+    if printf 'REVOKE\n' | aap2-setup revoke "$ID" > "$TMP/nss-tamper.out" 2>&1; then
+      echo 'S2 ERROR: mismatched NSS home accepted by revoke' >&2
+      exit 1
+    fi
+    usermod -d /nonexistent "$P"
+    cmp "$TMP/original-authorized" "/etc/ssh/aap2-authorized-keys/$P"
+    [ "$(curl -fsS --max-time 6 "http://127.0.0.1:$PORT/")" = 'S2 forwarding works' ] ||
+      { echo 'S2 ERROR: refused tamper disconnected approved device' >&2; exit 1; }
+    echo 'S2 Debian 13 PASS: UID=0 and NSS-home tampering refused without changing -R'
+
+    printf 'not-json\n' > "/var/lib/aap2/state/$ID/metadata.json"
+    if aap2-setup cleanup > "$TMP/corrupt.out" 2>&1; then
+      echo 'S2 ERROR: corrupt metadata silently accepted by cleanup' >&2
+      exit 1
+    fi
+    cmp "$TMP/original-authorized" "/etc/ssh/aap2-authorized-keys/$P"
+    cp -p "$TMP/pristine-metadata" "/var/lib/aap2/state/$ID/metadata.json"
+    echo 'S2 Debian 13 PASS: corrupt state fails closed; approved key survives'
+  fi
 
   # Reject other bind addresses/ports and all session/direct-tcpip access.
   if ssh -F /dev/null -p 22224 -T -fN -i "$TMP/device" \
@@ -192,7 +257,12 @@ data = json.loads(p.read_text())
 data['expires_at'] = 0
 p.write_text(json.dumps(data) + '\n')
 PY
-  aap2-setup cleanup
+  if [ "${AAP2_S2_DEBIAN_GATES:-}" = YES ]; then
+    systemctl start aap2-cleanup.service
+    systemctl is-active --quiet aap2-cleanup.timer
+  else
+    aap2-setup cleanup
+  fi
   ! getent passwd "$E" >/dev/null
   grep -q '"state":"approved"' "/var/lib/aap2/state/$ID/metadata.json"
   [ "$(curl -fsS --max-time 6 "http://127.0.0.1:$PORT/")" = 'S2 forwarding works' ] ||
