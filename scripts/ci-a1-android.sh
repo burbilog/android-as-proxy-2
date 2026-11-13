@@ -48,9 +48,8 @@ FINGERPRINT=$(sudo ssh-keygen -lf /etc/ssh/ssh_host_ecdsa_key.pub -E sha256 | aw
 unset DISPLAY_PIN
 
 # No test PIN in adb instrumentation command-line arguments or CI logs.
-adb shell run-as "$PKG" mkdir -p files
 printf '%s\n%s\n%s\n' "$SETUP_USER" "$PIN" "$FINGERPRINT" |
-  adb shell run-as "$PKG" sh -c 'cat > files/a1-ci-invitation && chmod 600 files/a1-ci-invitation'
+  adb shell -T "run-as $PKG sh -c 'mkdir -p files && umask 077 && cat > files/a1-ci-invitation && chmod 600 files/a1-ci-invitation'"
 unset PIN
 
 # Ephemeral administrator approves a complete uploaded PUBLIC key.
