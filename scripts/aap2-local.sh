@@ -61,7 +61,7 @@ build() {
             echo "Unexpected git remote at $SRC; refusing to overwrite anything" >&2
             exit 1
         }
-        git -C "$SRC" fetch --depth 1 origin "$BRANCH"
+        git -C "$SRC" fetch origin "$BRANCH"
         git -C "$SRC" merge --ff-only FETCH_HEAD
     fi
 
