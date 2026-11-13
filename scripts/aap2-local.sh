@@ -50,7 +50,18 @@ build() {
     # Gradle needs exported ANDROID_HOME even if the user configured a shell-only variable.
     export ANDROID_HOME="$SDK"
     export ANDROID_SDK_ROOT="$SDK"
-    export AAP2_VERSION_CODE="${AAP2_VERSION_CODE:-20002}"
+    # Android accepts in-place debug updates with the same versionCode.
+    # Reuse device's installed code so a plain "deploy" cannot downgrade it.
+    # Explicit AAP2_VERSION_CODE still takes precedence for release-like tests.
+    if [ -z "${AAP2_VERSION_CODE:-}" ]; then
+        installed_code=$(adb_run shell dumpsys package net.isaeff.android.asproxy2 2>/dev/null |
+            sed -n 's/.*versionCode=\([0-9][0-9]*\).*/\1/p' | head -n 1) || installed_code=
+        case "$installed_code" in
+            ''|*[!0-9]*) AAP2_VERSION_CODE=20003 ;;
+            *) AAP2_VERSION_CODE="$installed_code" ;;
+        esac
+    fi
+    export AAP2_VERSION_CODE
     export AAP2_VERSION_NAME="${AAP2_VERSION_NAME:-2.0.0-p0-local}"
 
     if [ ! -d "$SRC/.git" ]; then
