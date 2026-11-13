@@ -136,6 +136,15 @@ PY
   fi
   echo 'S2 PASS: approved snapshot published to restricted key and status'
 
+  # Later PIN/SFTP uploads cannot substitute the key already approved.
+  cp "/etc/ssh/aap2-authorized-keys/$P" "$TMP/original-authorized"
+  ssh-keygen -q -t ecdsa -b 256 -N '' -f "$TMP/other"
+  cp "$TMP/other.pub" "/var/lib/aap2/enroll/$E/inbox/public_key"
+  aap2-setup approve "$ID" > "$TMP/reapprove.out"
+  grep -q 'Already approved:' "$TMP/reapprove.out"
+  cmp "$TMP/original-authorized" "/etc/ssh/aap2-authorized-keys/$P"
+  echo 'S2 PASS: subsequent SFTP upload cannot replace approved snapshot'
+
   mkdir -p "$TMP/web"
   printf 'S2 forwarding works\n' > "$TMP/web/index.html"
   python3 -m http.server 18887 --bind 127.0.0.1 --directory "$TMP/web" >/dev/null 2>&1 &
@@ -195,12 +204,19 @@ PY
     echo 'S2 ERROR: temporary chroot survived expiry' >&2
     exit 1
   fi
-  ssh-keygen -q -t ecdsa -b 256 -N '' -f "$TMP/other"
-  if timeout 6 ssh -F /dev/null -p 22224 -T -fN -i "$TMP/other" \
+  # A wrong key must be refused at authentication, not merely because
+  # it asked for an unauthorized listener (a misleading false-positive).
+  if timeout 4 ssh -F /dev/null -p 22224 -T -N -i "$TMP/other" \
     -o UserKnownHostsFile="$TMP/known_hosts" -o StrictHostKeyChecking=yes \
-    -o BatchMode=yes -o IdentitiesOnly=yes -o ExitOnForwardFailure=yes \
-    -R "127.0.0.1:11997:127.0.0.1:18887" "$P@127.0.0.1" >/dev/null 2>&1; then
+    -o BatchMode=yes -o IdentitiesOnly=yes -o ExitOnForwardFailure=no \
+    -R "127.0.0.1:$PORT:127.0.0.1:18887" "$P@127.0.0.1" >/dev/null 2>&1; then
     echo 'S2 ERROR: unknown public key allowed' >&2; exit 1
+  else
+    rc=$?
+    [ "$rc" -eq 255 ] || {
+      echo "S2 ERROR: unknown-key auth unexpectedly stayed connected (rc=$rc)" >&2
+      exit 1
+    }
   fi
 
   # Explicit confirmation and active-session termination.
