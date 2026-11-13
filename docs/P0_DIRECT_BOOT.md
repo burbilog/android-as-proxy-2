@@ -298,8 +298,32 @@ storage. This is a debug instrumentation provisioning tool, not a user UI.
 - [ ] Missing Keystore identity / auth rejection fail-closed: new non-destructive instrumentation tests added; real Zebra execution pending.
 - [x] Wi-Fi off (60 seconds) / on: SSH reconnected by itself, `BOOT_FORWARD_READY` 21:41:25 and subsequent SOCKS5 HTTPS request returned HTTP 200. Baseline reconnect PASS, but exponential backoff caused a long recovery delay.
 - [x] Network-callback backoff wake tested on Zebra: `BOOT_NETWORK_AVAILABLE` 00:16:25.497, `BOOT_RETRY_NETWORK_WAKE` 00:16:25.498, `BOOT_FORWARD_READY` 00:17:01.412 (~36 seconds after network notification). Connection attempts failed until the network path was usable. After restoration, the Debian VM's curl through SOCKS5 returned **HTTP 200** at 00:20 on 2026-11-13; end-to-end recovery PASS.
-- [ ] Observe full **physical power cycle** and extended unattended idle separately; independent 5-minute SOCKS monitor script is available. An `adb reboot` or Wi-Fi toggle does not prove these cases.
+- [x] Overnight unattended soak **observed**: 2026-11-12 21:40:14Z through 2026-11-13 11:32:20Z (13h 52m 06s); 163/167 successful HTTP 200 SOCKS5 checks, 4 isolated failures, subsequent samples succeeded without manual recovery. This is recovery/availability observation, **not** continuous uptime or failure-free PASS.
+- [ ] Full **physical power-off/on** and post-soak Android foreground-service state still require separate confirmation; `adb reboot` does not prove a physical power cycle.
 
 The boot and Stop tests were performed on Zebra TC21 on 2026-11-12 (Android 11); observed: `DIRECT_BOOT_KEYSTORE_OK` 20:29:18.543, `BOOT_RECEIVER_START` 20:29:18.570, `BOOT_TUNNEL_STARTED` 20:29:18.782, `BOOT_FORWARD_READY` 20:29:19.291. Remaining unchecked checklist items are unverified. Note: stopping the application from Android system settings is not the same as AAP2 notification Stop and does not call `ACTION_STOP`.
 
-On 2026-11-13 after a debug-APK reinstall and Keystore re-provisioning, the host-key mismatch test passed. The subsequent reboot initially gave SOCKS curl `Connection refused` while boot/network/SSH were still coming up, then returned HTTP `200` automatically. This confirms delayed startup eventually succeeded, but does **not** verify the new network-callback reconnect speedup under Wi-Fi loss.
+On 2026-11-13 after a debug-APK reinstall and Keystore re-provisioning, the host-key mismatch test passed. The subsequent reboot initially gave SOCKS curl `Connection refused` while boot/network/SSH were still coming up, then returned HTTP `200` automatically. This confirms delayed startup eventually succeeded. The callback wake was subsequently verified separately under Wi-Fi loss (see acceptance checklist).
+
+### Unattended soak result — 2026-11-13 (real Zebra TC21)
+
+Source: user-supplied `aap2-soak.csv` collected on `marduk` from `aap2-test`
+with the five-minute HTTPS-over-SOCKS5 probe.
+
+- **Observation window:** 2026-11-12 21:40:14Z → 2026-11-13 11:32:20Z
+  (13 h 52 min 06 s), **167 probes**.
+- **HTTP 200 / exit 0:** 163 probes (97.60%). Median successful latency
+  0.285 s, mean 0.289 s, maximum 0.737 s. No missed monitor cycle
+  beyond one probe's own execution duration (300–325 s between starts).
+- **Four isolated failures:** 2026-11-13 **01:25:31Z** exit 28/HTTP 000
+  (25.003 s curl timeout); **05:56:12Z**, **07:41:33Z**, **08:36:52Z**
+  exit 97/HTTP 000 (15.125–15.205 s SOCKS proxy receive failures).
+  Each failure was bracketed by successful HTTP 200 probes on both sides.
+- **Interpretation:** the data plane remained predominantly functional
+  unattended and recovered without manual intervention after all sampled
+  faults. Not proof of 100% uptime, service health at every instant, or
+  Android process longevity; five-minute polling cannot tell exact outage
+  duration or root cause. The 15 s SOCKS failures merit further targeted
+  diagnosis if they recur, **without auth-log parsing**.
+- This does **not** cover genuine physical power-off/on, nor does it prove
+  that a subsequently installed APK is equivalent to this tested build.
