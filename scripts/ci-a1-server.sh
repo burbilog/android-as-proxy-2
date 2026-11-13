@@ -56,8 +56,13 @@ Subsystem sftp internal-sftp
 EOF
     cat "$SERVER/sshd-aap2-match.conf" >> /etc/ssh/sshd_config
     /usr/sbin/sshd -t
+    # Ubuntu's socket-activated ssh can keep its original port 22 until
+    # the socket is stopped, regardless of this disposable sshd_config.
+    systemctl disable --now ssh.socket >/dev/null 2>&1 || true
     systemctl restart ssh
     systemctl is-active --quiet ssh
+    ssh-keyscan -T 3 -p 22224 127.0.0.1 > "$STATE/known_hosts" 2>/dev/null
+    test -s "$STATE/known_hosts"
     printf 'A1 ephemeral OpenSSH S2 server started at 127.0.0.1:22224\n'
     ;;
   invite)
