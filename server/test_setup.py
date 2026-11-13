@@ -1,5 +1,8 @@
 """Read-only S1-A checks; no root privileges, useradd, chpasswd or sshd needed."""
 import importlib.machinery
+import contextlib
+import io
+import json
 import importlib.util
 from pathlib import Path
 import tempfile
@@ -107,6 +110,198 @@ class CheckTests(unittest.TestCase):
         with mock.patch.object(aap.pwd, 'getpwnam', side_effect=AssertionError('must not reach NSS')):
             self.assertIsNone(aap.managed_account(checks, '--root', aap.GROUP_PROXY))
             self.assertEqual(checks.failed, 1)
+
+
+class LifecycleTests(unittest.TestCase):
+    def test_pin_always_ten_digits_including_leading_zeros(self):
+        with mock.patch.object(aap.secrets, 'randbelow', return_value=12):
+            self.assertEqual(aap.generate_pin(), '0000000012')
+        with mock.patch.object(aap.secrets, 'randbelow', return_value=9999999999):
+            self.assertEqual(aap.generate_pin(), '9999999999')
+
+    def test_doctor_preflight_refuses_missing_cleanup_timer(self):
+        with mock.patch.object(aap, 'timer_active', return_value=False), \
+             mock.patch.object(aap, 'require_root'), \
+             mock.patch.object(aap, 'verified_dir'), \
+             mock.patch.object(aap.grp, 'getgrnam',
+                               return_value=types.SimpleNamespace(gr_gid=111)):
+            with self.assertRaisesRegex(aap.SetupError, 'cleanup.timer'):
+                aap.require_preflight()
+
+    def test_mismatched_home_refuses_account_mutation(self):
+        role = aap.GROUP_ENROLL
+        account = {'name': 'aap2e123456abcdef', 'uid': 1001, 'gid': 222,
+                   'home': '/', 'verified': True}
+        record = {'users': {role: account}}
+        user = types.SimpleNamespace(pw_uid=1001, pw_gid=222,
+                                     pw_dir='/home/someone', pw_shell='/usr/sbin/nologin',
+                                     pw_name=account['name'])
+        with mock.patch.object(aap.pwd, 'getpwnam', return_value=user), \
+             mock.patch.object(aap.grp, 'getgrnam',
+                               return_value=types.SimpleNamespace(gr_gid=222)):
+            with self.assertRaisesRegex(aap.SetupError, 'NSS identity changed'):
+                aap.check_real_identity(record, role)
+
+    def test_unverified_uid_never_allows_modification(self):
+        role = aap.GROUP_ENROLL
+        record = {'users': {role: {'name': 'aap2e123456abcdef',
+                  'uid': 1001, 'gid': 222, 'home': '/', 'verified': False}}}
+        with mock.patch.object(aap.pwd, 'getpwnam',
+                               side_effect=AssertionError('NSS MUST NOT be consulted')):
+            with self.assertRaisesRegex(aap.SetupError, 'MANUAL repair'):
+                aap.check_real_identity(record, role)
+
+    def make_enroll_fixture(self, directory, *, crash=None):
+        """Mock only external root-system mutations; use real JSON writes."""
+        state = Path(directory, 'state')
+        state.mkdir()
+        created = {}
+        events = []
+        enrollment_id = '123456abcdef'
+
+        def getpwnam(name):
+            if name not in created:
+                raise KeyError(name)
+            return created[name]
+
+        def getgroup(role):
+            return types.SimpleNamespace(gr_gid=222 if role == aap.GROUP_ENROLL else 223)
+
+        def mutation(argv, input_text=None):
+            if argv[0].endswith('/useradd'):
+                with (state / enrollment_id / 'metadata.json').open() as source:
+                    current = json.load(source)
+                events.append(('useradd', argv[-1], current['state'],
+                               current['users'][aap.GROUP_ENROLL]['verified'],
+                               current['users'][aap.GROUP_PROXY]['verified']))
+                if crash == argv[-1]:
+                    raise aap.SetupError('simulated crash after reservation, before useradd')
+                role = argv[argv.index('-g') + 1]
+                uid = int(argv[argv.index('-u') + 1])
+                gid = getgroup(role).gr_gid
+                created[argv[-1]] = types.SimpleNamespace(
+                    pw_uid=uid, pw_gid=gid, pw_dir=argv[argv.index('-d') + 1],
+                    pw_shell='/usr/sbin/nologin', pw_name=argv[-1])
+            elif argv[0].endswith('/chpasswd'):
+                with (state / enrollment_id / 'metadata.json').open() as source:
+                    current = json.load(source)
+                events.append(('chpasswd', current['state'],
+                               current['users'][aap.GROUP_ENROLL]['verified'],
+                               current['users'][aap.GROUP_PROXY]['verified'],
+                               input_text.endswith(':0000000012\n')))
+                if crash == 'chpasswd':
+                    raise aap.SetupError('simulated crash during activation')
+            else:
+                self.fail('unexpected system mutation: {}'.format(argv))
+
+        def directory_create(path, mode):
+            path.mkdir(mode=mode)
+
+        args = types.SimpleNamespace(device_name='TC21', server='example.net:22222',
+             client_addr='192.0.2.17', server_addr='192.0.2.20',
+             server_port='22', client_host='test-client.invalid')
+        stack = contextlib.ExitStack()
+        stack.enter_context(mock.patch.object(aap, 'STATE', state))
+        stack.enter_context(mock.patch.object(aap, 'require_preflight', return_value='/usr/sbin/sshd'))
+        stack.enter_context(mock.patch.object(aap, 'require_root'))
+        stack.enter_context(mock.patch.object(aap, 'state_lock', side_effect=contextlib.nullcontext))
+        stack.enter_context(mock.patch.object(aap, 'all_records', return_value=iter(())))
+        stack.enter_context(mock.patch.object(aap.pwd, 'getpwnam', side_effect=getpwnam))
+        stack.enter_context(mock.patch.object(aap.grp, 'getgrnam', side_effect=getgroup))
+        stack.enter_context(mock.patch.object(aap.os, 'getgrouplist',
+                                              side_effect=lambda name, gid: [gid]))
+        stack.enter_context(mock.patch.object(aap.secrets, 'token_hex', return_value=enrollment_id))
+        stack.enter_context(mock.patch.object(aap.secrets, 'randbelow', return_value=12))
+        stack.enter_context(mock.patch.object(aap, 'unused_uid', side_effect=[1001, 1002]))
+        stack.enter_context(mock.patch.object(aap, 'unused_port', return_value=11010))
+        stack.enter_context(mock.patch.object(aap, 'new_root_dir', side_effect=directory_create))
+        stack.enter_context(mock.patch.object(aap, 'make_chroot'))
+        stack.enter_context(mock.patch.object(aap, 'new_file'))
+        stack.enter_context(mock.patch.object(aap, 'verify_enrollment_policy'))
+        stack.enter_context(mock.patch.object(aap, 'check_real_identity'))
+        stack.enter_context(mock.patch.object(aap, 'timer_active', return_value=True))
+        stack.enter_context(mock.patch.object(aap, 'call_mutation', side_effect=mutation))
+        stack.enter_context(mock.patch.object(Path, 'glob', return_value=[]))
+        return stack, state / enrollment_id / 'metadata.json', args, events
+
+    def test_enrollment_reservation_precedes_account_creation_pin_last(self):
+        with tempfile.TemporaryDirectory() as d:
+            stack, meta_path, args, events = self.make_enroll_fixture(d)
+            with stack, contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(aap.enroll(args), 0)
+            self.assertEqual(events[0][0], 'useradd')
+            self.assertEqual(events[0][2], 'creating')
+            self.assertEqual(events[0][3:], (False, False))
+            self.assertEqual(events[1][0], 'useradd')
+            self.assertEqual(events[1][3:], (True, False))
+            self.assertEqual(events[2], ('chpasswd', 'active', True, True, True))
+            state = json.loads(meta_path.read_text())
+            self.assertEqual(state['state'], 'active')
+            self.assertNotIn('0000000012', meta_path.read_text())
+            self.assertIn('0000-0000-12', out.getvalue())
+
+    def test_crash_before_useradd_never_activates_pin(self):
+        with tempfile.TemporaryDirectory() as d:
+            stack, meta_path, args, events = self.make_enroll_fixture(
+                d, crash='aap2e123456abcdef')
+            with stack, self.assertRaises(aap.SetupError):
+                aap.enroll(args)
+            state = json.loads(meta_path.read_text())
+            self.assertEqual(state['state'], 'creating')
+            self.assertFalse(state['users'][aap.GROUP_ENROLL]['verified'])
+            self.assertEqual(len(events), 1)
+            self.assertNotIn('chpasswd', str(events))
+
+    def test_crash_during_chpasswd_keeps_expiring_active_metadata(self):
+        with tempfile.TemporaryDirectory() as d:
+            stack, meta_path, args, events = self.make_enroll_fixture(d, crash='chpasswd')
+            with stack, self.assertRaises(aap.SetupError):
+                aap.enroll(args)
+            state = json.loads(meta_path.read_text())
+            self.assertEqual(state['state'], 'active')
+            self.assertGreater(state['expires_at'], state['created_at'])
+            self.assertNotIn('0000000012', meta_path.read_text())
+
+    def test_cleanup_skips_broken_record_but_processes_other_expired_records(self):
+        with tempfile.TemporaryDirectory() as d:
+            state = Path(d, 'state')
+            state.mkdir()
+            bad = state / '111111111111'
+            good = state / '222222222222'
+            bad.mkdir()
+            good.mkdir()
+            user = 'aap2e222222222222'
+            record = {'id': good.name, 'state': 'active', 'expires_at': 1,
+                      'users': {aap.GROUP_ENROLL: {'name': user, 'uid': 1001,
+                      'gid': 111, 'home': '/', 'verified': True}}}
+            calls = []
+
+            def read(enrollment_id):
+                if enrollment_id == bad.name:
+                    raise aap.SetupError('corrupt metadata')
+                return record
+
+            def call(argv, input_text=None):
+                calls.append(tuple(argv))
+
+            with mock.patch.object(aap, 'STATE', state), \
+                 mock.patch.object(aap, 'require_root'), \
+                 mock.patch.object(aap, 'verified_dir'), \
+                 mock.patch.object(aap, 'state_lock', side_effect=contextlib.nullcontext), \
+                 mock.patch.object(aap, 'read_metadata', side_effect=read), \
+                 mock.patch.object(aap, 'check_real_identity'), \
+                 mock.patch.object(aap, 'call_mutation', side_effect=call), \
+                 mock.patch.object(aap.subprocess, 'run',
+                                   return_value=types.SimpleNamespace(returncode=1)), \
+                 mock.patch.object(aap, 'remove_chroot'), \
+                 mock.patch.object(aap, 'atomic_json'), \
+                 contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(aap.cleanup(None), 1)
+            self.assertEqual(calls[0], ('/usr/sbin/usermod', '-L', user))
+            self.assertEqual(calls[1], ('/usr/sbin/userdel', user))
+            self.assertFalse(any('aap2p' in str(cmd) for cmd in calls))
+            self.assertEqual(record['state'], 'expired')
+
 
 
 if __name__ == '__main__':
