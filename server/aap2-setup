@@ -779,9 +779,19 @@ def cleanup(_args):
                         raise SetupError('pkill unexpected return {}'.format(result.returncode))
                 except (OSError, subprocess.TimeoutExpired) as exc:
                     raise SetupError('failed to terminate temporary sessions: {}'.format(exc))
-                # Avoid reusing a now-stale UID while deleting the account.
-                check_real_identity(record, GROUP_ENROLL)
-                call_mutation(['/usr/sbin/userdel', name])
+                # After SIGTERM, a PAM/sshd worker can take a moment to
+                # exit. userdel returns 8 while it is still in the account.
+                # Retry ONLY that known busy result; never userdel -f.
+                # Re-check NSS ownership before EACH retry.
+                for attempt in range(4):
+                    check_real_identity(record, GROUP_ENROLL)
+                    try:
+                        call_mutation(['/usr/sbin/userdel', name])
+                        break
+                    except SetupError as exc:
+                        if 'userdel exit 8:' not in str(exc) or attempt == 3:
+                            raise
+                        time.sleep(1)
                 remove_chroot(record)
                 record['state'] = 'expired'
                 atomic_json(record_path(record['id']) / 'metadata.json', record)
