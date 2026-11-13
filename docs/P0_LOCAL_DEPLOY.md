@@ -44,9 +44,7 @@ Artifacts:
 
 The command prompts interactively for the signing password **twice**, once
 per APK (no password in CLI arguments, environment or GitHub). Signing is
-verified with `apksigner verify`. Default versionCode is `20002` and
-versionName is `2.0.0-p0-local`; both may be overridden with
-`AAP2_VERSION_CODE` and `AAP2_VERSION_NAME`. Reinstall with the same
+verified with `apksigner verify`. By default, versionCode is read from the already-installed AAP2 package (or `20003` if no AAP2/device is found). This avoids an accidental downgrade on repeat deployments; Android permits reinstalling a new debug APK with the **same** versionCode and certificate. To intentionally test a version increase, set `AAP2_VERSION_CODE` explicitly. Default versionName is `2.0.0-p0-local`, and can be overridden with `AAP2_VERSION_NAME`. Reinstall with the same
 versionCode and the same certificate is supported for testing.
 
 If multiple Android devices are connected, set `ANDROID_SERIAL` to select
