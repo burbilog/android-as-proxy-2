@@ -32,8 +32,8 @@ class A1EnrollmentIntegrationTest {
 
     private data class Invitation(val user: String, val pin: String, val trustedFingerprint: String)
 
-    private fun invitation(): Invitation {
-        val file = File(context.filesDir, "a1-ci-invitation")
+    private fun invitation(filename: String = "a1-ci-invitation"): Invitation {
+        val file = File(context.filesDir, filename)
         val lines = file.readLines(Charsets.UTF_8)
         file.delete()
         require(lines.size == 3) { "CI invitation must have three lines" }
@@ -114,6 +114,28 @@ class A1EnrollmentIntegrationTest {
         assertFalse(DirectBootTunnelProfile.hasProfile(context))
         assertTrue(EnrollmentPending.load(context) == null)
         Log.i("AAP2-A1", "A1_WRONG_PINNED_HOST_REJECTED_PREAUTH")
+    }
+
+    @Test
+    fun a1_1b_expiredPinCannotCreatePendingProfile() = runBlocking<Unit> {
+        val expired = invitation("a1-ci-expired-invitation")
+        assertFalse(DirectBootTunnelProfile.hasProfile(context))
+        assertTrue(EnrollmentPending.load(context) == null)
+        val probe = withContext(Dispatchers.IO) {
+            VerifiedSshHostKey.probe(host, port)
+        }
+        assertEquals(expired.trustedFingerprint, probe.fingerprint)
+        val outcome = runCatching {
+            withTimeout(30_000) {
+                EnrollmentClient(context).enroll(probe, expired.user, expired.pin) {}
+            }
+        }
+        assertTrue("Expired S2 setup PIN was accepted", outcome.isFailure)
+        assertFalse("Expired PIN must not provision Direct Boot",
+            DirectBootTunnelProfile.hasProfile(context))
+        assertTrue("Expired PIN must not leave pending enrollment",
+            EnrollmentPending.load(context) == null)
+        Log.i("AAP2-A1", "A1_EXPIRED_PIN_REJECTED_NO_PROFILE")
     }
 
     @Test
