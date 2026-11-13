@@ -129,12 +129,50 @@ class A1EnrollmentIntegrationTest {
         assertFalse("A host-key probe is not enrollment",
             DirectBootTunnelProfile.hasProfile(context))
 
-        withTimeout(120_000) {
-            EnrollmentClient(context).enroll(probe, invite.user, invite.pin) {
-                // Only generic progress markers are emitted, not the PIN.
-                Log.i("AAP2-A1", "A1_ENROLL_PROGRESS " + it)
+        // Host waits for the upload marker, kills the disposable SFTP user
+        // session, then approves ONLY after this test confirms pending state.
+        val keyUploaded = File(context.filesDir, "a1-ci-key-uploaded")
+        val awaitingApproval = File(context.filesDir, "a1-ci-awaiting-approval")
+        val approvalDone = File(context.filesDir, "a1-ci-approval-done")
+        keyUploaded.delete()
+        awaitingApproval.delete()
+        approvalDone.delete()
+        val failure = runCatching {
+            withTimeout(90_000) {
+                EnrollmentClient(context).enroll(probe, invite.user, invite.pin) {
+                    Log.i("AAP2-A1", "A1_ENROLL_PROGRESS " + it)
+                    if (it.startsWith("Waiting for administrator approval")) {
+                        // callback is reached only AFTER successful SFTP put()
+                        keyUploaded.createNewFile()
+                    }
+                }
             }
         }
+        assertTrue("Interrupted SFTP should leave enrollment incomplete", failure.isFailure)
+        assertFalse("No Direct Boot profile before admin approval",
+            DirectBootTunnelProfile.hasProfile(context))
+        val pending = requireNotNull(EnrollmentPending.load(context))
+        assertEquals(host, pending.host)
+        assertEquals(port, pending.sshPort)
+        assertArrayEquals(probe.blob, pending.verifiedHostKey)
+        val originalKey = AndroidKeystoreIdentity.getExisting(context).getPublicKeyBlob().copyOf()
+        Log.i("AAP2-A1", "A1_INTERRUPTED_SFTP_PENDING_SAVED")
+        awaitingApproval.createNewFile()
+
+        // No PIN is available to resume(), and it must not regenerate a key.
+        withTimeout(90_000) {
+            while (!approvalDone.exists()) delay(250)
+        }
+        approvalDone.delete()
+        withTimeout(40_000) {
+            EnrollmentClient(context).resume {
+                Log.i("AAP2-A1", "A1_RESUME_PROGRESS " + it)
+            }
+        }
+        assertArrayEquals("Resume must keep exactly the uploaded Keystore identity",
+            originalKey, AndroidKeystoreIdentity.getExisting(context).getPublicKeyBlob())
+        Log.i("AAP2-A1", "A1_INTERRUPTED_SFTP_RESUME_WITHOUT_PIN_OK")
+
         val profile = requireNotNull(DirectBootTunnelProfile.load(context))
         assertTrue(DirectBootTunnelProfile.wantsConnection(context))
         assertEquals(host, profile.host)
