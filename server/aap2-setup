@@ -1,9 +1,8 @@
 #!/usr/bin/python3 -I
-"""AAP2 server administration, S1 bootstrap: read-only diagnostics.
+"""AAP2 server administration: SSH diagnostics, invite lifecycle, cleanup.
 
-Python >=3.9, stdlib only. No network service or account mutation in S1-A.
-Before a temporary SSH PIN is ever activated, a future enrollment command
-MUST require a full doctor against actual temporary/permanent accounts.
+Python >=3.9, stdlib only. PIN enrollment is temporary SFTP ONLY; manual
+approval and permanent SSH-key activation are implemented in later S2.
 """
 
 import argparse
@@ -323,7 +322,7 @@ def print_config(_args):
 # permitted. The state root and chroots are never writable by those accounts.
 ID_RE = re.compile(r'^[0-9a-f]{12}
     parser = argparse.ArgumentParser(prog='aap2-setup',
-        description='AAP2 server admin CLI (S1-A: read-only foundation; no enroll yet)')
+        description='AAP2 server admin CLI (S1-B temporary PIN invitation; S2 approval pending)')
     sub = parser.add_subparsers(dest='action', required=True)
     pc = sub.add_parser('print-config', help='print manual-only SSH Match template')
     pc.set_defaults(func=print_config)
@@ -631,6 +630,12 @@ def make_chroot(record):
     new_file(path / 'inbox' / 'public_key', b'', 0o600, u['uid'], u['gid'])
 
 
+def generate_pin():
+    # Exactly 10 decimal digits, including zero prefixes; 4-4-2 formatting
+    # belongs ONLY in the invitation display, not on disk or in chpasswd.
+    return '{:010d}'.format(secrets.randbelow(10000000000))
+
+
 def enroll(args):
     require_root()
     name = args.device_name
@@ -724,7 +729,7 @@ def enroll(args):
             raise SetupError('cleanup timer stopped or invitation already expired; NO PIN activated')
         record['state'] = 'active'
         atomic_json(state_dir / 'metadata.json', record)
-        pin = '{:010d}'.format(secrets.randbelow(10000000000))
+        pin = generate_pin()
         check_real_identity(record, GROUP_ENROLL)
         call_mutation(['/usr/sbin/chpasswd'],
                       input_text='{}:{}\n'.format(usernames[GROUP_ENROLL], pin))
@@ -768,7 +773,17 @@ def cleanup(_args):
     require_root()
     errors = 0
     with state_lock():
-        for record in list(all_records()):
+        verified_dir(STATE, 0o700)
+        for path in sorted(STATE.iterdir()):
+            if path.name == '.lock':
+                continue
+            try:
+                record = read_metadata(path.name)
+            except (SetupError, OSError, ValueError, json.JSONDecodeError) as exc:
+                errors += 1
+                print('FAIL CLOSED: invalid state {}: {}'.format(path.name, exc),
+                      file=sys.stderr)
+                continue
             if record['state'] == 'expired' or record['expires_at'] > int(time.time()):
                 continue
             # Never touch a permanent user/key from the timer (even if
