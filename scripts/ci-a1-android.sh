@@ -34,6 +34,7 @@ run_test() {
     return 1
   }
 }
+run_test a1_0_malformedServerJsonRejectedBeforeProvisioning
 run_test a1_1_wrongPinnedHostRejectedBeforeAuthenticationOrKeyCreation
 
 # Invitation is created AFTER emulator boots. PIN is kept only in a
