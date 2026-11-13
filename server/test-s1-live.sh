@@ -93,6 +93,121 @@ unset SSHPASS PIN DISPLAY_PIN
 cmp "$TMP/device.pub" "/var/lib/aap2/enroll/$E/inbox/public_key"
 echo 'S1-B PASS: real PIN SFTP-only upload into precreated file'
 
+# S2 path: verify real server key approval, loopback -R, PIN expiry, revoke.
+# Uses the exact same disposable runner setup as S1, but exercises
+# permanent access. No actual phone or production sshd is involved.
+if [ "${AAP2_S2_INTEGRATION:-}" = YES ]; then
+  PORT=$(python3 - "$ID" <<'PY'
+import json
+from pathlib import Path
+import sys
+metadata = Path('/var/lib/aap2/state') / sys.argv[1] / 'metadata.json'
+print(json.loads(metadata.read_text())['remote_port'])
+PY
+)
+  [ "$PORT" -ge 11010 ] && [ "$PORT" -le 11509 ]
+
+  # Malicious authorized_keys options must not pass upload validation.
+  printf 'command="id" %s\n' "$(cat "$TMP/device.pub")" \
+    > "/var/lib/aap2/enroll/$E/inbox/public_key"
+  if printf 'y\n' | aap2-setup approve "$ID" >"$TMP/rejected-approve.out" 2>&1; then
+    echo 'S2 ERROR: injected key options approved' >&2
+    exit 1
+  fi
+  [ ! -s "/etc/ssh/aap2-authorized-keys/$P" ] ||
+    { echo 'S2 ERROR: unauthorized key was installed' >&2; exit 1; }
+  cp "$TMP/device.pub" "/var/lib/aap2/enroll/$E/inbox/public_key"
+
+  # Real SSH key fingerprint and explicit administrator approval; no PIN
+  # used to authenticate the permanent account.
+  printf 'y\n' | aap2-setup approve "$ID" > "$TMP/approve.out"
+  grep -q '^APPROVED:' "$TMP/approve.out"
+  grep -q '^restrict,port-forwarding,permitlisten="127.0.0.1:' \
+    "/etc/ssh/aap2-authorized-keys/$P"
+  grep -q '"status":"approved"' "/var/lib/aap2/enroll/$E/status.json"
+
+  mkdir -p "$TMP/web"
+  printf 'S2 forwarding works\n' > "$TMP/web/index.html"
+  python3 -m http.server 18887 --bind 127.0.0.1 --directory "$TMP/web" >/dev/null 2>&1 &
+  HTTP_PID=$!
+  sleep 1
+  ssh -F /dev/null -p 22224 -T -M -S "$TMP/control" -fN \
+    -i "$TMP/device" \
+    -o UserKnownHostsFile="$TMP/known_hosts" \
+    -o GlobalKnownHostsFile=/dev/null \
+    -o StrictHostKeyChecking=yes -o BatchMode=yes \
+    -o IdentitiesOnly=yes -o ExitOnForwardFailure=yes \
+    -R "127.0.0.1:$PORT:127.0.0.1:18887" "$P@127.0.0.1"
+  [ "$(curl -fsS --max-time 6 "http://127.0.0.1:$PORT/")" = 'S2 forwarding works' ] ||
+    { echo 'S2 ERROR: authorized -R did not carry TCP' >&2; exit 1; }
+  echo 'S2 PASS: approved restricted permanent key opens actual -R and carries TCP'
+
+  # Reject other bind addresses/ports and all session/direct-tcpip access.
+  if ssh -F /dev/null -p 22224 -T -fN -i "$TMP/device" \
+    -o UserKnownHostsFile="$TMP/known_hosts" \
+    -o StrictHostKeyChecking=yes -o BatchMode=yes \
+    -o IdentitiesOnly=yes -o ExitOnForwardFailure=yes \
+    -R "127.0.0.1:11999:127.0.0.1:18887" "$P@127.0.0.1" >/dev/null 2>&1; then
+    echo 'S2 ERROR: wrong -R port accepted' >&2; exit 1
+  fi
+  if ssh -F /dev/null -p 22224 -T -i "$TMP/device" \
+    -o UserKnownHostsFile="$TMP/known_hosts" -o StrictHostKeyChecking=yes \
+    -o BatchMode=yes -o IdentitiesOnly=yes "$P@127.0.0.1" true >/dev/null 2>&1; then
+    echo 'S2 ERROR: shell/exec accepted' >&2; exit 1
+  fi
+  if ssh -F /dev/null -p 22224 -T -i "$TMP/device" \
+    -o UserKnownHostsFile="$TMP/known_hosts" -o StrictHostKeyChecking=yes \
+    -o BatchMode=yes -o IdentitiesOnly=yes \
+    -W 127.0.0.1:18887 "$P@127.0.0.1" >/dev/null 2>&1; then
+    echo 'S2 ERROR: direct TCP accepted' >&2; exit 1
+  fi
+  echo 'S2 PASS: wrong -R, exec, direct-tcpip rejected'
+
+  # Approval must survive expiry of the TEMP account. Permanent -R lives.
+  python3 - "$ID" <<'PY'
+import json
+from pathlib import Path
+import sys
+p = Path('/var/lib/aap2/state') / sys.argv[1] / 'metadata.json'
+data = json.loads(p.read_text())
+data['expires_at'] = 0
+p.write_text(json.dumps(data) + '\n')
+PY
+  aap2-setup cleanup
+  ! getent passwd "$E" >/dev/null
+  grep -q '"state":"approved"' "/var/lib/aap2/state/$ID/metadata.json"
+  [ "$(curl -fsS --max-time 6 "http://127.0.0.1:$PORT/")" = 'S2 forwarding works' ] ||
+    { echo 'S2 ERROR: cleanup broke approved SSH' >&2; exit 1; }
+  echo 'S2 PASS: PIN expiry preserves approved SSH and -R'
+
+  # A different key must never replace the immutable approved snapshot.
+  if [ -f "/var/lib/aap2/enroll/$E/inbox/public_key" ]; then
+    echo 'S2 ERROR: temporary chroot survived expiry' >&2
+    exit 1
+  fi
+  ssh-keygen -q -t ecdsa -b 256 -N '' -f "$TMP/other"
+  if timeout 6 ssh -F /dev/null -p 22224 -T -fN -i "$TMP/other" \
+    -o UserKnownHostsFile="$TMP/known_hosts" -o StrictHostKeyChecking=yes \
+    -o BatchMode=yes -o IdentitiesOnly=yes -o ExitOnForwardFailure=yes \
+    -R "127.0.0.1:11997:127.0.0.1:18887" "$P@127.0.0.1" >/dev/null 2>&1; then
+    echo 'S2 ERROR: unknown public key allowed' >&2; exit 1
+  fi
+
+  # Explicit confirmation and active-session termination.
+  printf 'REVOKE\n' | aap2-setup revoke "$ID"
+  ! getent passwd "$P" >/dev/null ||
+    { echo 'S2 ERROR: revoked account still exists' >&2; exit 1; }
+  [ ! -e "/etc/ssh/aap2-authorized-keys/$P" ] ||
+    { echo 'S2 ERROR: revoked key file remains' >&2; exit 1; }
+  if curl -fsS --max-time 3 "http://127.0.0.1:$PORT/" >/dev/null 2>&1; then
+    echo 'S2 ERROR: revoked -R still carries TCP' >&2; exit 1
+  fi
+  grep -q '"state":"revoked"' "/var/lib/aap2/state/$ID/metadata.json"
+  echo 'S2 PASS: permanent account/key revoked; active -R closed'
+  exit 0
+fi
+
+
 # Force expiry in the fixture instead of waiting 10 minutes.
 # This edit is TEST-ONLY on a disposable runner, not an AAP2 CLI feature.
 python3 - "$ID" <<'PY'
