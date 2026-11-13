@@ -47,7 +47,7 @@ class A1EnrollmentIntegrationTest {
     }
 
     @Test
-    fun a1_1_wrongPinnedHostRejectedBeforeAuthenticationOrKeyCreation() = runBlocking {
+    fun a1_1_wrongPinnedHostRejectedBeforeAuthenticationOrKeyCreation() = runBlocking<Unit> {
         assertFalse("Disposable emulator must have no existing profile",
             DirectBootTunnelProfile.hasProfile(context))
         assertTrue("No pending data permitted before enrollment",
@@ -76,7 +76,7 @@ class A1EnrollmentIntegrationTest {
     }
 
     @Test
-    fun a1_2_realPinSftpApprovalAndPersistentKeystoreTunnel() = runBlocking {
+    fun a1_2_realPinSftpApprovalAndPersistentKeystoreTunnel() = runBlocking<Unit> {
         val invite = invitation()
         assertFalse("This test must never be run over an existing AAP2 profile",
             DirectBootTunnelProfile.hasProfile(context))
