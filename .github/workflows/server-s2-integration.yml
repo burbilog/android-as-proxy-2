@@ -1,0 +1,30 @@
+name: S2 disposable real SSH approval/revoke integration
+
+on:
+  pull_request:
+    branches: [develop, master]
+    paths:
+      - 'server/**'
+      - '.github/workflows/server-s2-integration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  s2-real:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SSH/SFTP tools on disposable runner
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq openssh-server openssh-client sshpass
+      - name: Syntax-check isolated integration harness
+        run: sh -n server/test-s1-live.sh
+      - name: Real PIN → SFTP → approve → SSH -R → expiry → revoke
+        env:
+          AAP2_S1_DISPOSABLE: YES
+          AAP2_S2_INTEGRATION: YES
+        run: sudo --preserve-env=GITHUB_ACTIONS,AAP2_S1_DISPOSABLE,AAP2_S2_INTEGRATION sh server/test-s1-live.sh
