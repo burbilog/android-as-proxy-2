@@ -64,15 +64,19 @@ python3 -m http.server 18887 --bind 127.0.0.1 \
 HTTP_PID=$!
 
 cleanup() {
+  # Release the Android instrumentation if an earlier host-side check failed.
+  adb shell -T "run-as $PKG sh -c 'touch files/a1-ci-release-test'" \
+    >/dev/null 2>&1 || true
   kill "$HTTP_PID" >/dev/null 2>&1 || true
   kill "$WATCH_PID" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
-if ! run_test a1_2_realPinSftpApprovalAndPersistentKeystoreTunnel; then
-  cat /tmp/aap2-a1-approval-watch.log >&2
-  exit 1
-fi
+# Keep instrumentation alive while the host issues SOCKS/HTTP requests.
+# Otherwise Android's JUnit runner can terminate the target app process
+# and its foreground service before this script has tested the tunnel.
+run_test a1_2_realPinSftpApprovalAndPersistentKeystoreTunnel &
+TEST_PID=$!
 wait "$WATCH_PID"
 cat /tmp/aap2-a1-approval-watch.log
 
@@ -102,6 +106,16 @@ for i in $(seq 1 30); do
 done
 [ "$SUCCESS" = 1 ] || {
   echo "No real HTTP over A1 SSH -R/SOCKS5 (port $PORT)" >&2
+  echo 'Host direct HTTP:' >&2
+  curl --noproxy '' -fsS --max-time 4 http://127.0.0.1:18887/ >&2 || true
+  echo 'Android adb reverse rules:' >&2
+  adb reverse --list >&2 || true
+  echo 'Remote SSH reverse listener:' >&2
+  sudo ss -lntp | grep ":$PORT" >&2 || true
+  echo 'Detailed proxied curl diagnostic:' >&2
+  curl --noproxy '' -v --max-time 6 \
+    --proxy "socks5h://127.0.0.1:$PORT" \
+    http://127.0.0.1:18887/ >&2 || true
   exit 1
 }
 echo "A1 PASS: emulator PIN→SFTP→approve→Keystore→-R→SOCKS5→HTTP"
@@ -115,3 +129,7 @@ if curl --noproxy '' --silent --max-time 3 \
   exit 1
 fi
 echo "A1 PASS: server revoke killed Android reverse SOCKS listener"
+
+# Allow the instrumented process to finish only AFTER all network checks.
+adb shell -T "run-as $PKG sh -c 'touch files/a1-ci-release-test'"
+wait "$TEST_PID"
