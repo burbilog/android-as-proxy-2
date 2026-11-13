@@ -170,7 +170,7 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                         }
                     }
                 } else {
-                    val probe = candidate
+                    val probe = candidate!!
                     Text("Verify this key with the administrator over a separate trusted channel.")
                     Text("Server: ${probe.host}:${probe.port}")
                     Text("Host key type: ${probe.algorithm}")
