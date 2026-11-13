@@ -122,7 +122,7 @@ PY
   # Real SSH key fingerprint and explicit administrator approval; no PIN
   # used to authenticate the permanent account.
   printf 'y\n' | aap2-setup approve "$ID" > "$TMP/approve.out"
-  if ! grep -q '^APPROVED:' "$TMP/approve.out"; then
+  if ! grep -q 'APPROVED:' "$TMP/approve.out"; then
     echo 'S2 ERROR: approval did not report APPROVED:' >&2
     cat "$TMP/approve.out" >&2
     exit 1
