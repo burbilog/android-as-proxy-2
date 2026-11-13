@@ -58,9 +58,9 @@ permanently running SSH manager.
 - If a Direct Boot profile exists, **the enrollment screen refuses to
   replace it**. Opening the screen cannot damage the working Zebra
   profile or its authorized client key.
-- The legacy password UI from the earlier development version remains
-  for now. It is not used by this new PIN enrollment path and will be
-  retired/isolated after end-to-end A1 acceptance.
+- The old password/TOFU provisioning UI and password SSH service fallback have
+  been removed on this A1 development branch. Without a verified Direct Boot
+  profile the foreground service fails closed, even if old preferences exist.
 
 ## Gates before remotely provisioning the physical Zebra
 
@@ -71,8 +71,9 @@ permanently running SSH manager.
 - [ ] Verify an interrupted SFTP connection after approval can be resumed with the existing Keystore identity; test expired PIN, malformed JSON and wrong permitlisten on Android.
 - [ ] Verify after application restart, reboot-before-first-unlock and
   ordinary APK update, the newly enrolled device retains identity/pin.
-- [ ] Remove the old freeform password/TOFU UI path before a public
-  production release (or explicitly disable it from release variants).
+- [x] Remove legacy password/TOFU provisioning UI **and** fallback SSH
+  service startup. Still requires Android CI and emulator regression checks
+  on the removal commits before release.
 
 **Do not install this development A1 APK on the working Zebra yet.** The
 existing P0-build and ongoing remote SOCKS soak should remain untouched
@@ -90,3 +91,12 @@ until the end-to-end registration tests are planned separately.
 - The instrumentation test deliberately stayed alive during host HTTP/revoke checks because the Android test runner can terminate its process (and foreground service) after a test returns. That is an **emulator test harness detail**, not an AAP2 service lifetime change.
 
 **Scope:** This proves core Android↔S2 transport and fail-closed host-pin behavior on a disposable emulator. It does not yet prove the Compose UI user-action flow, reboot-before-first-unlock, interrupted SFTP recovery, malformed server JSON, or preserving identity on physical Zebra after enrolling this way. This is still a **draft development branch**; the existing P0 APK on Zebra is untouched.
+
+## Legacy path retirement (2026-11-14)
+
+The A1 branch now exposes only verified PIN enrollment on the main screen.
+The foreground service refuses to start SSH unless a validated Direct Boot
+profile exists; leftover legacy password settings cannot silently reconnect
+on boot or after an APK upgrade. Existing P0 Keystore/Direct Boot profiles
+still use the original tunnel implementation and are not rewritten. This
+change is **not yet regression-tested** on the emulator; PR stays draft.
