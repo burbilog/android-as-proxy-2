@@ -6,6 +6,9 @@ approval and permanent SSH-key activation are implemented in later S2.
 """
 
 import argparse
+import base64
+import hashlib
+import struct
 import contextlib
 import datetime
 import fcntl
@@ -451,7 +454,7 @@ def read_metadata(enrollment_id):
     with path.open('r', encoding='utf-8') as source:
         record = json.load(source)
     if record.get('id') != enrollment_id or record.get('state') not in (
-            'creating', 'active', 'approved', 'expired'):
+            'creating', 'active', 'approved', 'expired', 'revoking', 'revoked'):
         raise SetupError('metadata ID/state mismatch for {}'.format(enrollment_id))
     users = record.get('users', {})
     for role in (GROUP_ENROLL, GROUP_PROXY):
@@ -466,6 +469,8 @@ def read_metadata(enrollment_id):
             raise SetupError('metadata GID unsafe: {}'.format(enrollment_id))
         if not isinstance(u.get('verified'), bool):
             raise SetupError('metadata missing account validation state')
+    if not isinstance(record.get('temp_removed', False), bool) or not isinstance(record.get('proxy_removed', False), bool):
+        raise SetupError('metadata invalid account removal flags')
     if not isinstance(record.get('expires_at'), int):
         raise SetupError('metadata invalid expiry for {}'.format(enrollment_id))
     if not isinstance(record.get('remote_port'), int) or not (
@@ -640,9 +645,10 @@ def enroll(args):
         reserved_uid = set()
         reserved_ports = set()
         for previous in existing:
-            reserved_ports.add(previous['remote_port'])
-            for user in previous['users'].values():
-                reserved_uid.add(user['uid'])
+            if previous['state'] != 'revoked':
+                reserved_ports.add(previous['remote_port'])
+                for user in previous['users'].values():
+                    reserved_uid.add(user['uid'])
         enrollment_id = secrets.token_hex(6)
         while (STATE / enrollment_id).exists():
             enrollment_id = secrets.token_hex(6)
@@ -665,6 +671,7 @@ def enroll(args):
             'schema': 1, 'id': enrollment_id, 'device_name': name,
             'state': 'creating', 'created_at': int(time.time()),
             'expires_at': expiry, 'remote_port': port,
+            'temp_removed': False, 'proxy_removed': False,
             'users': {
                 GROUP_ENROLL: {'name': usernames[GROUP_ENROLL], 'uid': euid,
                                'gid': g_enroll, 'home': '/', 'verified': False},
@@ -719,8 +726,7 @@ def enroll(args):
                                     ['/usr/bin/ssh-keygen', '-lf', str(path), '-E', 'sha256'])
             if output:
                 print('Host key fingerprint (match ALGORITHM on phone): {}'.format(output.strip()))
-    print('PUBLIC key upload/Approve not yet implemented in S1-B; '
-          'timer will expire this temporary PIN.')
+    print('Upload public key through PIN-only SFTP, then run: aap2-setup approve {}'.format(enrollment_id))
     return 0
 
 
@@ -743,6 +749,48 @@ def remove_chroot(record):
     root.rmdir()
 
 
+def stop_user(uid):
+    """Terminate only the metadata-verified AAP2 user's processes."""
+    try:
+        result = subprocess.run(['/usr/bin/pkill', '-TERM', '-u', str(uid)],
+                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL, timeout=8, env=SAFE_ENV)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise SetupError('failed to stop AAP2 user sessions: {}'.format(exc))
+    if result.returncode not in (0, 1):
+        raise SetupError('pkill returned unexpected status {}'.format(result.returncode))
+
+
+def remove_account(record, role):
+    """Never force userdel. Revalidate NSS/UID/GID/group/home on every retry."""
+    name = record['users'][role]['name']
+    stop_user(record['users'][role]['uid'])
+    for attempt in range(4):
+        check_real_identity(record, role)
+        try:
+            call_mutation(['/usr/sbin/userdel', name])
+            return
+        except SetupError as exc:
+            if 'userdel exit 8:' not in str(exc) or attempt == 3:
+                raise
+            time.sleep(1)
+
+
+def remove_temporary(record):
+    if record.get('temp_removed', False):
+        return
+    name = record['users'][GROUP_ENROLL]['name']
+    check_real_identity(record, GROUP_ENROLL)
+    call_mutation(['/usr/sbin/usermod', '-L', name])
+    check_real_identity(record, GROUP_ENROLL)
+    remove_account(record, GROUP_ENROLL)
+    remove_chroot(record)
+    record['temp_removed'] = True
+    if record['state'] not in ('approved', 'revoking', 'revoked'):
+        record['state'] = 'expired'
+    atomic_json(record_path(record['id']) / 'metadata.json', record)
+
+
 def cleanup(_args):
     require_root()
     errors = 0
@@ -758,43 +806,10 @@ def cleanup(_args):
                 print('FAIL CLOSED: invalid state {}: {}'.format(path.name, exc),
                       file=sys.stderr)
                 continue
-            if record['state'] == 'expired' or record['expires_at'] > int(time.time()):
+            if record.get('temp_removed') or record['expires_at'] > int(time.time()):
                 continue
-            # Never touch a permanent user/key from the timer (even if
-            # approval status publication was interrupted).
-            name = record['users'][GROUP_ENROLL]['name']
             try:
-                check_real_identity(record, GROUP_ENROLL)
-                # Password removal FIRST, before sending signals/cleanup.
-                call_mutation(['/usr/sbin/usermod', '-L', name])
-                check_real_identity(record, GROUP_ENROLL)
-                try:
-                    result = subprocess.run(['/usr/bin/pkill', '-TERM', '-u',
-                                             str(record['users'][GROUP_ENROLL]['uid'])],
-                                            stdin=subprocess.DEVNULL,
-                                            stdout=subprocess.DEVNULL,
-                                            stderr=subprocess.DEVNULL, timeout=8,
-                                            env=SAFE_ENV)
-                    if result.returncode not in (0, 1):
-                        raise SetupError('pkill unexpected return {}'.format(result.returncode))
-                except (OSError, subprocess.TimeoutExpired) as exc:
-                    raise SetupError('failed to terminate temporary sessions: {}'.format(exc))
-                # After SIGTERM, a PAM/sshd worker can take a moment to
-                # exit. userdel returns 8 while it is still in the account.
-                # Retry ONLY that known busy result; never userdel -f.
-                # Re-check NSS ownership before EACH retry.
-                for attempt in range(4):
-                    check_real_identity(record, GROUP_ENROLL)
-                    try:
-                        call_mutation(['/usr/sbin/userdel', name])
-                        break
-                    except SetupError as exc:
-                        if 'userdel exit 8:' not in str(exc) or attempt == 3:
-                            raise
-                        time.sleep(1)
-                remove_chroot(record)
-                record['state'] = 'expired'
-                atomic_json(record_path(record['id']) / 'metadata.json', record)
+                remove_temporary(record)
                 print('Expired temporary enrollment: {}'.format(record['id']))
             except (SetupError, OSError, ValueError) as exc:
                 errors += 1
