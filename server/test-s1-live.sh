@@ -168,6 +168,19 @@ PY
     echo 'S2 Debian 13 PASS: interrupted approval replays the original key only'
   fi
 
+  if [ "${AAP2_S2_DEBIAN_GATES:-}" = YES ]; then
+    # Debian usermod will not change an account with an active SSH
+    # session. Test NSS-home mismatch before opening the permanent -R.
+    usermod -d /tmp/aap2-foreign-home "$P"
+    if printf 'REVOKE\n' | aap2-setup revoke "$ID" > "$TMP/nss-tamper.out" 2>&1; then
+      echo 'S2 ERROR: mismatched NSS home accepted by revoke' >&2
+      exit 1
+    fi
+    usermod -d /nonexistent "$P"
+    cmp "$TMP/original-authorized" "/etc/ssh/aap2-authorized-keys/$P"
+    echo 'S2 Debian 13 PASS: foreign NSS home refused without deleting device'
+  fi
+
   mkdir -p "$TMP/web"
   printf 'S2 forwarding works\n' > "$TMP/web/index.html"
   python3 -m http.server 18887 --bind 127.0.0.1 --directory "$TMP/web" >/dev/null 2>&1 &
@@ -205,16 +218,10 @@ PY
     cmp "$TMP/original-authorized" "/etc/ssh/aap2-authorized-keys/$P"
     cp -p "$TMP/pristine-metadata" "/var/lib/aap2/state/$ID/metadata.json"
 
-    usermod -d /tmp/aap2-foreign-home "$P"
-    if printf 'REVOKE\n' | aap2-setup revoke "$ID" > "$TMP/nss-tamper.out" 2>&1; then
-      echo 'S2 ERROR: mismatched NSS home accepted by revoke' >&2
-      exit 1
-    fi
-    usermod -d /nonexistent "$P"
     cmp "$TMP/original-authorized" "/etc/ssh/aap2-authorized-keys/$P"
     [ "$(curl -fsS --max-time 6 "http://127.0.0.1:$PORT/")" = 'S2 forwarding works' ] ||
-      { echo 'S2 ERROR: refused tamper disconnected approved device' >&2; exit 1; }
-    echo 'S2 Debian 13 PASS: UID=0 and NSS-home tampering refused without changing -R'
+      { echo 'S2 ERROR: refused UID tamper disconnected approved device' >&2; exit 1; }
+    echo 'S2 Debian 13 PASS: UID=0 metadata refused without changing active -R'
 
     printf 'not-json\n' > "/var/lib/aap2/state/$ID/metadata.json"
     if aap2-setup cleanup > "$TMP/corrupt.out" 2>&1; then
