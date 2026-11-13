@@ -24,8 +24,8 @@ import java.io.InputStream
  * we verify actual publickey SSH + exact -R before committing Direct Boot.
  */
 internal class EnrollmentClient(private val context: Context) {
-    private data class ServerConfig(val permanentUser: String, val remotePort: Int)
-    private data class ServerStatus(val status: String, val expiresAt: Long)
+    internal data class ServerConfig(val permanentUser: String, val remotePort: Int)
+    internal data class ServerStatus(val status: String, val expiresAt: Long)
 
     suspend fun enroll(
         probe: VerifiedSshHostKey.Probe,
@@ -179,36 +179,46 @@ internal class EnrollmentClient(private val context: Context) {
         out.toByteArray()
     }
 
-    private fun parseConfig(data: ByteArray): ServerConfig {
+    // JSONObject.getInt/getLong silently coerce fractional or string values.
+    // S2 protocol fields are exact JSON integers, not coercible numbers.
+    private fun exactPositiveInteger(obj: JSONObject, key: String): Long {
+        val value = obj.get(key)
+        require(value is Number && value !is Float && value !is Double) {
+            "Expected integer JSON field: $key"
+        }
+        return value.toString().toLongOrNull()
+            ?: throw IllegalArgumentException("Invalid integer JSON field: $key")
+    }
+
+    internal fun parseConfig(data: ByteArray): ServerConfig {
         val obj = JSONObject(data.toString(Charsets.UTF_8))
         require(obj.length() == 3 && obj.has("schema") &&
             obj.has("username") && obj.has("remote_port")) {
             "Unexpected enrollment config fields"
         }
-        require(obj.get("schema") is Number && obj.getInt("schema") == 1) {
+        require(exactPositiveInteger(obj, "schema") == 1L) {
             "Unsupported enrollment schema"
         }
         val username = obj.getString("username")
         require(username.matches(Regex("aap2p[0-9a-f]{12}"))) {
             "Unexpected permanent username"
         }
-        require(obj.get("remote_port") is Number &&
-            obj.getInt("remote_port") in 11010..11509) {
+        require(exactPositiveInteger(obj, "remote_port") in 11010L..11509L) {
             "Unexpected reserved reverse-forward port"
         }
-        return ServerConfig(username, obj.getInt("remote_port"))
+        return ServerConfig(username, exactPositiveInteger(obj, "remote_port").toInt())
     }
 
-    private fun parseStatus(data: ByteArray): ServerStatus {
+    internal fun parseStatus(data: ByteArray): ServerStatus {
         val obj = JSONObject(data.toString(Charsets.UTF_8))
         require(obj.length() == 3 && obj.has("schema") &&
             obj.has("status") && obj.has("expires_at")) {
             "Unexpected enrollment status fields"
         }
-        require(obj.get("schema") is Number && obj.getInt("schema") == 1)
-        require(obj.get("expires_at") is Number && obj.getLong("expires_at") > 0)
+        require(exactPositiveInteger(obj, "schema") == 1L)
+        require(exactPositiveInteger(obj, "expires_at") > 0L)
         val status = obj.getString("status")
         require(status in setOf("pending", "approved"))
-        return ServerStatus(status, obj.getLong("expires_at"))
+        return ServerStatus(status, exactPositiveInteger(obj, "expires_at"))
     }
 }
