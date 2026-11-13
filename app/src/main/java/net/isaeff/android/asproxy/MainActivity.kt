@@ -259,6 +259,21 @@ fun MainScreen() {
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                // P0 Keystore identity and Direct Boot profile remain untouched
+                // until the independent host-fingerprint verification and
+                // SFTP/PIN approval flow in EnrollmentActivity succeeds.
+                if (!DirectBootTunnelProfile.hasProfile(context)) {
+                    Button(
+                        onClick = {
+                            context.startActivity(Intent(context, EnrollmentActivity::class.java))
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = connectionState == ConnectionState.DISCONNECTED
+                    ) {
+                        Text("Activate AAP2 using one-time PIN")
+                    }
+                }
+
                 // SSH Server Input
                 OutlinedTextField(
                     value = sshServer,
