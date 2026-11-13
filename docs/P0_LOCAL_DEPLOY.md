@@ -103,3 +103,37 @@ checking Direct Boot, then verify HTTP 200 through the reverse SOCKS5.
   `git merge --ff-only`, not `reset --hard`.
 - `reset` is opt-in and cannot run silently. The script only removes the
   two AAP2 package names, never legacy AAP1.
+
+## P0 acceptance on real Zebra TC21 — 2026-11-13
+
+- Original ephemeral CI-debug signed AAP2 rejected permanent-signed APK
+  with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`; deliberate `reset`
+  removed **AAP2 and its instrumentation package only**. Both APKs
+  installed successfully using permanent certificate SHA-256
+  `574d67d31d15c2d7b6babfad13e7a65893ef94af706338671a8927291854f1e1`.
+- New P-256 Android Keystore key created and authorized on
+  `aap2-test`; Direct Boot profile provisioned by `sh ~/aap2/x`.
+  Both negative tests passed: missing alias (0.123s) and rejected SSH
+  public key login (6.824s).
+- An in-place version 20003 deployment installed both locally signed
+  APKs with `adb install -r`; the persisted Keystore public key before
+  and after upgrade was byte-identical (`cmp` PASS).
+- Separate repeat `sh ~/aap2/aap2.sh install` gave two `Success`;
+  immediately followed by `adb reboot`, `adb wait-for-device`,
+  30s wait and SOCKS5 `curl` via `127.0.0.1:10909`, which returned
+  **HTTP 200**. **No `sh x` was invoked** between install and reboot:
+  the Direct Boot profile continued to work without reprovisioning.
+
+**Result:** P0-A/P0-B device acceptance PASS. Debug/test APKs remain
+development-only; normal production UX and server rollout are separate gates.
+
+### Local script refresh
+
+If `~/aap2/aap2.sh` was downloaded before 2026-11-13 version-code
+fix, refresh it once. Recent script defaults to reading the installed
+`versionCode` to avoid downgrade on future bare `deploy` calls.
+
+```zsh
+curl -fsSL https://raw.githubusercontent.com/burbilog/android-as-proxy-2/feature/p0-local-deploy/scripts/aap2-local.sh -o ~/aap2/aap2.sh
+sh -n ~/aap2/aap2.sh
+```
