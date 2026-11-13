@@ -55,4 +55,5 @@ jobs:
           docker exec aap2-s2-debian13 /bin/sh /workspace/server/test-s1-live.sh
       - name: Cleanup disposable environment
         if: always()
-        run: docker rm -f aap2-s2-debian13 >/dev/null 2>&1 || :
+        run: |
+          docker rm -f aap2-s2-debian13 >/dev/null 2>&1 || true
