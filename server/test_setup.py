@@ -3,6 +3,7 @@ import importlib.machinery
 import importlib.util
 from pathlib import Path
 import tempfile
+import os
 import types
 import unittest
 from unittest import mock
@@ -95,7 +96,7 @@ class CheckTests(unittest.TestCase):
             original = Path(d, 'original')
             original.write_text('x')
             linked = Path(d, 'linked')
-            linked.hardlink_to(original)
+            os.link(str(original), str(linked))
             checks = aap.Checks()
             st = linked.stat()
             self.assertFalse(aap.check_file(checks, linked, st.st_uid, st.st_gid, 0o600))
