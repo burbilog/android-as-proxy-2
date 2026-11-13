@@ -23,6 +23,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -53,7 +60,19 @@ fun MainScreen() {
     val context = LocalContext.current
     val connectionState by ConnectionStateHolder.connectionState.collectAsState()
     val traffic by ConnectionStateHolder.trafficBytes.collectAsState()
-    val configured = DirectBootTunnelProfile.hasProfile(context)
+    // Returning from EnrollmentActivity does not inherently recompose this screen.
+    // Refresh profile visibility on resume, without ever changing the stored profile.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var configured by remember { mutableStateOf(DirectBootTunnelProfile.hasProfile(context)) }
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                configured = DirectBootTunnelProfile.hasProfile(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
