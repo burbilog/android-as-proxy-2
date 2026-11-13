@@ -1,0 +1,12 @@
+[Unit]
+Description=AAP2 expire temporary PIN/SFTP accounts
+Documentation=https://github.com/burbilog/android-as-proxy-2
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+ExecStart=/usr/local/sbin/aap2-setup cleanup
+TimeoutStartSec=60

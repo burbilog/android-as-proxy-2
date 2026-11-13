@@ -1,0 +1,35 @@
+name: S1 Python server doctor (read-only)
+
+on:
+  pull_request:
+    branches: [develop, master]
+    paths:
+      - 'server/**'
+      - '.github/workflows/server-s1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  doctor-unit:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Check CLI syntax
+        run: python -m py_compile server/aap2-setup
+      - name: Run read-only tests
+        run: python -m unittest discover -s server -p 'test_*.py' -v
+      - name: Verify printed manual SSH template
+        run: |
+          python server/aap2-setup print-config > /tmp/aap2-sshd-sample
+          grep -q '^Match Group aap2-enroll' /tmp/aap2-sshd-sample
+          grep -q '^Match Group aap2-proxy' /tmp/aap2-sshd-sample
+          grep -q 'MANUAL TEMPLATE ONLY' /tmp/aap2-sshd-sample
