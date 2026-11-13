@@ -1,0 +1,329 @@
+#!/usr/bin/python3 -I
+"""AAP2 server administration, S1 bootstrap: read-only diagnostics.
+
+Python >=3.9, stdlib only. No network service or account mutation in S1-A.
+Before a temporary SSH PIN is ever activated, a future enrollment command
+MUST require a full doctor against actual temporary/permanent accounts.
+"""
+
+import argparse
+import grp
+import os
+import ipaddress
+import re
+from pathlib import Path
+import pwd
+import shutil
+import stat
+import subprocess
+import sys
+
+BASE = Path('/var/lib/aap2')
+STATE = BASE / 'state'
+ENROLL = BASE / 'enroll'
+AUTHORIZED = Path('/etc/ssh/aap2-authorized-keys')
+GROUP_ENROLL = 'aap2-enroll'
+GROUP_PROXY = 'aap2-proxy'
+MIN_UID = 1001
+SHELLS = {'/usr/sbin/nologin', '/sbin/nologin', '/bin/false'}
+
+# Expected EFFECTIVE output of the manually installed SSH Match policy.
+POLICY = {
+    GROUP_ENROLL: {
+        'authenticationmethods': 'password',
+        'passwordauthentication': 'yes',
+        'kbdinteractiveauthentication': 'no',
+        'pubkeyauthentication': 'no',
+        'forcecommand': 'internal-sftp',
+        'chrootdirectory': '/var/lib/aap2/enroll/%u',
+        'disableforwarding': 'yes',
+        'permittty': 'no',
+        'maxsessions': '1',
+    },
+    GROUP_PROXY: {
+        'authenticationmethods': 'publickey',
+        'passwordauthentication': 'no',
+        'kbdinteractiveauthentication': 'no',
+        'pubkeyauthentication': 'yes',
+        'authorizedkeysfile': '/etc/ssh/aap2-authorized-keys/%u',
+        'authorizedkeyscommand': 'none',
+        'trustedusercakeys': 'none',
+        'hostbasedauthentication': 'no',
+        'allowtcpforwarding': 'remote',
+        'permitopen': 'none',
+        'gatewayports': 'no',
+        'allowstreamlocalforwarding': 'no',
+        'maxsessions': '0',
+        'permittty': 'no',
+        'x11forwarding': 'no',
+        'allowagentforwarding': 'no',
+        'permittunnel': 'no',
+        'permituserrc': 'no',
+        'clientaliveinterval': '15',
+        'clientalivecountmax': '2',
+    },
+}
+
+
+class Checks:
+    """Read-only diagnostics. Warnings are not passed security invariants."""
+    def __init__(self):
+        self.failed = 0
+        self.pending = 0
+
+    def ok(self, message):
+        print('OK: ' + message)
+
+    def fail(self, message):
+        self.failed += 1
+        print('FAIL: ' + message, file=sys.stderr)
+
+    def warn(self, message):
+        print('WARN: ' + message, file=sys.stderr)
+
+    def wait(self, message):
+        self.pending += 1
+        print('PENDING: ' + message, file=sys.stderr)
+
+
+def check_dir(checks, path, expected_mode):
+    """Check exact root ownership/mode, not following directory symlinks."""
+    try:
+        st = path.lstat()
+    except OSError as exc:
+        checks.fail('{}: {}'.format(path, exc))
+        return False
+    if not stat.S_ISDIR(st.st_mode) or st.st_uid != 0 or st.st_gid != 0:
+        checks.fail('{}: must be a non-symlink root:root directory'.format(path))
+        return False
+    mode = stat.S_IMODE(st.st_mode)
+    if mode != expected_mode:
+        checks.fail('{}: mode {:04o}, required {:04o}'.format(path, mode, expected_mode))
+        return False
+    checks.ok('{} root:root {:04o}'.format(path, mode))
+    return True
+
+
+def check_file(checks, path, uid, gid, expected_mode):
+    """Check file ownership, type, hardlinks and mode without following symlinks."""
+    try:
+        st = path.lstat()
+    except OSError as exc:
+        checks.fail('{}: {}'.format(path, exc))
+        return False
+    if not stat.S_ISREG(st.st_mode) or st.st_uid != uid or st.st_gid != gid:
+        checks.fail('{}: unexpected type or UID/GID (symlinks rejected)'.format(path))
+        return False
+    mode = stat.S_IMODE(st.st_mode)
+    if mode != expected_mode or st.st_nlink != 1:
+        checks.fail('{}: unsafe mode {:04o} or link count {}'.format(path, mode, st.st_nlink))
+        return False
+    checks.ok('{} owner {}/{} {:04o}'.format(path, uid, gid, mode))
+    return True
+
+
+USERNAME_RE = re.compile(r'^[a-z_][a-z0-9_-]{0,31}$')
+
+
+def managed_account(checks, name, role):
+    """Read-only NSS validation, NEVER proof of account ownership for deletion.
+
+    Mutating userdel/chpasswd/revoke code must ALSO validate root-owned AAP2
+    metadata containing original name/UID/GID/groups/home before EVERY change.
+    Being UID>=1001 or a member of an AAP2 group is never sufficient.
+    """
+    if not USERNAME_RE.fullmatch(name):
+        checks.fail('invalid account name: {!r}'.format(name))
+        return None
+    try:
+        user = pwd.getpwnam(name)
+        role_grp = grp.getgrnam(role)
+    except KeyError:
+        checks.fail('{} or {} does not exist in NSS'.format(name, role))
+        return None
+    if user.pw_uid < MIN_UID:
+        checks.fail('{} has UID {}; must be >= {}'.format(name, user.pw_uid, MIN_UID))
+        return None
+    if user.pw_shell not in SHELLS:
+        checks.fail('{}: unsafe login shell {}'.format(name, user.pw_shell))
+        return None
+    memberships = os.getgrouplist(name, user.pw_gid)
+    if role_grp.gr_gid not in memberships:
+        checks.fail('{}: not a member of {}'.format(name, role))
+        return None
+    opposite = GROUP_PROXY if role == GROUP_ENROLL else GROUP_ENROLL
+    try:
+        if grp.getgrnam(opposite).gr_gid in memberships:
+            checks.fail('{}: member of both AAP2 access groups'.format(name))
+            return None
+    except KeyError:
+        pass
+    checks.ok('{}: UID={} role={} nologin'.format(name, user.pw_uid, role))
+    return user
+
+
+def command_output(checks, args):
+    """No shell, stdin, environment inheritance, network or config changes."""
+    try:
+        result = subprocess.run(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True, timeout=12, check=False,
+                                env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C'})
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        checks.fail('cannot run {}: {}'.format(args[0], exc))
+        return None
+    if result.returncode != 0:
+        checks.fail('{} failed (exit {}): {}'.format(' '.join(args[:2]), result.returncode,
+                                                 result.stderr.strip()[:240]))
+        return None
+    return result.stdout
+
+
+def sshd_binary(checks):
+    sshd = shutil.which('sshd', path='/usr/sbin:/usr/bin:/sbin:/bin')
+    if sshd is None:
+        checks.fail('sshd not installed/found')
+    return sshd
+
+
+def read_effective_config(checks, sshd, user, addr, client_host, server_addr, server_port):
+    # sshd -C host= means remote client hostname, NOT the server hostname.
+    # Reject context-attribute injection through comma-delimited input.
+    if not USERNAME_RE.fullmatch(user):
+        checks.fail('invalid username in sshd -C context')
+        return None
+    try:
+        ipaddress.ip_address(addr)
+        ipaddress.ip_address(server_addr)
+    except ValueError:
+        checks.fail('client/server addresses must be literal IPv4 or IPv6')
+        return None
+    if not re.fullmatch(r'[A-Za-z0-9.-]{1,253}', client_host):
+        checks.fail('invalid client hostname in sshd -C context')
+        return None
+    try:
+        number = int(server_port)
+        if not 1 <= number <= 65535:
+            raise ValueError
+    except ValueError:
+        checks.fail('invalid sshd local TCP port')
+        return None
+    context = 'user={},addr={},host={},laddr={},lport={}'.format(
+        user, addr, client_host, server_addr, server_port)
+    result = command_output(checks, [sshd, '-T', '-C', context])
+    if result is None:
+        return None
+    config = {}
+    for line in result.splitlines():
+        if ' ' in line:
+            key, value = line.split(' ', 1)
+            config[key.strip().lower()] = value.strip()
+    return config
+
+
+def check_policy(checks, actual, role):
+    for key, expected in POLICY[role].items():
+        found = actual.get(key, '<missing>')
+        if found != expected:
+            checks.fail('{}: {} expected {!r}, got {!r}'.format(role, key, expected, found))
+    if all(actual.get(k) == v for k, v in POLICY[role].items()):
+        checks.ok('{}: expected effective sshd Match policy'.format(role))
+
+
+def validate_real_user_files(checks, name, role, user):
+    if role == GROUP_ENROLL:
+        home = ENROLL / name
+        if not check_dir(checks, home, 0o755):
+            return
+        check_dir(checks, home / 'inbox', 0o755)
+        check_file(checks, home / 'config.json', 0, 0, 0o644)
+        check_file(checks, home / 'status.json', 0, 0, 0o644)
+        check_file(checks, home / 'inbox' / 'public_key', user.pw_uid, user.pw_gid, 0o600)
+    else:
+        check_file(checks, AUTHORIZED / name, 0, 0, 0o644)
+
+
+def doctor(args):
+    checks = Checks()
+    if os.geteuid() != 0:
+        checks.fail('doctor requires root to validate sshd host keys and protected paths (NO changes made)')
+        return 1
+    if sys.version_info < (3, 9):
+        checks.fail('Python >= 3.9 is required')
+        return 1
+
+    print('AAP2 doctor: READ-ONLY; checks config on disk, NEVER reloads active sshd')
+    for name in (GROUP_ENROLL, GROUP_PROXY):
+        try:
+            grp.getgrnam(name)
+            checks.ok('{} group exists'.format(name))
+        except KeyError:
+            checks.fail('required group {} missing; prepare manually before enrollment'.format(name))
+    for path, mode in ((BASE, 0o755), (STATE, 0o700), (ENROLL, 0o755),
+                       (AUTHORIZED, 0o755)):
+        check_dir(checks, path, mode)
+
+    sshd = sshd_binary(checks)
+    if sshd is not None:
+        if command_output(checks, [sshd, '-t']) is not None:
+            checks.ok('sshd -t: on-disk syntax valid')
+
+    if args.enroll_user or args.proxy_user:
+        if not (args.enroll_user and args.proxy_user):
+            checks.fail('give BOTH --enroll-user and --proxy-user for real Match checks')
+        else:
+            for role, username in ((GROUP_ENROLL, args.enroll_user), (GROUP_PROXY, args.proxy_user)):
+                acct = managed_account(checks, username, role)
+                if acct is not None:
+                    validate_real_user_files(checks, username, role, acct)
+                    if sshd is not None:
+                        cfg = read_effective_config(checks, sshd, username, args.client_addr,
+                                                    args.client_host, args.server_addr,
+                                                    args.server_port)
+                        if cfg is not None:
+                            check_policy(checks, cfg, role)
+    else:
+        checks.wait('no real AAP2 users supplied; Match Group policy NOT verified. '
+                    'This is preflight, NOT permission to activate PINs.')
+
+    if shutil.which('fail2ban-client', path='/usr/sbin:/usr/bin:/sbin:/bin') is None:
+        checks.warn('fail2ban not found: short-lived PIN susceptible to online guessing')
+
+    # Expiry must be real systemd cleanup, NOT a decorative TTL field.
+    checks.wait('cleanup timer and actual PIN expiry are not implemented in S1-A')
+
+    print('Doctor summary: {} failures, {} outstanding enrollment gates'.format(
+        checks.failed, checks.pending))
+    return 1 if checks.failed else (2 if checks.pending else 0)
+
+
+def print_config(_args):
+    path = Path(__file__).resolve().parent / 'sshd-aap2-match.conf'
+    if not path.is_file():
+        print('Missing Match template: {}'.format(path), file=sys.stderr)
+        return 1
+    print('# MANUAL TEMPLATE ONLY: do NOT paste into sshd_config without review.')
+    print('# Check existing Include/Match/AllowGroups, then sshd -t, sshd -T -C.')
+    print(path.read_text(encoding='utf-8'), end='')
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(prog='aap2-setup',
+        description='AAP2 server admin CLI (S1-A: read-only foundation; no enroll yet)')
+    sub = parser.add_subparsers(dest='action', required=True)
+    pc = sub.add_parser('print-config', help='print manual-only SSH Match template')
+    pc.set_defaults(func=print_config)
+    doc = sub.add_parser('doctor', help='read-only preflight and effective OpenSSH checks')
+    doc.add_argument('--enroll-user', help='existing AAP2 temporary test account')
+    doc.add_argument('--proxy-user', help='existing AAP2 permanent test account')
+    doc.add_argument('--client-addr', default='127.0.0.1', help='SSH client source IP (not server)')
+    doc.add_argument('--client-host', default='localhost', help='SSH client hostname (not server)')
+    doc.add_argument('--server-addr', default='127.0.0.1', help='sshd local address')
+    doc.add_argument('--server-port', default='22', help='sshd *guest-local* port')
+    doc.set_defaults(func=doctor)
+    args = parser.parse_args()
+    return args.func(args)
+
+
+if __name__ == '__main__':
+    sys.exit(main())
