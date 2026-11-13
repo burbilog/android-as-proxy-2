@@ -146,9 +146,12 @@ immediately before each destructive operation.
   full server-host-key fingerprint comparison succeeds.
 - No tmpfs or filesystem quotas: a valid PIN-holder may fill the SFTP
   precreated file; this accepted residual DoS risk is documented.
-- Debian 13/PAM positive integration tests of the complete lifecycle
-  are still required before using even on a test server. The S0 tests
-  were isolated and do **not** establish the live server's policy.
+- **CI Ubuntu 24.04 / real OpenSSH + PAM lifecycle passed**: throwaway runner
+  ran the actual `enroll`, password SFTP upload, forced expiry, `cleanup`,
+  repeated cleanup, and verified that the permanent account/key file survived.
+  Real Debian 13/aap2-test verification and fail-closed tamper/crash cases
+  on disposable users remain separate gates before any live use. S0 tests
+  are isolated and do **not** establish the live server's policy.
 
 ## Tests
 
@@ -160,3 +163,14 @@ python3 -m unittest discover -s server -p 'test_*.py' -v
 Unit tests inject failures at account reservation/useradd, immediately
 before PIN activation and during cleanup, and confirm protected UID/home
 checks. S0 continues to exercise real OpenSSH/SFTP restrictions separately.
+
+### CI evidence — 2026-11-13
+
+- Python 3.9 and 3.13 stdlib tests (19 cases each): [CI 43476214083](https://github.com/burbilog/android-as-proxy-2/actions/runs/43476214083) PASS.
+- Isolated S0 real OpenSSH restrictions: [CI 43476214037](https://github.com/burbilog/android-as-proxy-2/actions/runs/43476214037) PASS.
+- S1-B **real Ubuntu 24.04 hosted runner**: [CI 43476214075](https://github.com/burbilog/android-as-proxy-2/actions/runs/43476214075) PASS: full root account/PIN/chroot/SFTP lifecycle, manual test-only expiry, cleanup without `userdel -f`, permanent account and key preserved, second cleanup idempotent. No PIN echoed to CI logs.
+
+A real SFTP session briefly leaves a PAM/sshd worker after its channel closes;
+expiry cleanup now makes up to four bounded `userdel` attempts (one-second
+spacing, retrying only the known busy exit code 8), re-validating ownership
+on every attempt. It never force-deletes an in-use account.
