@@ -4,24 +4,43 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.UserManager
+import android.util.Log
 
+/**
+ * LOCKED_BOOT_COMPLETED may run before CE storage is mounted.
+ * Only the explicitly provisioned device-protected P-256 SSH profile may start then.
+ */
 class BootCompletedReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
-        if (intent?.action != Intent.ACTION_BOOT_COMPLETED) return
-
-        val serviceIntent = Intent(context, SocksForegroundService::class.java).apply {
-            action = "net.isaeff.android.asproxy.action.AUTO_CONNECT_ON_BOOT"
-        }
+        val action = intent?.action
+        if (action != Intent.ACTION_LOCKED_BOOT_COMPLETED &&
+            action != Intent.ACTION_BOOT_COMPLETED) return
 
         try {
+            if (DirectBootTunnelProfile.hasProfile(context)) {
+                if (!DirectBootTunnelProfile.wantsConnection(context)) return
+            } else {
+                // Existing password config is CE-only and must not be touched before unlock.
+                if (action != Intent.ACTION_BOOT_COMPLETED ||
+                    context.getSystemService(UserManager::class.java)?.isUserUnlocked != true) return
+                val prefs = context.getSharedPreferences("aap_prefs", Context.MODE_PRIVATE)
+                if (!prefs.getBoolean("auto_connect", false) ||
+                    !prefs.getBoolean("desired_running", false)) return
+            }
+
+            val serviceIntent = Intent(context, SocksForegroundService::class.java).apply {
+                this.action = SocksForegroundService.ACTION_BOOT
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(serviceIntent)
             } else {
                 context.startService(serviceIntent)
             }
-            AAPLog.append("BootCompletedReceiver: started service for auto-connect")
+            Log.i("AAP2-P0", "BOOT_RECEIVER_START " + action)
         } catch (e: Exception) {
-            AAPLog.append("BootCompletedReceiver: failed to start service: ${e.message}")
+            Log.e("AAP2-P0", "BOOT_RECEIVER_FAILED " +
+                e.javaClass.simpleName + ": " + e.message)
         }
     }
 }

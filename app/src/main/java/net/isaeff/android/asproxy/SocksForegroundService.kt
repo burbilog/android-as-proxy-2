@@ -9,6 +9,8 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.os.UserManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +37,7 @@ class SocksForegroundService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var socksServer: Socks5ProxyServer? = null
     private var sshTunnelManager: SSHTunnelManager? = null
+    private var keystoreTunnelManager: KeystoreSshTunnelManager? = null
     private var trafficJob: Job? = null
     private var running = false
 
@@ -48,18 +51,53 @@ class SocksForegroundService : Service() {
         }
     }
 
+    private fun isUnlocked(): Boolean =
+        getSystemService(UserManager::class.java)?.isUserUnlocked == true
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val prefs = getSharedPreferences("aap_prefs", Context.MODE_PRIVATE)
         if (intent?.action == ACTION_STOP) {
-            prefs.edit().putBoolean("desired_running", false).apply()
+            if (DirectBootTunnelProfile.hasProfile(this)) {
+                DirectBootTunnelProfile.setDesiredRunning(this, false)
+            }
+            if (isUnlocked()) {
+                getSharedPreferences("aap_prefs", Context.MODE_PRIVATE)
+                    .edit().putBoolean("desired_running", false).apply()
+            }
             stopSelf()
             return START_NOT_STICKY
         }
 
         if (running) return START_STICKY
 
+        // Read only device-protected data until the user has unlocked once.
+        val bootProfile = try {
+            DirectBootTunnelProfile.load(this)
+        } catch (e: Exception) {
+            Log.e("AAP2-P0", "BOOT_PROFILE_INVALID " + e.javaClass.simpleName)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        if (bootProfile != null) {
+            val bootOrRestart = intent == null || intent.action == ACTION_BOOT
+            if (bootOrRestart && !DirectBootTunnelProfile.wantsConnection(this)) {
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            if (!bootOrRestart) DirectBootTunnelProfile.setDesiredRunning(this, true)
+            return startKeystoreTunnel(bootProfile)
+        }
+
+        // Legacy password mode remains credential-protected and starts after unlock only.
+        if (!isUnlocked()) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        val prefs = getSharedPreferences("aap_prefs", Context.MODE_PRIVATE)
         when (intent?.action) {
-            ACTION_BOOT -> if (!prefs.getBoolean("auto_connect", false)) {
+            ACTION_BOOT -> if (!prefs.getBoolean("auto_connect", false) ||
+                !prefs.getBoolean("desired_running", false)) {
                 stopSelf()
                 return START_NOT_STICKY
             }
@@ -73,7 +111,7 @@ class SocksForegroundService : Service() {
         val hostAndPort = try {
             parseEndpoint(prefs.getString("ssh_server", "") ?: "")
         } catch (e: IllegalArgumentException) {
-            AAPLog.append("Invalid SSH address: ${e.message}")
+            AAPLog.append("Invalid SSH address: " + e.message)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -112,10 +150,32 @@ class SocksForegroundService : Service() {
 
             running = true
             monitorTraffic()
-            AAPLog.append("AAP2 SOCKS5 listening on 127.0.0.1:${proxy.boundPort}")
+            AAPLog.append("AAP2 SOCKS5 listening on 127.0.0.1:" + proxy.boundPort)
             return START_STICKY
         } catch (e: Exception) {
-            AAPLog.append("Unable to start proxy: ${e.message}")
+            AAPLog.append("Unable to start proxy: " + e.message)
+            ConnectionStateHolder.setState(ConnectionState.DISCONNECTED)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+    }
+
+    private fun startKeystoreTunnel(profile: DirectBootTunnelProfile.Config): Int {
+        try {
+            startForeground(NOTIFICATION_ID, createNotification())
+            val proxy = Socks5ProxyServer(11080)
+            proxy.start()
+            socksServer = proxy
+            keystoreTunnelManager = KeystoreSshTunnelManager(this, profile, proxy.boundPort).apply {
+                onFatalError = { stopSelf() }
+                start()
+            }
+            running = true
+            monitorTraffic()
+            Log.i("AAP2-P0", "BOOT_TUNNEL_STARTED port=" + profile.remotePort)
+            return START_STICKY
+        } catch (e: Exception) {
+            Log.e("AAP2-P0", "BOOT_TUNNEL_FAILED " + e.javaClass.simpleName)
             ConnectionStateHolder.setState(ConnectionState.DISCONNECTED)
             stopSelf()
             return START_NOT_STICKY
@@ -184,6 +244,8 @@ class SocksForegroundService : Service() {
         trafficJob?.cancel()
         sshTunnelManager?.destroy()
         sshTunnelManager = null
+        keystoreTunnelManager?.destroy()
+        keystoreTunnelManager = null
         socksServer?.close()
         socksServer = null
         serviceScope.cancel()
