@@ -39,7 +39,10 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Check local build and soak scripts shell syntax
-        run: sh -n scripts/soak-monitor.sh scripts/build-signed-apk.sh scripts/aap2-local.sh
+        run: |
+          for s in scripts/soak-monitor.sh scripts/build-signed-apk.sh scripts/aap2-local.sh; do
+            sh -n "$s"
+          done
 
       - name: Build and unit tests
         run: |
