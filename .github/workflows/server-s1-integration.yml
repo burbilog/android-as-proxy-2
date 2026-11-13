@@ -1,0 +1,29 @@
+name: S1 disposable real SSH/PIN/TTL integration
+
+on:
+  pull_request:
+    branches: [develop, master]
+    paths:
+      - 'server/**'
+      - '.github/workflows/server-s1-integration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  s1-real:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SSH/SFTP tools on disposable runner
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq openssh-server openssh-client sshpass
+      - name: Verify lifecycle harness syntax
+        run: sh -n server/test-s1-live.sh
+      - name: Run disposable real UNIX/PIN/sshd/cleanup integration
+        env:
+          AAP2_S1_DISPOSABLE: YES
+        run: sudo --preserve-env=GITHUB_ACTIONS,AAP2_S1_DISPOSABLE sh server/test-s1-live.sh
