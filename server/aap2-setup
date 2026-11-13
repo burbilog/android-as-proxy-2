@@ -39,6 +39,7 @@ POLICY = {
     GROUP_ENROLL: {
         'authenticationmethods': 'password',
         'passwordauthentication': 'yes',
+        'usepam': 'yes',
         'kbdinteractiveauthentication': 'no',
         'pubkeyauthentication': 'no',
         'forcecommand': 'internal-sftp',
@@ -50,6 +51,8 @@ POLICY = {
     GROUP_PROXY: {
         'authenticationmethods': 'publickey',
         'passwordauthentication': 'no',
+        'usepam': 'yes',
+        'forcecommand': 'none',
         'kbdinteractiveauthentication': 'no',
         'pubkeyauthentication': 'yes',
         'authorizedkeysfile': '/etc/ssh/aap2-authorized-keys/%u',
@@ -228,6 +231,13 @@ def read_effective_config(checks, sshd, user, addr, client_host, server_addr, se
 
 
 def check_policy(checks, actual, role):
+    # AAP2 cannot reliably infer whether arbitrary Allow*/Deny* glob
+    # expressions and client DNS conditions will admit this account.
+    # Refuse enrollment until the admin resolves global allow/deny policy.
+    for key in ('allowusers', 'allowgroups', 'denyusers', 'denygroups'):
+        if actual.get(key):
+            checks.fail('{}: effective {} configured; manual review required (fail closed)'
+                        .format(role, key))
     for key, expected in POLICY[role].items():
         found = actual.get(key, '<missing>')
         if found != expected:
