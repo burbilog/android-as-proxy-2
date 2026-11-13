@@ -300,7 +300,7 @@ storage. This is a debug instrumentation provisioning tool, not a user UI.
 - [x] Network-callback backoff wake tested on Zebra: `BOOT_NETWORK_AVAILABLE` 00:16:25.497, `BOOT_RETRY_NETWORK_WAKE` 00:16:25.498, `BOOT_FORWARD_READY` 00:17:01.412 (~36 seconds after network notification). Connection attempts failed until the network path was usable. After restoration, the Debian VM's curl through SOCKS5 returned **HTTP 200** at 00:20 on 2026-11-13; end-to-end recovery PASS.
 - [x] Overnight unattended soak **observed**: 2026-11-12 21:40:14Z through 2026-11-13 11:32:20Z (13h 52m 06s); 163/167 successful HTTP 200 SOCKS5 checks, 4 isolated failures, subsequent samples succeeded without manual recovery. This is recovery/availability observation, **not** continuous uptime or failure-free PASS.
 - [x] **Post-soak Android foreground-service state confirmed** on Zebra (2026-11-13 ~14:43 local): `dumpsys activity services net.isaeff.android.asproxy2` reports running `SocksForegroundService`, `isForeground=true`, PID **4247**, `createTime=-14h30m48s` and `startRequested=true`; `pidof` also returns 4247. PID matches pre-soak Wi-Fi reconnect logs, supporting continuous process/service lifetime across the observation window.
-- [ ] Full **physical power-off/on** still needs separate confirmation; `adb reboot` does not prove a physical power cycle.
+- [x] **Physical power-off/on** on Zebra TC21 (2026-11-13, user confirmation): after full shutdown and hardware power-on, the existing SOCKS5 endpoint autonomously resumed HTTP 200. Exact startup latency was not measured. This check is distinct from software `adb reboot`.
 
 The boot and Stop tests were performed on Zebra TC21 on 2026-11-12 (Android 11); observed: `DIRECT_BOOT_KEYSTORE_OK` 20:29:18.543, `BOOT_RECEIVER_START` 20:29:18.570, `BOOT_TUNNEL_STARTED` 20:29:18.782, `BOOT_FORWARD_READY` 20:29:19.291. Remaining unchecked checklist items are unverified. Note: stopping the application from Android system settings is not the same as AAP2 notification Stop and does not call `ACTION_STOP`.
 
@@ -328,3 +328,7 @@ with the five-minute HTTPS-over-SOCKS5 probe.
   diagnosis if they recur, **without auth-log parsing**.
 - This does **not** cover genuine physical power-off/on, nor does it prove
   that a subsequently installed APK is equivalent to this tested build.
+
+### Physical cold start and deliberate soak interruption — 2026-11-13
+
+The user confirmed a genuine **power-off / hardware power-on** of Zebra TC21 followed by successful HTTPS-through-SOCKS5 HTTP **200** without manually starting the app. Exact cold-boot recovery time not available. The five-minute monitor was accidentally left running during this deliberate power outage, creating an **expected, induced failure interval** in the post-soak CSV. It must be annotated/excluded from the earlier strictly unattended baseline (167 probes; 4 spontaneous failures), not merged with those spontaneous failures. No second CSV has been supplied, so the interruption size is unmeasured.
