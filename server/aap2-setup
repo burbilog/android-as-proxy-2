@@ -330,43 +330,7 @@ def print_config(_args):
 
 # S1-B lifecycle. Only operations on verified, registered AAP2 accounts are
 # permitted. The state root and chroots are never writable by those accounts.
-ID_RE = re.compile(r'^[0-9a-f]{12}
-    parser = argparse.ArgumentParser(prog='aap2-setup',
-        description='AAP2 server admin CLI (S1-B temporary PIN invitation; S2 approval pending)')
-    sub = parser.add_subparsers(dest='action', required=True)
-    pc = sub.add_parser('print-config', help='print manual-only SSH Match template')
-    pc.set_defaults(func=print_config)
-    doc = sub.add_parser('doctor', help='read-only preflight and effective OpenSSH checks')
-    doc.add_argument('--enroll-user', help='existing AAP2 temporary test account')
-    doc.add_argument('--proxy-user', help='existing AAP2 permanent test account')
-    doc.add_argument('--client-addr', default='127.0.0.1', help='SSH client source IP (not server)')
-    doc.add_argument('--client-host', default='localhost', help='SSH client hostname (not server)')
-    doc.add_argument('--server-addr', default='127.0.0.1', help='sshd local address')
-    doc.add_argument('--server-port', default='22', help='sshd *guest-local* port')
-    doc.set_defaults(func=doctor)
-    en = sub.add_parser('enroll', help='create 10-minute PIN/SFTP invitation (NO approval yet)')
-    en.add_argument('device_name', help='admin-facing device label')
-    en.add_argument('--server', required=True, help='external SSH host[:port] shown to user')
-    en.add_argument('--client-addr', required=True, help='real expected SSH client source IP')
-    en.add_argument('--client-host', default='unknown', help='client hostname for sshd -T -C')
-    en.add_argument('--server-addr', required=True, help='actual sshd local listen IP')
-    en.add_argument('--server-port', default='22', help='actual sshd LOCAL port')
-    en.set_defaults(func=enroll)
-    cl = sub.add_parser('cleanup', help='expire temporary PIN users (systemd timer)')
-    cl.set_defaults(func=cleanup)
-    li = sub.add_parser('list', help='list AAP2 root-owned invitation metadata')
-    li.set_defaults(func=list_enrollments)
-    args = parser.parse_args()
-    return args.func(args)
-
-
-if __name__ == '__main__':
-    try:
-        sys.exit(main())
-    except (SetupError, OSError, ValueError, json.JSONDecodeError) as exc:
-        print('AAP2 ERROR: {}'.format(exc), file=sys.stderr)
-        sys.exit(1)
-)
+ID_RE = re.compile(r'^[0-9a-f]{12}$')
 PORT_LOW, PORT_HIGH = 11010, 11509
 PIN_TTL = 600
 SAFE_ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C'}
@@ -842,7 +806,7 @@ def list_enrollments(_args):
 
 def main():
     parser = argparse.ArgumentParser(prog='aap2-setup',
-        description='AAP2 server admin CLI (S1-A: read-only foundation; no enroll yet)')
+        description='AAP2 server CLI (S1-B invitation creation and TTL cleanup; S2 approval pending)')
     sub = parser.add_subparsers(dest='action', required=True)
     pc = sub.add_parser('print-config', help='print manual-only SSH Match template')
     pc.set_defaults(func=print_config)
@@ -854,9 +818,25 @@ def main():
     doc.add_argument('--server-addr', default='127.0.0.1', help='sshd local address')
     doc.add_argument('--server-port', default='22', help='sshd *guest-local* port')
     doc.set_defaults(func=doctor)
+    en = sub.add_parser('enroll', help='create temporary PIN/SFTP invitation (NO approval yet)')
+    en.add_argument('device_name', help='admin-facing device label')
+    en.add_argument('--server', required=True, help='SSH host[:port] shown to user')
+    en.add_argument('--client-addr', required=True, help='expected SSH client source IP')
+    en.add_argument('--client-host', default='unknown', help='client hostname for sshd -T')
+    en.add_argument('--server-addr', required=True, help='real sshd listen IP')
+    en.add_argument('--server-port', default='22', help='sshd LOCAL port')
+    en.set_defaults(func=enroll)
+    cl = sub.add_parser('cleanup', help='expire temporary PIN/SFTP users')
+    cl.set_defaults(func=cleanup)
+    li = sub.add_parser('list', help='list root-owned invitation metadata')
+    li.set_defaults(func=list_enrollments)
     args = parser.parse_args()
     return args.func(args)
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except (SetupError, OSError, ValueError, json.JSONDecodeError) as exc:
+        print('AAP2 ERROR: {}'.format(exc), file=sys.stderr)
+        sys.exit(1)
