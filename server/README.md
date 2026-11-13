@@ -1,14 +1,17 @@
 # AAP2 server (OpenSSH + Python 3.9+)
 
 **Current scope:** S0 real OpenSSH policy tests; S1-A read-only doctor;
-S1-B temporary PIN/SFTP invitation creation and TTL cleanup. **S2 approval
-and permanent device activation are NOT implemented yet.** Do not use
-these scripts to register a real remote phone.
+S1-B temporary PIN/SFTP invitation creation and TTL cleanup; **S2 server-side
+manual key approval, restricted permanent SSH -R and explicit device revoke**.
+Android's no-PIN-before-host-key-check UI and unattended registration are
+still pending. Do not use these scripts to register a real remote phone.
 
 - [S0_OPENSSH.md](S0_OPENSSH.md) — tested SSH Match policy, **manual** installation
 - [S1_DOCTOR.md](S1_DOCTOR.md) — preflight, NSS/UID checks, effective `sshd -T -C`
 - [S1_ENROLL.md](S1_ENROLL.md) — crash-safe reservation, PIN activation,
   1-minute cleanup timer, security contract and disposable-VM installation
+- [S2_APPROVAL.md](S2_APPROVAL.md) — immutable candidate key, manual approval,
+  loopback-only reverse forward and confirmed device revoke
 
 Files: `aap2-setup` (single stdlib-only Python CLI),
 `aap2-cleanup.service`/`.timer`, `sshd-aap2-match.conf` (**template only**).
