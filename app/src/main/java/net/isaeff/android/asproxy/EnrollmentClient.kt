@@ -143,7 +143,7 @@ internal class EnrollmentClient(private val context: Context) {
         EnrollmentPending.clear(context)
     }
 
-    private fun verifyPermanentTunnel(info: EnrollmentPending.Info) {
+    internal fun verifyPermanentTunnel(info: EnrollmentPending.Info) {
         val identity = AndroidKeystoreIdentity.getExisting(context)
         val jsch = VerifiedSshHostKey.pinnedJsch(
             info.host, info.sshPort, info.verifiedHostKey
