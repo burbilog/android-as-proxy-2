@@ -96,6 +96,14 @@ EOF
     echo 'Timed out waiting for a valid public-key upload' >&2
     exit 1
     ;;
+  approve)
+    ID=$(cat "$IDENTIFIER")
+    # This action is called only after Android has recorded the interrupted
+    # enrollment. The same uploaded public key is approved, without a new PIN.
+    printf 'y\n' | aap2-setup approve "$ID" > "$STATE/approve-output"
+    grep -q 'APPROVED:' "$STATE/approve-output"
+    printf 'A1 ephemeral admin approved existing uploaded key after SFTP break\n'
+    ;;
   revoke)
     ID=$(cat "$IDENTIFIER")
     printf 'REVOKE\n' | aap2-setup revoke "$ID" > "$STATE/revoke-output"
@@ -103,7 +111,7 @@ EOF
     printf 'A1 ephemeral approved device revoked\n'
     ;;
   *)
-    echo 'Usage: ci-a1-server.sh SERVER_DIR {init|invite|watch-approve|revoke}' >&2
+    echo 'Usage: ci-a1-server.sh SERVER_DIR {init|invite|watch-approve|approve|revoke}' >&2
     exit 2
     ;;
 esac
