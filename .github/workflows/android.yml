@@ -38,13 +38,13 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Check soak monitor shell syntax
-        run: sh -n scripts/soak-monitor.sh
+      - name: Check local build and soak scripts shell syntax
+        run: sh -n scripts/soak-monitor.sh scripts/build-signed-apk.sh scripts/aap2-local.sh
 
       - name: Build and unit tests
         run: |
           chmod +x ./gradlew
-          ./gradlew --no-daemon --stacktrace :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest
+          ./gradlew --no-daemon --stacktrace :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleRelease :app:testDebugUnitTest
 
       - name: Upload debug APK
         if: success()
