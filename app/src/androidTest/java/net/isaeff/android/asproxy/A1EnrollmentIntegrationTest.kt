@@ -149,6 +149,29 @@ class A1EnrollmentIntegrationTest {
         assertArrayEquals(identity.getPublicKeyBlob(),
             AndroidKeystoreIdentity.getExisting(context).getPublicKeyBlob())
 
+        // A real SSH publickey authentication must succeed, but OpenSSH's
+        // permitlisten on THIS key must reject a neighboring reserved port.
+        // The check uses the same client implementation as enrollment; no
+        // mocking of the SSH server or fabricated config.json status.
+        val wrongPort = if (profile.remotePort == 11509) 11508 else profile.remotePort + 1
+        val wrongForward = EnrollmentPending.Info(
+            host, port, profile.username, wrongPort, profile.verifiedHostKey.copyOf()
+        )
+        val refused = withContext(Dispatchers.IO) {
+            runCatching { EnrollmentClient(context).verifyPermanentTunnel(wrongForward) }
+        }
+        assertTrue("OpenSSH allowed a reverse port outside authorized permitlisten", refused.isFailure)
+        assertEquals("Rejected -R must not overwrite the enrolled profile",
+            profile.remotePort, requireNotNull(DirectBootTunnelProfile.load(context)).remotePort)
+        withContext(Dispatchers.IO) {
+            EnrollmentClient(context).verifyPermanentTunnel(
+                EnrollmentPending.Info(
+                    host, port, profile.username, profile.remotePort, profile.verifiedHostKey.copyOf()
+                )
+            )
+        }
+        Log.i("AAP2-A1", "A1_WRONG_PERMITLISTEN_DENIED_CORRECT_PORT_ACCEPTED")
+
         val intent = Intent(context, SocksForegroundService::class.java).apply {
             action = "net.isaeff.android.asproxy.action.START_SERVICE"
         }
