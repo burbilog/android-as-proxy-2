@@ -887,8 +887,17 @@ def read_uploaded_public_key(record):
     return canonical_public_key(raw)
 
 
+def fingerprint_public_key(path):
+    """OpenSSH is the source of truth on acceptable ECDSA public keys."""
+    output = command_output(Checks(),
+        ['/usr/bin/ssh-keygen', '-lf', str(path), '-E', 'sha256'])
+    if output is None or not output.strip().startswith('256 SHA256:'):
+        raise SetupError('OpenSSH rejected candidate key; upload can be corrected')
+    return output.strip()
+
+
 def snapshot_key(record):
-    """Only first valid key is snapshotted; later uploads can never replace it."""
+    """Persist the first *OpenSSH-validated* key, never an invalid upload."""
     directory = record_path(record['id'])
     candidate = directory / 'candidate.pub'
     if candidate.exists() or candidate.is_symlink():
@@ -897,16 +906,26 @@ def snapshot_key(record):
         canonical = canonical_public_key(data)
         if canonical.encode('ascii') != data:
             raise SetupError('existing candidate snapshot has noncanonical content')
-    else:
-        canonical = read_uploaded_public_key(record)
-        new_file(candidate, canonical.encode('ascii'), 0o600)
-    # Let OpenSSH validate the actual EC public key; no homemade ECC verifier.
-    checks = Checks()
-    fingerprint = command_output(checks,
-        ['/usr/bin/ssh-keygen', '-lf', str(candidate), '-E', 'sha256'])
-    if fingerprint is None or not fingerprint.strip().startswith('256 SHA256:'):
-        raise SetupError('OpenSSH rejected candidate key; no approval possible')
-    return canonical, fingerprint.strip()
+        return canonical, fingerprint_public_key(candidate)
+
+    canonical = read_uploaded_public_key(record)
+    # Validation must happen BEFORE creating immutable candidate.pub.
+    # A malicious/incomplete first upload must not poison an invitation.
+    fd, temp = tempfile.mkstemp(prefix='.aap2-candidate-', dir=str(directory))
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, 'wb') as output:
+            output.write(canonical.encode('ascii'))
+        fd = -1
+        fingerprint = fingerprint_public_key(Path(temp))
+        os.replace(temp, str(candidate))
+        verified_file(candidate, 0, 0, 0o600)
+    finally:
+        if fd != -1:
+            os.close(fd)
+        if os.path.exists(temp):
+            os.unlink(temp)
+    return canonical, fingerprint
 
 
 def authorized_line(record, key_line):
