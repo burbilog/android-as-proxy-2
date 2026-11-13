@@ -64,14 +64,11 @@ permanently running SSH manager.
 
 ## Gates before remotely provisioning the physical Zebra
 
-- [ ] Android CI compilation and JVM input tests.
+- [x] Android CI compilation and JVM input tests — [run #43497695021](https://github.com/burbilog/android-as-proxy-2/actions/runs/43497695021) PASS.
 - [ ] Actual emulator/physical Android test against the server S2
   \`enroll/approve\` flow using a **new temporary account/remote port**.
-- [ ] Demonstrate that the PIN never crosses SSH before Verified, and a
-  changed host key fails closed before authentication.
-- [ ] Verify an interrupted SFTP connection after approval can be resumed
-  with the existing Keystore identity; test expired PIN, malformed JSON
-  and wrong permitlisten.
+- [x] Client negative pre-auth host-key pin test PASS (`OK (1 test)`): a deliberately changed local pin is rejected before PIN auth, Keystore provisioning or pending-profile persistence. The Compose button ordering is implemented but UI tap-by-tap verification is still pending.
+- [ ] Verify an interrupted SFTP connection after approval can be resumed with the existing Keystore identity; test expired PIN, malformed JSON and wrong permitlisten on Android.
 - [ ] Verify after application restart, reboot-before-first-unlock and
   ordinary APK update, the newly enrolled device retains identity/pin.
 - [ ] Remove the old freeform password/TOFU UI path before a public
@@ -80,3 +77,16 @@ permanently running SSH manager.
 **Do not install this development A1 APK on the working Zebra yet.** The
 existing P0-build and ongoing remote SOCKS soak should remain untouched
 until the end-to-end registration tests are planned separately.
+
+## Emulator-to-server acceptance — 2026-11-13
+
+[GitHub Actions #43499869896](https://github.com/burbilog/android-as-proxy-2/actions/runs/43499869896) passed on Android 11 / API 30 x86_64 emulator using a *real* ephemeral S2 OpenSSH, PAM, and Python enrollment server on GitHub's disposable Ubuntu runner (not the production server).
+
+- `a1_1_wrongPinnedHostRejectedBeforeAuthenticationOrKeyCreation` returned `OK (1 test)` (0.171s); wrong host pin refused before authentication or state creation.
+- Server created a fresh ten-digit PIN; its private test value was streamed into app's private temporary test file, not `am instrument` args/logs. The first complete uploaded public P-256 key was approved via `aap2-setup approve`.
+- `a1_2_realPinSftpApprovalAndPersistentKeystoreTunnel` returned `OK (1 test)` (8.712s) after full independent host fingerprint comparison, password-only SFTP, key publication, permanent Keystore publickey authentication, exact reverse listener verification and start of Android foreground SOCKS.
+- Host **actually fetched HTTP through the Android SOCKS5 reverse SSH tunnel**: `A1 PASS: emulator PIN→SFTP→approve→Keystore→-R→SOCKS5→HTTP`. HTTP server was CI-local; no public internet dependency.
+- Explicit `aap2-setup revoke` terminated the approved account's active reverse session: `A1 PASS: server revoke killed Android reverse SOCKS listener`.
+- The instrumentation test deliberately stayed alive during host HTTP/revoke checks because the Android test runner can terminate its process (and foreground service) after a test returns. That is an **emulator test harness detail**, not an AAP2 service lifetime change.
+
+**Scope:** This proves core Android↔S2 transport and fail-closed host-pin behavior on a disposable emulator. It does not yet prove the Compose UI user-action flow, reboot-before-first-unlock, interrupted SFTP recovery, malformed server JSON, or preserving identity on physical Zebra after enrolling this way. This is still a **draft development branch**; the existing P0 APK on Zebra is untouched.
