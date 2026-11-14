@@ -1127,14 +1127,30 @@ def revoke(args):
 
 
 def list_enrollments(_args):
+    """Read stored enrollment state, not inferred online state or parsed logs."""
     require_root()
     with state_lock():
-        for record in all_records():
-            print('{}  {}  {}  port={}  expires={}'.format(
-                record['id'], record['state'], record['device_name'],
-                record['remote_port'],
-                datetime.datetime.fromtimestamp(record['expires_at'],
-                                                datetime.timezone.utc).isoformat()))
+        records = list(all_records())
+    if not records:
+        print('AAP2 devices: none')
+        print('To add one: aap2-setup enroll --help')
+        return 0
+
+    print('AAP2 devices ({}):'.format(len(records)))
+    for record in records:
+        state = record['state']
+        print('  {} [{}]  {}  reserved SOCKS5 127.0.0.1:{}'.format(
+            record['device_name'], record['id'], state.upper(),
+            record['remote_port']))
+        if state == 'active':
+            expiry = datetime.datetime.fromtimestamp(
+                record['expires_at'], datetime.timezone.utc)
+            print('    Temporary PIN expires: {} UTC'.format(
+                expiry.strftime('%Y-%m-%d %H:%M')))
+    print()
+    print('APPROVED means the SSH key is authorized, NOT that the phone is online.')
+    print('To approve: aap2-setup approve ID')
+    print('To revoke:  aap2-setup revoke ID')
     return 0
 
 
