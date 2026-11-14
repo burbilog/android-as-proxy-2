@@ -22,9 +22,19 @@ Example (fill in real addresses):
 ```sh
 aap2-setup enroll SpareAndroid --manual-code \
   --server ssh.example.net:22225 \
-  --client-addr 192.0.2.5 --client-host phone.example.net \
   --server-addr 192.0.2.10 --server-port 22
 ```
+
+The phone may be behind one or more NATs. The enrollment server does **not**
+require the phone's LAN IP or public NAT IP, and SSH authorization is **not**
+bound to either. `--client-addr` is optional: it is passed **only** to
+`sshd -T -C` as a sample source address to inspect effective `Match`
+policy. By default the CLI uses documentation address `198.51.100.1`,
+prints a warning, and still checks the role-specific `Match Group`
+restrictions on both generated accounts. On servers with source-sensitive
+`Match Address` or `Match Host` conditions, an administrator must
+independently verify policy for the real connection; no one sample IP can
+prove those policies for arbitrary NAT clients.
 
 Six-digit codes are **not authentication secrets**: they only select a
 short-lived Unix account. The ten-digit PIN, the verified SSH host-key
