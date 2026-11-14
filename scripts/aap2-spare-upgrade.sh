@@ -71,7 +71,12 @@ printf 'ADB serial: %s\nModel: %s\n' "$SERIAL" "$MODEL"
 
 # Neither action ever uninstalls AAP2, touches its data or touches AAP1.
 # The FIRST action is intentionally blocked for already installed AAP2.
-installed=$(adb_device shell pm path "$PACKAGE" | tr -d '\r')
+installed=$(adb_device shell pm path "$PACKAGE" 2>/dev/null | tr -d '\r' || :)
+case "$installed" in
+    package:*) ;;
+    '') ;;
+    *) fail "Unexpected pm path response for $PACKAGE: $installed" ;;
+esac
 case "$ACTION" in
     first)
         [ -z "$installed" ] ||
@@ -82,7 +87,7 @@ case "$ACTION" in
         [ -n "$installed" ] ||
             fail 'AAP2 is missing. Install the first APK and enroll BEFORE upgrading'
         installed_code=$(adb_device shell dumpsys package "$PACKAGE" |
-            sed -n 's/.*versionCode=\\([0-9][0-9]*\\).*/\\1/p' | head -n 1)
+            sed -n 's/.*versionCode=\([0-9][0-9]*\).*/\1/p' | head -n 1)
         [ "$installed_code" = "$OLD_CODE" ] ||
             fail "Installed versionCode is $installed_code; expected $OLD_CODE"
         echo 'Check that A1 enrollment and SOCKS5 worked BEFORE this update.'
@@ -100,7 +105,7 @@ esac
 expected=$OLD_CODE
 [ "$ACTION" = upgrade ] && expected=$NEW_CODE
 actual=$(adb_device shell dumpsys package "$PACKAGE" |
-    sed -n 's/.*versionCode=\\([0-9][0-9]*\\).*/\\1/p' | head -n 1)
+    sed -n 's/.*versionCode=\([0-9][0-9]*\).*/\1/p' | head -n 1)
 [ "$actual" = "$expected" ] ||
     fail "Installed versionCode $actual differs from expected $expected"
 echo "Installation verified: $PACKAGE versionCode=$actual"
