@@ -153,13 +153,13 @@ class LifecycleTests(unittest.TestCase):
             with self.assertRaisesRegex(aap.SetupError, 'MANUAL repair'):
                 aap.check_real_identity(record, role)
 
-    def make_enroll_fixture(self, directory, *, crash=None):
+    def make_enroll_fixture(self, directory, *, crash=None, manual_code=False):
         """Mock only external root-system mutations; use real JSON writes."""
         state = Path(directory, 'state')
         state.mkdir()
         created = {}
         events = []
-        enrollment_id = '123456abcdef'
+        enrollment_id = '000012' if manual_code else '123456abcdef'
 
         def getpwnam(name):
             if name not in created:
@@ -201,7 +201,8 @@ class LifecycleTests(unittest.TestCase):
 
         args = types.SimpleNamespace(device_name='TC21', server='example.net:22222',
              client_addr='192.0.2.17', server_addr='192.0.2.20',
-             server_port='22', client_host='test-client.invalid')
+             server_port='22', client_host='test-client.invalid',
+             manual_code=manual_code)
         stack = contextlib.ExitStack()
         stack.enter_context(mock.patch.object(aap, 'STATE', state))
         stack.enter_context(mock.patch.object(aap, 'require_preflight', return_value='/usr/sbin/sshd'))
@@ -241,6 +242,24 @@ class LifecycleTests(unittest.TestCase):
             self.assertEqual(state['state'], 'active')
             self.assertNotIn('0000000012', meta_path.read_text())
             self.assertIn('0000-0000-12', out.getvalue())
+
+    def test_manual_setup_code_is_six_decimal_digits_and_keeps_ten_digit_pin(self):
+        with tempfile.TemporaryDirectory() as d:
+            stack, meta_path, args, events = self.make_enroll_fixture(
+                d, manual_code=True)
+            with stack, contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(aap.enroll(args), 0)
+            state = json.loads(meta_path.read_text())
+            self.assertEqual(state['id'], '000012')
+            self.assertEqual(state['users'][aap.GROUP_ENROLL]['name'], 'aap2e000012')
+            self.assertEqual(state['users'][aap.GROUP_PROXY]['name'], 'aap2p000012')
+            self.assertIn('Phone setup code (6 digits, no prefix): 000012', out.getvalue())
+            self.assertIn('One-time PIN: 0000-0000-12', out.getvalue())
+            self.assertNotIn('0000000012', meta_path.read_text())
+            self.assertEqual(events[2][0], 'chpasswd')
+            self.assertTrue(aap.ID_RE.fullmatch('000012'))
+            self.assertTrue(aap.ID_RE.fullmatch('123456abcdef'))
+            self.assertFalse(aap.ID_RE.fullmatch('123456'))
 
     def test_crash_before_useradd_never_activates_pin(self):
         with tempfile.TemporaryDirectory() as d:
