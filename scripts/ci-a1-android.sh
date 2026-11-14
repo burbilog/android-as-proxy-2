@@ -181,6 +181,18 @@ if curl --noproxy '' --silent --max-time 3 \
 fi
 adb shell -T "run-as $PKG touch files/a1-ci-ui-release"
 wait "$TEST_PID"
+
+# The original approved profile is still on this disposable emulator after
+# server revoke. Exercise MainActivity's support screenshot with REAL user,
+# server and both SSH fingerprints before the regression fixture resets it.
+DETAILS_TEST=net.isaeff.android.asproxy.A1ConnectionDetailsUiTest
+DETAILS_OUTPUT=$(timeout 120 adb shell am instrument -w \
+  -e class "${DETAILS_TEST}#approvedIdentityVisibleAndFullDiagnosticsFitOnePhoneScreen" "$RUNNER")
+printf '%s\n' "$DETAILS_OUTPUT"
+grep -q 'OK (1 test)' <<<"$DETAILS_OUTPUT" ||
+  { echo 'A1 one-screen support details UI FAILED' >&2; exit 1; }
+echo 'A1 PASS: main screen identifies approved account; one-screen full public diagnostics'
+
 run_test a1_1c_resetRevokedUiFixtureWithoutDeletingKeystore
 
 # Keep the original interrupted-SFTP/Resume, signed-update and Direct Boot
