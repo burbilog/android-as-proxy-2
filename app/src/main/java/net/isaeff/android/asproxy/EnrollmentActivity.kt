@@ -115,7 +115,7 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                     )
                     OutlinedTextField(
                         value = pin, onValueChange = { pin = it },
-                        label = { Text("One-time PIN (4-4-2)") },
+                        label = { Text("One-time PIN (10 digits, no dashes)") },
                         modifier = Modifier.fillMaxWidth().testTag("a1-pin"),
                         visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
