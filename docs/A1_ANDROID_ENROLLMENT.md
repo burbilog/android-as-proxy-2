@@ -49,6 +49,26 @@ footer are visible together in the same phone viewport, with a working
 Close action. Full PIN/SFTP/approval/SOCKS HTTP, APK update, Direct Boot and
 revoke regression gates also passed.
 
+## Physical diagnostics-screen acceptance — Seuic Cruise2 (2026-11-14)
+
+- Same local long-term signing certificate; in-place ADB upgrade of the
+  already-enrolled **physical Seuic Cruise2** from `20003` to `20004`:
+  `scripts/aap2-spare-upgrade.sh upgrade` reported **Success** and verified
+  installed `versionCode=20004`. No uninstall/re-enrollment.
+- Immediately afterward the isolated S2 host successfully fetched
+  Cloudflare trace via `socks5h://127.0.0.1:11010` and the existing
+  SSH reverse tunnel. The remote exit IP was `195.91.221.147`.
+  Thus the signed in-place update preserved a functioning proxy.
+- Human review of the **Details** screen on the actual Seuic accepted
+  its compact typography. It is intentionally small so that support
+  information remains on a **single screen**, including on devices with
+  less display space. Do not add complexity or increase the font by
+  default without a concrete reported clipping problem.
+- This test does not establish cold-reboot locked-user behavior or
+  long-term OEM background survival of the `20004` build; those
+  remain separate acceptance tests. Working Zebra, its server and the
+  soak monitor were not altered.
+
 ## Failure recovery and migration
 
 - A terminated SFTP session after upload preserves the original host pin, permanent username/port and Keystore key alias in pending state, with **no PIN**. **Resume approved enrollment** makes **one** pinned permanent publickey SSH / reverse-port attempt using the **existing** identity. No password or automatic enrollment retry loop.
