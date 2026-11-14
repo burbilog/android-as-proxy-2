@@ -348,7 +348,8 @@ def doctor(args):
         checks.wait('aap2-cleanup.timer inactive/missing; PIN enrollment forbidden')
 
     if machine:
-        emit_json('doctor', checks.failed == 0, checks=checks.events,
+        emit_json('doctor', checks.failed == 0 and checks.pending == 0,
+                  checks=checks.events,
                   failures=checks.failed, pending=checks.pending,
                   status='failed' if checks.failed else (
                       'pending' if checks.pending else 'passed'))
@@ -813,6 +814,10 @@ def enroll(args):
             'permanent_username': usernames[GROUP_PROXY],
             'remote_port': port, 'host_keys': host_keys,
             'approve_command': 'aap2-setup approve {}'.format(enrollment_id),
+            'warnings': ([
+                'sshd Match policy tested with a sample client address; '
+                'review any Match Address/Host rules separately.'
+            ] if args.client_addr == '198.51.100.1' else []),
         }
         if manual_code:
             invitation['activation_code'] = activation_code(enrollment_id, pin)
