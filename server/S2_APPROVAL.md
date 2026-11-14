@@ -122,7 +122,8 @@ to include them (the same filter applies to `list -j` and
 `list -j --all`). Other states, including `EXPIRED` and
 `REVOKING`, remain visible so a failed or incomplete cleanup cannot
 be silently hidden. Each row shows the root-owned enrollment state
-and **reserved** loopback SOCKS5 port.
+and its loopback SOCKS5 port. For `REVOKED` history rows,
+the port is labeled **former**, not reserved: it can be reused.
 `APPROVED` means its public key is authorized; it does **not** mean
 the phone is online. The temporary PIN expiry is shown for `ACTIVE`
 invitations only, never as an expiry date for an approved permanent
