@@ -27,7 +27,7 @@ import java.io.File
 @RunWith(AndroidJUnit4::class)
 class A1EnrollmentIntegrationTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
-    private val host = "127.0.0.1"
+    private val host = "10.0.2.2"
     private val port = 22224
 
     private data class Invitation(val user: String, val pin: String, val trustedFingerprint: String)
@@ -208,6 +208,10 @@ class A1EnrollmentIntegrationTest {
         val identity = AndroidKeystoreIdentity.getExisting(context)
         assertArrayEquals(identity.getPublicKeyBlob(),
             AndroidKeystoreIdentity.getExisting(context).getPublicKeyBlob())
+        // Test-only PUBLIC blob expected across an in-place signed APK update.
+        // No private key, PIN or SSH password is copied to app storage.
+        File(context.filesDir, "a1-ci-before-update-publickey")
+            .writeBytes(identity.getPublicKeyBlob())
 
         // A real SSH publickey authentication must succeed, but OpenSSH's
         // permitlisten on THIS key must reject a neighboring reserved port.
@@ -257,5 +261,49 @@ class A1EnrollmentIntegrationTest {
         }
         release.delete()
         // Do NOT stop the service ourselves; server revoke owns teardown.
+    }
+
+    @Test
+    fun a1_3_inPlaceSignedApkUpgradePreservesKeystoreAndPin() = runBlocking<Unit> {
+        val baselineFile = File(context.filesDir, "a1-ci-before-update-publickey")
+        val baseline = baselineFile.readBytes()
+        assertTrue("Missing pre-upgrade PUBLIC key fixture", baseline.isNotEmpty())
+        val current = AndroidKeystoreIdentity.getExisting(context).getPublicKeyBlob()
+        assertArrayEquals("In-place APK update changed Android Keystore SSH identity", baseline, current)
+        val profile = requireNotNull(DirectBootTunnelProfile.load(context))
+        assertTrue("In-place update cleared desired_running", DirectBootTunnelProfile.wantsConnection(context))
+        assertEquals(host, profile.host)
+        assertEquals(port, profile.sshPort)
+        val actual = withContext(Dispatchers.IO) { VerifiedSshHostKey.probe(host, port) }
+        assertArrayEquals("Pinned host key changed after APK update", profile.verifiedHostKey, actual.blob)
+        val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+        assertTrue("Upgrade did not install a newer versionCode", packageInfo.longVersionCode >= 20001L)
+        withContext(Dispatchers.IO) {
+            EnrollmentClient(context).verifyPermanentTunnel(
+                EnrollmentPending.Info(
+                    profile.host, profile.sshPort, profile.username,
+                    profile.remotePort, profile.verifiedHostKey.copyOf()
+                )
+            )
+        }
+        assertTrue("Upgrade recreated pending PIN enrollment", EnrollmentPending.load(context) == null)
+        val service = Intent(context, SocksForegroundService::class.java).apply {
+            action = "net.isaeff.android.asproxy.action.START_SERVICE"
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(service)
+        } else {
+            context.startService(service)
+        }
+        withTimeout(45_000) {
+            while (ConnectionStateHolder.connectionState.value != ConnectionState.CONNECTED)
+                delay(500)
+        }
+        Log.i("AAP2-A1", "A1_SIGNED_UPGRADE_SAME_KEY_PIN_PUBLICKEY_R_READY")
+        val release = File(context.filesDir, "a1-ci-release-upgrade-test")
+        withTimeout(90_000) {
+            while (!release.exists()) delay(250)
+        }
+        release.delete()
     }
 }
