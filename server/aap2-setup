@@ -97,24 +97,33 @@ class Aap2ArgumentParser(argparse.ArgumentParser):
 
 
 class Checks:
-    """Read-only diagnostics. Warnings are not passed security invariants."""
-    def __init__(self):
+    """Read-only diagnostics; retain structured events for JSON."""
+    def __init__(self, machine=False):
         self.failed = 0
         self.pending = 0
+        self.machine = machine
+        self.events = []
+
+    def _event(self, level, message):
+        self.events.append({'level': level, 'message': message})
+        if not self.machine:
+            print('{}: {}'.format(level.upper() if level != 'pending' else 'PENDING',
+                                  message),
+                  file=sys.stdout if level == 'ok' else sys.stderr)
 
     def ok(self, message):
-        print('OK: ' + message)
+        self._event('ok', message)
 
     def fail(self, message):
         self.failed += 1
-        print('FAIL: ' + message, file=sys.stderr)
+        self._event('fail', message)
 
     def warn(self, message):
-        print('WARN: ' + message, file=sys.stderr)
+        self._event('warn', message)
 
     def wait(self, message):
         self.pending += 1
-        print('PENDING: ' + message, file=sys.stderr)
+        self._event('pending', message)
 
 
 def check_dir(checks, path, expected_mode):
@@ -281,15 +290,21 @@ def validate_real_user_files(checks, name, role, user):
 
 
 def doctor(args):
-    checks = Checks()
+    machine = json_mode(args)
+    checks = Checks(machine=machine)
     if os.geteuid() != 0:
         checks.fail('doctor requires root to validate sshd host keys and protected paths (NO changes made)')
+        if machine:
+            emit_json('doctor', False, checks=checks.events, failures=checks.failed, pending=checks.pending)
         return 1
     if sys.version_info < (3, 9):
         checks.fail('Python >= 3.9 is required')
+        if machine:
+            emit_json('doctor', False, checks=checks.events, failures=checks.failed, pending=checks.pending)
         return 1
 
-    print('AAP2 doctor: READ-ONLY; checks config on disk, NEVER reloads active sshd')
+    if not machine:
+        print('AAP2 doctor: READ-ONLY; checks config on disk, NEVER reloads active sshd')
     for name in (GROUP_ENROLL, GROUP_PROXY):
         try:
             grp.getgrnam(name)
@@ -332,19 +347,31 @@ def doctor(args):
     else:
         checks.wait('aap2-cleanup.timer inactive/missing; PIN enrollment forbidden')
 
-    print('Doctor summary: {} failures, {} outstanding enrollment gates'.format(
-        checks.failed, checks.pending))
+    if machine:
+        emit_json('doctor', checks.failed == 0, checks=checks.events,
+                  failures=checks.failed, pending=checks.pending,
+                  status='failed' if checks.failed else (
+                      'pending' if checks.pending else 'passed'))
+    else:
+        print('Doctor summary: {} failures, {} outstanding enrollment gates'.format(
+            checks.failed, checks.pending))
     return 1 if checks.failed else (2 if checks.pending else 0)
 
 
-def print_config(_args):
+def print_config(args):
     path = Path(__file__).resolve().parent / 'sshd-aap2-match.conf'
     if not path.is_file():
+        if json_mode(args):
+            raise SetupError('Missing Match template: {}'.format(path))
         print('Missing Match template: {}'.format(path), file=sys.stderr)
         return 1
-    print('# MANUAL TEMPLATE ONLY: do NOT paste into sshd_config without review.')
-    print('# Check existing Include/Match/AllowGroups, then sshd -t, sshd -T -C.')
-    print(path.read_text(encoding='utf-8'), end='')
+    content = path.read_text(encoding='utf-8')
+    if json_mode(args):
+        emit_json('print-config', True, template=content, manual_only=True)
+    else:
+        print('# MANUAL TEMPLATE ONLY: do NOT paste into sshd_config without review.')
+        print('# Check existing Include/Match/AllowGroups, then sshd -t, sshd -T -C.')
+        print(content, end='')
     return 0
 
 
@@ -578,7 +605,7 @@ def require_preflight():
 
 
 def verify_enrollment_policy(record, sshd, args):
-    checks = Checks()
+    checks = Checks(machine=json_mode(args))
     for role in (GROUP_ENROLL, GROUP_PROXY):
         name = record['users'][role]['name']
         check_real_identity(record, role)
