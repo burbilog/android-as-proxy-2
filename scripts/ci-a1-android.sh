@@ -44,6 +44,12 @@ printf '%s\n' "$UI_OUTPUT"
 grep -q 'OK (1 test)' <<< "$UI_OUTPUT" ||
   { echo 'A1 Compose fingerprint gate FAILED' >&2; exit 1; }
 echo 'A1 PASS: Compose full host fingerprint and explicit PIN boundary'
+BAD_CODE_OUTPUT=$(timeout 60 adb shell am instrument -w \
+  -e class "${UI_TEST}#activationChecksumRejectsMistypeBeforeAnyNetworkAttempt" "$RUNNER")
+printf '%s\n' "$BAD_CODE_OUTPUT"
+grep -q 'OK (1 test)' <<<"$BAD_CODE_OUTPUT" ||
+  { echo 'A1 activation checksum validation FAILED' >&2; exit 1; }
+echo 'A1 PASS: single-digit activation typo rejected before SSH'
 run_test a1_0_malformedServerJsonRejectedBeforeProvisioning
 run_test a1_1_wrongPinnedHostRejectedBeforeAuthenticationOrKeyCreation
 
@@ -52,15 +58,16 @@ run_test a1_1_wrongPinnedHostRejectedBeforeAuthenticationOrKeyCreation
 # S2 cleanup, then prove Android cannot enroll using its original PIN.
 sudo env GITHUB_ACTIONS=true AAP2_A1_DISPOSABLE=YES sh "$FIXTURE" "$SERVER" invite
 SETUP_USER=$(sudo sed -n 's/^Setup username: //p' "$STATE/invite.txt")
-DISPLAY_PIN=$(sudo sed -n 's/^One-time PIN: //p' "$STATE/invite.txt")
-PIN="${DISPLAY_PIN//-/}"
+DISPLAY_CODE=$(sudo sed -n 's/^Phone activation code (type digits only): //p' "$STATE/invite.txt")
+CODE="${DISPLAY_CODE//-/}"
+PIN="${CODE:6:10}"
 FINGERPRINT=$(sudo ssh-keygen -lf /etc/ssh/ssh_host_ecdsa_key.pub -E sha256 | awk '{print $2}')
-[ "${#PIN}" = 10 ] && [ -n "$SETUP_USER" ] && [ -n "$FINGERPRINT" ] || exit 1
-unset DISPLAY_PIN
+[ "${#PIN}" = 10 ] && [ "${#CODE}" = 18 ] && [ -n "$SETUP_USER" ] && [ -n "$FINGERPRINT" ] || exit 1
+unset DISPLAY_CODE
 sudo env GITHUB_ACTIONS=true AAP2_A1_DISPOSABLE=YES sh "$FIXTURE" "$SERVER" expire
 printf '%s\n%s\n%s\n' "$SETUP_USER" "$PIN" "$FINGERPRINT" |
   adb shell -T "run-as $PKG sh -c 'mkdir -p files && umask 077 && cat > files/a1-ci-expired-invitation && chmod 600 files/a1-ci-expired-invitation'"
-unset PIN
+unset PIN CODE
 run_test a1_1b_expiredPinCannotCreatePendingProfile
 
 # Invitation is created AFTER emulator boots. PIN is kept only in a
@@ -68,16 +75,17 @@ run_test a1_1b_expiredPinCannotCreatePendingProfile
 sudo env GITHUB_ACTIONS=true AAP2_A1_DISPOSABLE=YES sh "$FIXTURE" "$SERVER" invite
 
 SETUP_USER=$(sudo sed -n 's/^Setup username: //p' "$STATE/invite.txt")
-DISPLAY_PIN=$(sudo sed -n 's/^One-time PIN: //p' "$STATE/invite.txt")
-PIN="${DISPLAY_PIN//-/}"
+DISPLAY_CODE=$(sudo sed -n 's/^Phone activation code (type digits only): //p' "$STATE/invite.txt")
+CODE="${DISPLAY_CODE//-/}"
+PIN="${CODE:6:10}"
 FINGERPRINT=$(sudo ssh-keygen -lf /etc/ssh/ssh_host_ecdsa_key.pub -E sha256 | awk '{print $2}')
-[ "${#PIN}" = 10 ] && [ -n "$SETUP_USER" ] && [ -n "$FINGERPRINT" ] || exit 1
-unset DISPLAY_PIN
+[ "${#PIN}" = 10 ] && [ "${#CODE}" = 18 ] && [ -n "$SETUP_USER" ] && [ -n "$FINGERPRINT" ] || exit 1
+unset DISPLAY_CODE
 
-# No test PIN in adb instrumentation command-line arguments or CI logs.
-printf '%s\n%s\n%s\n' "$SETUP_USER" "$PIN" "$FINGERPRINT" |
+# No test activation code in adb instrumentation arguments or CI logs.
+printf '%s\n%s\n' "$CODE" "$FINGERPRINT" |
   adb shell -T "run-as $PKG sh -c 'mkdir -p files && umask 077 && cat > files/a1-ci-invitation && chmod 600 files/a1-ci-invitation'"
-unset PIN
+unset PIN CODE
 
 mkdir -p /tmp/aap2-a1-http
 printf 'AAP2-A1-E2E-OK\n' > /tmp/aap2-a1-http/index.html
@@ -180,14 +188,15 @@ run_test a1_1c_resetRevokedUiFixtureWithoutDeletingKeystore
 sudo env GITHUB_ACTIONS=true AAP2_A1_DISPOSABLE=YES \
   sh "$FIXTURE" "$SERVER" invite
 SETUP_USER=$(sudo sed -n 's/^Setup username: //p' "$STATE/invite.txt")
-DISPLAY_PIN=$(sudo sed -n 's/^One-time PIN: //p' "$STATE/invite.txt")
-PIN="${DISPLAY_PIN//-/}"
+DISPLAY_CODE=$(sudo sed -n 's/^Phone activation code (type digits only): //p' "$STATE/invite.txt")
+CODE="${DISPLAY_CODE//-/}"
+PIN="${CODE:6:10}"
 FINGERPRINT=$(sudo ssh-keygen -lf /etc/ssh/ssh_host_ecdsa_key.pub -E sha256 | awk '{print $2}')
-[ "${#PIN}" = 10 ] && [ -n "$SETUP_USER" ] && [ -n "$FINGERPRINT" ] || exit 1
-unset DISPLAY_PIN
+[ "${#PIN}" = 10 ] && [ "${#CODE}" = 18 ] && [ -n "$SETUP_USER" ] && [ -n "$FINGERPRINT" ] || exit 1
+unset DISPLAY_CODE
 printf '%s\n%s\n%s\n' "$SETUP_USER" "$PIN" "$FINGERPRINT" |
   adb shell -T "run-as $PKG sh -c 'umask 077 && cat > files/a1-ci-invitation && chmod 600 files/a1-ci-invitation'"
-unset PIN
+unset PIN CODE
 run_test a1_2_realPinSftpApprovalAndPersistentKeystoreTunnel &
 TEST_PID=$!
 wait_app_marker a1-ci-key-uploaded
