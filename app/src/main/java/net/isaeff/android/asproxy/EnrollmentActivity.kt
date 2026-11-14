@@ -33,6 +33,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import com.jcraft.jsch.JSchException
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -80,6 +82,7 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
     // Intentionally NOT rememberSaveable: never put the PIN into Android
     // saved-instance-state Bundles, Intent extras, preferences or logcat.
     var pin by remember { mutableStateOf("") }
+    var pinVisible by remember { mutableStateOf(false) }
     var candidate by remember { mutableStateOf<VerifiedSshHostKey.Probe?>(null) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
@@ -100,7 +103,7 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                 TextButton(onClick = onCancel) { Text("Close") }
             } else {
                 if (candidate == null) {
-                    Text("Enter server address, six-digit setup code, and ten-digit PIN. Type PIN digits without the printed dashes.")
+                    Text("Enter server address, six-digit setup code, and ten-digit PIN exactly as printed by the administrator.")
                     OutlinedTextField(
                         value = server, onValueChange = { server = it },
                         label = { Text("Server (host[:port])") },
@@ -115,9 +118,17 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                     )
                     OutlinedTextField(
                         value = pin, onValueChange = { pin = it },
-                        label = { Text("One-time PIN (10 digits, no dashes)") },
+                        label = { Text("One-time PIN (10 digits)") },
                         modifier = Modifier.fillMaxWidth().testTag("a1-pin"),
-                        visualTransformation = PasswordVisualTransformation(),
+                        visualTransformation = if (pinVisible) VisualTransformation.None
+                            else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            TextButton(
+                                onClick = { pinVisible = !pinVisible },
+                                enabled = !busy,
+                                modifier = Modifier.testTag("a1-pin-toggle")
+                            ) { Text(if (pinVisible) "Hide" else "Show") }
+                        },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                         singleLine = true,
                         enabled = !busy
@@ -175,6 +186,8 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                     val probe = candidate!!
                     Text("Verify this key with the administrator over a separate trusted channel.")
                     Text("Server: ${probe.host}:${probe.port}")
+                    Text("Setup code / username: ${setupUser.trim()}",
+                        modifier = Modifier.testTag("a1-setup-code-confirmation"))
                     Text("Host key type: ${probe.algorithm}")
                     Text("Full fingerprint:", style = MaterialTheme.typography.titleMedium)
                     Text(probe.fingerprint, modifier = Modifier.testTag("a1-fingerprint-full"))
@@ -186,13 +199,25 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                         error = ""
                         scope.launch {
                             try {
-                                client.enroll(probe, setupUser, pin) { message = it }
+                                client.enroll(probe, setupUser, pin) { progress ->
+                                    message = progress
+                                    // EnrollmentClient progress strings are fixed, non-secret stages.
+                                    AAPLog.append(progress)
+                                }
                                 pin = ""
+                                AAPLog.append("Enrollment verified and profile saved")
                                 onEnrolled()
                             } catch (e: Exception) {
                                 // Never log or display the PIN or private SSH key.
-                                error = "Enrollment incomplete: ${e.javaClass.simpleName}. " +
-                                    "If approval happened, use Resume; otherwise ask the administrator."
+                                error = if (e is JSchException &&
+                                    e.message?.contains("Auth fail") == true) {
+                                    "SSH login rejected. Check the six-digit setup code and PIN."
+                                } else {
+                                    "Enrollment incomplete: ${e.javaClass.simpleName}. " +
+                                        "If approval happened, use Resume; otherwise ask the administrator."
+                                }
+                                // Never log raw exceptions: library messages may contain server data.
+                                AAPLog.append("Enrollment failed: ${e.javaClass.simpleName}")
                                 pending = runCatching {
                                     EnrollmentPending.load(context)
                                 }.getOrNull() != null
