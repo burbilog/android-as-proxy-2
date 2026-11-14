@@ -273,6 +273,11 @@ class LifecycleTests(unittest.TestCase):
             self.assertEqual(state['state'], 'active')
             self.assertNotIn('0000000012', meta_path.read_text())
             self.assertIn('One-time PIN (type all 10 digits): 0000000012', out.getvalue())
+            text = out.getvalue()
+            self.assertLess(text.index('PHONE —'), text.index('VERIFY SERVER —'))
+            self.assertLess(text.index('VERIFY SERVER —'), text.index('ADMIN —'))
+            self.assertEqual(text.count('0000000012'), 1)
+            self.assertIn('Next: aap2-setup approve 123456abcdef', text)
 
     def test_manual_setup_code_is_six_decimal_digits_and_keeps_ten_digit_pin(self):
         with tempfile.TemporaryDirectory() as d:
@@ -289,6 +294,14 @@ class LifecycleTests(unittest.TestCase):
             code = aap.activation_code('000012', '0000000012')
             self.assertIn('Phone activation code (type digits only): ' + code, out.getvalue())
             self.assertNotIn('One-time PIN (type all 10 digits):', out.getvalue())
+            text = out.getvalue()
+            self.assertLess(text.index('PHONE —'), text.index('VERIFY SERVER —'))
+            self.assertLess(text.index('VERIFY SERVER —'), text.index('ADMIN —'))
+            self.assertEqual(text.count(code), 1)  # Do not echo bearer code twice.
+            self.assertIn('Server: example.net:22222', text)
+            self.assertIn('Setup username: aap2e000012', text)
+            self.assertIn('Enrollment ID: 000012', text)
+            self.assertIn('Next: aap2-setup approve 000012', text)
             self.assertEqual(int(code.replace('-', '')) % 97, 1)
             self.assertEqual(len(code.replace('-', '')), 18)
             self.assertNotIn('0000000012', meta_path.read_text())
