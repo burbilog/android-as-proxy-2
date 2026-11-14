@@ -53,6 +53,9 @@ class A1EnrollmentIntegrationTest {
         val validConfig = """{"schema":1,"username":"aap2p123456abcdef","remote_port":11010}"""
         val validStatus = """{"schema":1,"status":"pending","expires_at":1790000000}"""
         client.parseConfig(validConfig.toByteArray())
+        assertEquals("aap2p000012", client.parseConfig(
+            """{"schema":1,"username":"aap2p000012","remote_port":11010}"""
+                .toByteArray()).permanentUser)
         client.parseStatus(validStatus.toByteArray())
 
         val badConfigs = listOf(
@@ -220,7 +223,7 @@ class A1EnrollmentIntegrationTest {
         assertTrue(DirectBootTunnelProfile.wantsConnection(context))
         assertEquals(host, profile.host)
         assertEquals(port, profile.sshPort)
-        assertTrue(profile.username.matches(Regex("aap2p[0-9a-f]{12}")))
+        assertTrue(profile.username.matches(Regex("aap2p(?:[0-9]{6}|[0-9a-f]{12})")))
         assertTrue(profile.remotePort in 11010..11509)
         assertArrayEquals(probe.blob, profile.verifiedHostKey)
         assertTrue("Pending state must be cleared after durable profile commit",
