@@ -69,6 +69,23 @@ revoke regression gates also passed.
   remain separate acceptance tests. Working Zebra, its server and the
   soak monitor were not altered.
 
+## Physical Direct Boot acceptance — release-signed 20004 (2026-11-14)
+
+The Seuic Cruise2 was rebooted via ADB with the screen left untouched.
+After boot, `sys.boot_completed=1` and `am get-started-user-state 0`
+reported `RUNNING_LOCKED`: the phone had **not** been unlocked since reboot.
+At that time the isolated S2 container successfully fetched Cloudflare
+HTTPS through `socks5h://127.0.0.1:11010`, with the same remote exit IP
+`195.91.221.147` as before reboot. **Physical Direct Boot on signed
+`20004`: PASS.** This shows a usable tunnel before first unlock; it
+does not establish the exact time after reboot when connectivity returned.
+
+Immediately after `adb wait-for-device`, `am` briefly reported
+`Can't find service: activity`; this means Android services were not
+ready yet, not that Direct Boot failed. Wait for `sys.boot_completed=1`
+before querying the activity service. Continue remaining recovery/
+background tests on the disposable Seuic, not on the working Zebra.
+
 ## Failure recovery and migration
 
 - A terminated SFTP session after upload preserves the original host pin, permanent username/port and Keystore key alias in pending state, with **no PIN**. **Resume approved enrollment** makes **one** pinned permanent publickey SSH / reverse-port attempt using the **existing** identity. No password or automatic enrollment retry loop.
