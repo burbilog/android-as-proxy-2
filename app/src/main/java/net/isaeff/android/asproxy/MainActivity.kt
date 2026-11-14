@@ -133,7 +133,7 @@ fun MainScreen() {
                     " out"
             )
             if (!configured) {
-                Text("No verified server is configured. Activate using the administrator's one-time PIN.")
+                Text("No verified server is configured. Activate using the code from your administrator.")
                 Button(
                     onClick = {
                         context.startActivity(Intent(context, EnrollmentActivity::class.java))
@@ -141,7 +141,7 @@ fun MainScreen() {
                     enabled = connectionState == ConnectionState.DISCONNECTED,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Activate AAP2 using one-time PIN")
+                    Text("Activate AAP2")
                 }
             } else {
                 Text("Server identity verified. SSH private key is held by Android Keystore.")
