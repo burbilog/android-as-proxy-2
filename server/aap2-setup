@@ -623,6 +623,13 @@ def enroll(args):
         raise SetupError('device name must be 1-64 printable ASCII characters')
     if not re.fullmatch(r'[A-Za-z0-9.:\[\]-]{1,255}', args.server):
         raise SetupError('invalid server endpoint (use hostname/IP[:port])')
+    # sshd -T -C needs a sample connection context for Match policy checks.
+    # Client source IP is NOT an enrollment ACL and need not be known behind NAT.
+    # When omitted, use a documentation-only external address for the probe.
+    # Match Address/Host dependent installations require a separate review.
+    if args.client_addr == '198.51.100.1':
+        print('WARN: sshd Match policy tested with a sample client address; '
+              'review any Match Address/Host rules separately.', file=sys.stderr)
     # Verify sshd -C context BEFORE any account creation; CLI does not
     # accept arbitrary SSH condition fragments such as comma-injected addr.
     try:
@@ -1119,7 +1126,8 @@ def main():
     en = sub.add_parser('enroll', help='create temporary PIN/SFTP invitation (NO approval yet)')
     en.add_argument('device_name', help='admin-facing device label')
     en.add_argument('--server', required=True, help='SSH host[:port] shown to user')
-    en.add_argument('--client-addr', required=True, help='expected SSH client source IP')
+    en.add_argument('--client-addr', default='198.51.100.1',
+                    help='optional SSH Match policy probe source IP; defaults to TEST-NET-2 example, NOT a required phone address')
     en.add_argument('--client-host', default='unknown', help='client hostname for sshd -T')
     en.add_argument('--server-addr', required=True, help='real sshd listen IP')
     en.add_argument('--server-port', default='22', help='sshd LOCAL port')
