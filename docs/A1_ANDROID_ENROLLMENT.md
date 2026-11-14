@@ -110,6 +110,18 @@ account selector and password into one checksum-protected entry.
   the previously passed two-field physical and CI tests. Do not alter
   running Seuic or working Zebra until the revised build passes CI.
 
+## Unified activation-code CI acceptance — 2026-11-14
+
+On commit `d8bb0bd5e55caa4feb0fb13ce2f6fd03dd87fd48`, both
+[Android build/unit workflow #43587742958](https://github.com/burbilog/android-as-proxy-2/actions/runs/43587742958)
+and [full Android 11/S2 E2E #43587742934](https://github.com/burbilog/android-as-proxy-2/actions/runs/43587742934)
+**PASS**. The E2E explicitly confirms that one mistyped activation-code
+digit is rejected **before any SSH authentication**, that the real Compose
+single-field form completes fingerprint confirmation → SFTP → key approval →
+restricted reverse SOCKS5 HTTP, and that APK update, locked Direct Boot
+and server revoke still work. The earlier two-field physical Seuic acceptance
+remains valid but **does not** replace a new physical trial of the unified code.
+
 ## Remaining acceptance gates
 
 - [x] Six-digit manual-typing Compose enrollment with disposable S2 `--manual-code` — full [Android 11 E2E run #43581141257](https://github.com/burbilog/android-as-proxy-2/actions/runs/43581141257) **PASS** (2026-11-14), including Compose text entry, PIN/SFTP/approval/SSH `-R`/SOCKS5 HTTP, signed in-place test upgrade, pre-unlock Direct Boot and revoke.
