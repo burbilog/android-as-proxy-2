@@ -139,6 +139,26 @@ class A1EnrollmentIntegrationTest {
     }
 
     @Test
+    fun a1_1c_resetRevokedUiFixtureWithoutDeletingKeystore() = runBlocking<Unit> {
+        // Only on disposable CI Android, after the previous UI invitation was
+        // explicitly revoked by S2. Preserve the device Keystore identity.
+        require(DirectBootTunnelProfile.hasProfile(context))
+        val before = AndroidKeystoreIdentity.getExisting(context).getPublicKeyBlob()
+        context.startService(Intent(context, SocksForegroundService::class.java).apply {
+            action = SocksForegroundService.ACTION_STOP
+        })
+        withTimeout(15_000) {
+            while (ConnectionStateHolder.connectionState.value != ConnectionState.DISCONNECTED)
+                delay(200)
+        }
+        DirectBootTunnelProfile.disable(context)
+        assertFalse(DirectBootTunnelProfile.hasProfile(context))
+        assertTrue(EnrollmentPending.load(context) == null)
+        assertArrayEquals(before, AndroidKeystoreIdentity.getExisting(context).getPublicKeyBlob())
+        Log.i("AAP2-A1", "A1_CI_UI_PROFILE_RESET_KEYSTORE_PRESERVED")
+    }
+
+    @Test
     fun a1_2_realPinSftpApprovalAndPersistentKeystoreTunnel() = runBlocking<Unit> {
         val invite = invitation()
         assertFalse("This test must never be run over an existing AAP2 profile",
