@@ -256,7 +256,7 @@ class LifecycleTests(unittest.TestCase):
             state = json.loads(meta_path.read_text())
             self.assertEqual(state['state'], 'active')
             self.assertNotIn('0000000012', meta_path.read_text())
-            self.assertIn('0000-0000-12', out.getvalue())
+            self.assertIn('One-time PIN (type all 10 digits): 0000000012', out.getvalue())
 
     def test_manual_setup_code_is_six_decimal_digits_and_keeps_ten_digit_pin(self):
         with tempfile.TemporaryDirectory() as d:
