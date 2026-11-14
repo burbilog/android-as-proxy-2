@@ -122,6 +122,24 @@ restricted reverse SOCKS5 HTTP, and that APK update, locked Direct Boot
 and server revoke still work. The earlier two-field physical Seuic acceptance
 remains valid but **does not** replace a new physical trial of the unified code.
 
+## Physical unified-code acceptance — Seuic Cruise2, Android 14 (2026-11-14)
+
+The disposable Seuic Cruise2 was reinstalled with locally release-signed
+`versionCode 20003` (same long-term signing certificate as `20002`).
+The isolated `aap2-a1-test` server had S2 `--manual-code` with the
+new **single 18-digit activation code** and MOD97 checksum.
+
+The operator manually entered the activation code on the phone; Android
+accepted it, verified the server identity, uploaded the Keystore public
+key and waited for administrator approval. After approval, SOCKS5 HTTPS
+from the isolated S2 container to Cloudflare succeeded over the device's
+reverse SSH tunnel. **Physical single-code activation E2E: PASS.**
+
+The code and PIN are never collected in this document. This test does not
+establish prolonged OEM background resilience, battery optimization behavior
+or repeated Wi-Fi-loss recovery for the revised build. Preserve the
+operational Zebra and its independent soak.
+
 ## Remaining acceptance gates
 
 - [x] Six-digit manual-typing Compose enrollment with disposable S2 `--manual-code` — full [Android 11 E2E run #43581141257](https://github.com/burbilog/android-as-proxy-2/actions/runs/43581141257) **PASS** (2026-11-14), including Compose text entry, PIN/SFTP/approval/SSH `-R`/SOCKS5 HTTP, signed in-place test upgrade, pre-unlock Direct Boot and revoke.
@@ -131,6 +149,7 @@ remains valid but **does not** replace a new physical trial of the unified code.
 - [x] Legacy password/TOFU implementation removal and Android CI regression.
 - [x] Physical A1 enrollment and Direct Boot before first unlock on a **spare device** (Seuic Cruise2, Android 14/API 34, 2026-11-14).
 - [x] Basic physical Wi-Fi off/on recovery: after disabling and re-enabling Wi-Fi on Seuic Cruise2, SOCKS5 HTTPS again succeeded via the same S2 reverse port `11010` (2026-11-14).
+- [x] Physical single 18-digit activation-code enrollment on Seuic Cruise2 with release-signed `20003`, administrative approval, and actual SOCKS5 HTTPS via Cloudflare (2026-11-14).
 - [ ] Long-running foreground-service reliability and OEM battery restrictions under extended soak; repeated network-loss/reconnect cycles remain a separate gate.
 - [x] Update from one **release-signed** APK to another using the long-term key kept on `marduk`, preserving identity and verified host key, confirmed with real SSH and SOCKS5 HTTP on Seuic Cruise2, 2026-11-14. See `docs/P0_RELEASE_SIGNING.md`. The guarded local `scripts/aap2-spare-upgrade.sh` verifies both signatures and versions and requires an explicit spare-device ADB serial; it never uninstalls AAP2 or touches the working Zebra by default.
 
