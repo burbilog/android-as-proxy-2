@@ -57,6 +57,17 @@ class EnrollmentInputTest {
         }
     }
 
+    @Test fun connectionIdMatchesServerListForNewAndLegacyAccounts() {
+        assertEquals("000012", ConnectionIdentity.id("aap2p000012"))
+        assertEquals("692103", ConnectionIdentity.id("aap2p692103"))
+        assertEquals("3c0292d79ef2", ConnectionIdentity.id("aap2p3c0292d79ef2"))
+        for (bad in listOf("root", "aap2e692103", "aap2p12345")) {
+            assertThrows(bad, IllegalArgumentException::class.java) {
+                ConnectionIdentity.id(bad)
+            }
+        }
+    }
+
     @Test fun fullFingerprintGroupsWithoutTruncating() {
         assertEquals("SHA256:abcd-efgh-ij",
             EnrollmentInput.groupedFingerprint("SHA256:abcdefghij"))
