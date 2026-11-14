@@ -688,7 +688,7 @@ def enroll(args):
     # Client source IP is NOT an enrollment ACL and need not be known behind NAT.
     # When omitted, use a documentation-only external address for the probe.
     # Match Address/Host dependent installations require a separate review.
-    if args.client_addr == '198.51.100.1':
+    if args.client_addr == '198.51.100.1' and not json_mode(args):
         print('WARN: sshd Match policy tested with a sample client address; '
               'review any Match Address/Host rules separately.', file=sys.stderr)
     # Verify sshd -C context BEFORE any account creation; CLI does not
@@ -790,9 +790,37 @@ def enroll(args):
         call_mutation(['/usr/sbin/chpasswd'],
                       input_text='{}:{}\n'.format(usernames[GROUP_ENROLL], pin))
 
-    # A human-first invitation. Existing anchored labels remain intentionally
-    # stable: disposable S1/S2 and Android E2E scripts extract these exact fields.
-    # Do not print a second copy of the secret or hide SSH fingerprints.
+    # Preserve existing human labels for scripts; JSON uses typed fields.
+    machine = json_mode(args)
+    host_keys = []
+    for path in sorted(Path('/etc/ssh').glob('ssh_host_*_key.pub')):
+        if path.is_file() and not path.is_symlink():
+            output = command_output(Checks(machine=machine),
+                                    ['/usr/bin/ssh-keygen', '-lf', str(path), '-E', 'sha256'])
+            if output:
+                line = output.strip()
+                parts = line.split()
+                host_keys.append({
+                    'key_type': parts[-1].strip('()') if parts else '',
+                    'fingerprint': next((x for x in parts if x.startswith('SHA256:')), ''),
+                    'ssh_keygen_line': line,
+                })
+    if machine:
+        invitation = {
+            'enrollment_id': enrollment_id, 'device_name': name,
+            'server': args.server, 'ttl_seconds': ttl,
+            'expires_at': expiry, 'setup_username': usernames[GROUP_ENROLL],
+            'permanent_username': usernames[GROUP_PROXY],
+            'remote_port': port, 'host_keys': host_keys,
+            'approve_command': 'aap2-setup approve {}'.format(enrollment_id),
+        }
+        if manual_code:
+            invitation['activation_code'] = activation_code(enrollment_id, pin)
+        else:
+            invitation['one_time_pin'] = pin
+        emit_json('enroll', True, invitation=invitation)
+        return 0
+
     print()
     print('AAP2: {} - ready ({} minutes)'.format(name, ttl // 60))
     print()
@@ -806,12 +834,8 @@ def enroll(args):
         print('One-time PIN (type all 10 digits): {}'.format(pin))
     print()
     print('VERIFY SERVER - match SHA256 fingerprint AND key type on phone:')
-    for path in sorted(Path('/etc/ssh').glob('ssh_host_*_key.pub')):
-        if path.is_file() and not path.is_symlink():
-            output = command_output(Checks(),
-                                    ['/usr/bin/ssh-keygen', '-lf', str(path), '-E', 'sha256'])
-            if output:
-                print('  {}'.format(output.strip()))
+    for key in host_keys:
+        print('  {}'.format(key['ssh_keygen_line']))
     print()
     print('ADMIN - after phone says "Waiting for administrator approval":')
     print('Enrollment ID: {}'.format(enrollment_id))
@@ -885,9 +909,12 @@ def remove_temporary(record):
     atomic_json(record_path(record['id']) / 'metadata.json', record)
 
 
-def cleanup(_args):
+def cleanup(args):
     require_root()
     errors = 0
+    expired = []
+    failures = []
+    machine = json_mode(args)
     with state_lock():
         verified_dir(STATE, 0o700)
         for path in sorted(STATE.iterdir()):
@@ -897,17 +924,26 @@ def cleanup(_args):
                 record = read_metadata(path.name)
             except (SetupError, OSError, ValueError, json.JSONDecodeError) as exc:
                 errors += 1
-                print('FAIL CLOSED: invalid state {}: {}'.format(path.name, exc),
-                      file=sys.stderr)
+                message = 'invalid state {}: {}'.format(path.name, exc)
+                failures.append(message)
+                if not machine:
+                    print('FAIL CLOSED: ' + message, file=sys.stderr)
                 continue
             if record.get('temp_removed') or record['expires_at'] > int(time.time()):
                 continue
             try:
                 remove_temporary(record)
-                print('Expired temporary enrollment: {}'.format(record['id']))
+                expired.append(record['id'])
+                if not machine:
+                    print('Expired temporary enrollment: {}'.format(record['id']))
             except (SetupError, OSError, ValueError) as exc:
                 errors += 1
-                print('FAIL CLOSED: {}: {}'.format(record['id'], exc), file=sys.stderr)
+                message = '{}: {}'.format(record['id'], exc)
+                failures.append(message)
+                if not machine:
+                    print('FAIL CLOSED: ' + message, file=sys.stderr)
+    if machine:
+        emit_json('cleanup', errors == 0, expired_ids=expired, errors=failures)
     return 1 if errors else 0
 
 
