@@ -87,8 +87,9 @@ HTTP_PID=$!
 
 cleanup() {
   # Release either instrumentation process on earlier failure.
-  adb shell -T "run-as $PKG sh -c 'touch files/a1-ci-release-test; touch files/a1-ci-release-upgrade-test'" \
+  adb shell -T "run-as $PKG sh -c 'touch files/a1-ci-ui-verified-go; touch files/a1-ci-ui-release; touch files/a1-ci-release-test; touch files/a1-ci-release-upgrade-test'" \
     >/dev/null 2>&1 || true
+  if [ -n "${WATCH_PID:-}" ]; then kill "$WATCH_PID" >/dev/null 2>&1 || true; fi
   kill "$HTTP_PID" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -96,7 +97,18 @@ trap cleanup EXIT
 # Keep instrumentation alive while the host issues SOCKS/HTTP requests.
 # Otherwise Android's JUnit runner can terminate the target app process
 # and its foreground service before this script has tested the tunnel.
-run_test a1_2_realPinSftpApprovalAndPersistentKeystoreTunnel &
+# The existing invitation first drives a complete positive Compose UI
+# enrollment. The temporary PIN remains only in the app-private fixture.
+adb shell -T "run-as $PKG mv files/a1-ci-invitation files/a1-ci-ui-invitation"
+run_ui_positive() {
+  local output
+  output=$(timeout 210 adb shell am instrument -w \
+    -e class "${UI_TEST}#realComposeVerifiedClickEnrollsAndStartsSocks" "$RUNNER")
+  printf '%s\n' "$output"
+  grep -q 'OK (1 test)' <<< "$output" ||
+    { echo 'A1 complete Compose UI enrollment FAILED' >&2; return 1; }
+}
+run_ui_positive &
 TEST_PID=$!
 
 # Test callback publishes this file ONLY after the public-key SFTP put has
@@ -118,6 +130,66 @@ wait_app_marker() {
   echo "Android marker not reached: $marker" >&2
   return 1
 }
+wait_app_marker a1-ci-ui-fingerprint-ready
+sudo env GITHUB_ACTIONS=true AAP2_A1_DISPOSABLE=YES \
+  sh "$FIXTURE" "$SERVER" assert-not-uploaded
+sudo env GITHUB_ACTIONS=true AAP2_A1_DISPOSABLE=YES \
+  sh "$FIXTURE" "$SERVER" watch-approve >/tmp/aap2-a1-ui-admin.log 2>&1 &
+WATCH_PID=$!
+adb shell -T "run-as $PKG touch files/a1-ci-ui-verified-go"
+wait "$WATCH_PID"
+WATCH_PID=
+cat /tmp/aap2-a1-ui-admin.log
+
+# The app's own EnrollmentActivity must have started the production foreground
+# service. Independently check its assigned SSH -R using real HTTP/SOCKS.
+UI_ID=$(sudo cat "$STATE/id")
+UI_PORT=$(sudo python3 - "$UI_ID" <<'PY'
+import json
+from pathlib import Path
+import sys
+print(json.loads((Path('/var/lib/aap2/state') / sys.argv[1] /
+                  'metadata.json').read_text())['remote_port'])
+PY
+)
+SUCCESS=0
+for i in $(seq 1 35); do
+  BODY=$(curl --noproxy '' --silent --max-time 3 \
+    --proxy "socks5h://127.0.0.1:$UI_PORT" \
+    http://10.0.2.2:18887/ 2>/dev/null || true)
+  if [ "$BODY" = "AAP2-A1-E2E-OK" ]; then SUCCESS=1; break; fi
+  sleep 1
+done
+[ "$SUCCESS" = 1 ] || { echo 'No real HTTP through Compose-enrolled SOCKS5' >&2; exit 1; }
+echo 'A1 PASS: real Compose Verified click -> PIN/SFTP -> approve -> SSH -R -> SOCKS5 HTTP'
+sudo env GITHUB_ACTIONS=true AAP2_A1_DISPOSABLE=YES \
+  sh "$FIXTURE" "$SERVER" revoke
+sleep 2
+if curl --noproxy '' --silent --max-time 3 \
+   --proxy "socks5h://127.0.0.1:$UI_PORT" \
+   http://10.0.2.2:18887/ >/dev/null 2>&1; then
+  echo 'Compose-enrolled reverse listener survived revoke' >&2
+  exit 1
+fi
+adb shell -T "run-as $PKG touch files/a1-ci-ui-release"
+wait "$TEST_PID"
+run_test a1_1c_resetRevokedUiFixtureWithoutDeletingKeystore
+
+# Keep the original interrupted-SFTP/Resume, signed-update and Direct Boot
+# regression suite, using another independent disposable S2 invitation.
+sudo env GITHUB_ACTIONS=true AAP2_A1_DISPOSABLE=YES \
+  sh "$FIXTURE" "$SERVER" invite
+SETUP_USER=$(sudo sed -n 's/^Setup username: //p' "$STATE/invite.txt")
+DISPLAY_PIN=$(sudo sed -n 's/^One-time PIN: //p' "$STATE/invite.txt")
+PIN="${DISPLAY_PIN//-/}"
+FINGERPRINT=$(sudo ssh-keygen -lf /etc/ssh/ssh_host_ecdsa_key.pub -E sha256 | awk '{print $2}')
+[ "${#PIN}" = 10 ] && [ -n "$SETUP_USER" ] && [ -n "$FINGERPRINT" ] || exit 1
+unset DISPLAY_PIN
+printf '%s\n%s\n%s\n' "$SETUP_USER" "$PIN" "$FINGERPRINT" |
+  adb shell -T "run-as $PKG sh -c 'umask 077 && cat > files/a1-ci-invitation && chmod 600 files/a1-ci-invitation'"
+unset PIN
+run_test a1_2_realPinSftpApprovalAndPersistentKeystoreTunnel &
+TEST_PID=$!
 wait_app_marker a1-ci-key-uploaded
 sudo pkill -KILL -u "$SETUP_USER" ||
   { echo 'No disposable SFTP session to interrupt' >&2; exit 1; }
