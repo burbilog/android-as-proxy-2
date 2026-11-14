@@ -98,6 +98,13 @@ PY
       { echo 'Expired SFTP account still exists' >&2; exit 1; }
     printf 'A1 disposable PIN expired and setup account removed by real cleanup\n'
     ;;
+  assert-not-uploaded)
+    USERNAME=$(sed -n 's/^Setup username: //p' "$INVITE")
+    FILE="/var/lib/aap2/enroll/$USERNAME/inbox/public_key"
+    [ -f "$FILE" ] && [ ! -s "$FILE" ] ||
+      { echo 'SFTP public key uploaded before explicit Verified UI action' >&2; exit 1; }
+    printf 'A1 pre-Verified SFTP inbox empty (no public key upload)\n'
+    ;;
   watch-approve)
     ID=$(cat "$IDENTIFIER")
     USERNAME=$(sed -n 's/^Setup username: //p' "$INVITE")
@@ -133,7 +140,7 @@ PY
     printf 'A1 ephemeral approved device revoked\n'
     ;;
   *)
-    echo 'Usage: ci-a1-server.sh SERVER_DIR {init|invite|expire|watch-approve|approve|revoke}' >&2
+    echo 'Usage: ci-a1-server.sh SERVER_DIR {init|invite|expire|assert-not-uploaded|watch-approve|approve|revoke}' >&2
     exit 2
     ;;
 esac
