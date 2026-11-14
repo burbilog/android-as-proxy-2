@@ -1,6 +1,10 @@
 package net.isaeff.android.asproxy
 
 import androidx.compose.ui.test.assertTextEquals
+import android.util.Log
+import java.io.File
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -65,5 +69,80 @@ class A1EnrollmentUiTest {
         composeRule.onNodeWithTag("a1-probe").assertExists()
         assertTrue(EnrollmentPending.load(context) == null)
         assertFalse(DirectBootTunnelProfile.hasProfile(context))
+    }
+
+    @Test fun realComposeVerifiedClickEnrollsAndStartsSocks() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val invitation = File(context.filesDir, "a1-ci-ui-invitation")
+        val lines = invitation.readLines(Charsets.UTF_8)
+        check(invitation.delete()) { "Failed to remove temporary UI invitation" }
+        require(lines.size == 3) { "Private CI UI invitation requires three fields" }
+        val setupUser = EnrollmentInput.setupUser(lines[0])
+        val pin = EnrollmentInput.pin(lines[1])
+        val independentlyVerified = lines[2]
+        require(independentlyVerified.matches(Regex("SHA256:[A-Za-z0-9+/]{43}")))
+        assertFalse(DirectBootTunnelProfile.hasProfile(context))
+        assertTrue(EnrollmentPending.load(context) == null)
+        val keystore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        assertFalse("Fresh UI activation must not start with a saved SSH identity",
+            keystore.containsAlias(AndroidKeystoreIdentity.ALIAS))
+
+        composeRule.onNodeWithTag("a1-verified-activate").assertDoesNotExist()
+        composeRule.onNodeWithTag("a1-server").performTextInput("10.0.2.2:22224")
+        composeRule.onNodeWithTag("a1-setup-user").performTextInput(setupUser)
+        composeRule.onNodeWithTag("a1-pin").performTextInput(pin)
+        composeRule.onNodeWithTag("a1-probe").performScrollTo().performClick()
+        composeRule.waitUntil(30_000) {
+            composeRule.onAllNodesWithTag("a1-fingerprint-full")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("a1-fingerprint-full")
+            .assertTextEquals(independentlyVerified)
+        composeRule.onNodeWithTag("a1-fingerprint-grouped")
+            .assertTextEquals(EnrollmentInput.groupedFingerprint(independentlyVerified))
+        assertFalse("Host key probe must not create a pending profile",
+            DirectBootTunnelProfile.hasProfile(context))
+        assertTrue(EnrollmentPending.load(context) == null)
+        keystore.load(null)
+        assertFalse("PIN/identity must not be used before Verified click",
+            keystore.containsAlias(AndroidKeystoreIdentity.ALIAS))
+
+        // Allow the ephemeral CI administrator to inspect the untouched
+        // upload inbox *before* the only button that can send the PIN.
+        val preVerified = File(context.filesDir, "a1-ci-ui-fingerprint-ready")
+        val go = File(context.filesDir, "a1-ci-ui-verified-go")
+        val release = File(context.filesDir, "a1-ci-ui-release")
+        preVerified.delete()
+        go.delete()
+        release.delete()
+        check(preVerified.createNewFile())
+        composeRule.waitUntil(45_000) { go.exists() }
+        go.delete()
+
+        composeRule.onNodeWithTag("a1-verified-activate")
+            .performScrollTo().performClick()
+        composeRule.waitUntil(120_000) { DirectBootTunnelProfile.hasProfile(context) }
+        val profile = requireNotNull(DirectBootTunnelProfile.load(context))
+        assertEquals("10.0.2.2", profile.host)
+        assertEquals(22224, profile.sshPort)
+        assertTrue(profile.username.matches(Regex("aap2p[0-9a-f]{12}")))
+        assertArrayEquals(
+            "The stored pin must equal the host key independently checked on the UI",
+            VerifiedSshHostKey.probe(profile.host, profile.sshPort).blob,
+            profile.verifiedHostKey
+        )
+        assertEquals(independentlyVerified,
+            VerifiedSshHostKey.sha256Fingerprint(profile.verifiedHostKey))
+        assertTrue(EnrollmentPending.load(context) == null)
+        assertTrue(DirectBootTunnelProfile.wantsConnection(context))
+        composeRule.waitUntil(60_000) {
+            ConnectionStateHolder.connectionState.value == ConnectionState.CONNECTED
+        }
+        Log.i("AAP2-A1", "A1_REAL_COMPOSE_CLICK_PIN_SFTP_APPROVAL_SOCKS_CONNECTED")
+
+        // The runner checks HTTP over this live foreground SOCKS, then
+        // revokes the dedicated key before releasing instrumentation.
+        composeRule.waitUntil(90_000) { release.exists() }
+        release.delete()
     }
 }
