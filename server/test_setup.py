@@ -445,6 +445,38 @@ class ApprovalTests(unittest.TestCase):
         self.assertTrue(record['temp_removed'])
         self.assertEqual(record['state'], 'approved')
 
+    def test_list_shows_reserved_port_and_only_active_pin_expiry(self):
+        records = [
+            {'id': '000012', 'state': 'approved', 'device_name': 'Cruise2',
+             'remote_port': 11010, 'expires_at': 1},
+            {'id': '000013', 'state': 'active', 'device_name': 'New device',
+             'remote_port': 11011, 'expires_at': 1794664800},
+        ]
+        with mock.patch.object(aap, 'require_root'), \
+             mock.patch.object(aap, 'state_lock', side_effect=contextlib.nullcontext), \
+             mock.patch.object(aap, 'all_records', return_value=iter(records)), \
+             contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(aap.list_enrollments(None), 0)
+        text = output.getvalue()
+        self.assertIn('AAP2 devices (2):', text)
+        self.assertIn('Cruise2 [000012]  APPROVED  reserved SOCKS5 127.0.0.1:11010',
+                      text)
+        self.assertIn('New device [000013]  ACTIVE  reserved SOCKS5 127.0.0.1:11011',
+                      text)
+        self.assertEqual(text.count('Temporary PIN expires:'), 1)
+        self.assertIn('APPROVED means the SSH key is authorized, NOT that the phone is online.',
+                      text)
+        self.assertNotIn('1970', text)  # Approved device key does NOT expire with PIN.
+
+    def test_list_empty_explains_next_step(self):
+        with mock.patch.object(aap, 'require_root'), \
+             mock.patch.object(aap, 'state_lock', side_effect=contextlib.nullcontext), \
+             mock.patch.object(aap, 'all_records', return_value=iter(())), \
+             contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(aap.list_enrollments(None), 0)
+        self.assertIn('AAP2 devices: none', output.getvalue())
+        self.assertIn('aap2-setup enroll --help', output.getvalue())
+
     def test_revoke_requires_confirmation_before_key_change(self):
         record = {'id': '123456abcdef', 'state': 'approved', 'device_name': 'TC21',
                   'users': {aap.GROUP_PROXY: {'name': 'aap2p123456abcdef'}},
