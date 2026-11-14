@@ -84,28 +84,58 @@ cp app/build/outputs/apk/local-release/aap2.apk ~/aap2-releases/aap2-20001.apk
 В обеих сборках должен быть **один и тот же certificate SHA-256**,
 а `versionCode` во второй должен быть больше.
 
-## 4. Реальная проверка установки
+## 4. Реальная проверка на ЗАПАСНОМ Android
 
-**ВНИМАНИЕ:** текущая P0-A сборка на Zebra подписана временным debug key
-GitHub Actions. Первый переход debug → постоянная release подпись
-**НЕ является обновлением**: `adb install -r` вернёт
-`INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Нужен **однократный** uninstall
-**только AAP2** (не AAP1), с потерей текущих Keystore identity и test profile.
-Не делай этот переход, пока нужны текущие P0-A Wi-Fi/negative тесты.
+**Рабочую Zebra не трогать.** Переход с CI debug APK на постоянную
+release-подпись несовместим с обычным `adb install -r`; uninstall
+уничтожил бы её Keystore identity и профиль. Тестировать надо на отдельном
+физическом Android, где ещё **нет AAP2**. AAP1 не затрагивается.
 
-Для отдельного тестового телефона или после окончания P0-A испытаний:
+Проверку двух локально собранных APK делай из этого checkout A1:
 
 ```zsh
-adb uninstall net.isaeff.android.asproxy2.test
-adb uninstall net.isaeff.android.asproxy2
-adb install ~/aap2-releases/aap2-20000.apk
+OLD=~/aap2-releases/aap2-20000.apk
+NEW=~/aap2-releases/aap2-20001.apk
 
-adb install -r ~/aap2-releases/aap2-20001.apk
+sh scripts/aap2-spare-upgrade.sh check "$OLD" "$NEW"
 ```
 
-Повторный uninstall **между** двумя release сборками запрещён:
-это уничтожило бы сам смысл проверки. Убедись, что Android завершает
-`adb install -r` со статусом `Success` и не требует очистки данных.
+`check` проверяет Android applicationId, подпись обеих APK, **одинаковый**
+SHA256 сертификата и увеличение versionCode; откажет для debuggable APK.
+Это **не доказывает**, что использован именно твой постоянный ключ:
+сравни выведенный сертификат с локальным `keytool -list -v` для
+`~/aap2/aap2-release.p12`. Пароль вводится интерактивно; не передавай
+его в команды, GitHub или логи.
+
+Когда подключен запасной телефон, возьми его serial из `adb devices -l`,
+а затем выполни:
+
+```zsh
+export AAP2_SPARE_SERIAL='СЕРИЙНЫЙ_НОМЕР_ЗАПАСНОГО_ТЕЛЕФОНА'
+
+sh scripts/aap2-spare-upgrade.sh first "$OLD" "$NEW"
+```
+
+Скрипт покажет serial и модель, потребует ввести `SPARE <serial>`.
+Команда `first` откажет, если AAP2 уже установлен, и **никогда**
+не вызывает uninstall, `pm clear` или сброс Keystore.
+
+**Между двумя установками** зарегистрируй AAP2 через обычный UI на
+отдельном тестовом сервере S2, одобри ключ и подтверди SOCKS5 HTTP.
+Запиши публичный fingerprint клиентского SSH-ключа на сервере, host pin
+и назначенный remote port.
+
+Только после успешной регистрации:
+
+```zsh
+sh scripts/aap2-spare-upgrade.sh upgrade "$OLD" "$NEW"
+```
+
+`upgrade` требует установленную исходную версию и явное подтверждение
+того же serial, затем делает исключительно `adb install -r`. Он
+не создаёт/удаляет SSH-аккаунты, не знает PIN и не меняет Android
+Keystore. Если подпись несовместима — установка завершится ошибкой,
+**без попытки uninstall**.
 
 **Подтверждение сохранности Keystore и pinned host key в A1:**
 одного успешного `adb install -r` недостаточно. На **отдельном тестовом
