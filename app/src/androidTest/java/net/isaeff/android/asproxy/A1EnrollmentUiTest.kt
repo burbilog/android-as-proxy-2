@@ -89,7 +89,10 @@ class A1EnrollmentUiTest {
 
         composeRule.onNodeWithTag("a1-verified-activate").assertDoesNotExist()
         composeRule.onNodeWithTag("a1-server").performTextInput("10.0.2.2:22224")
-        composeRule.onNodeWithTag("a1-setup-user").performTextInput(setupUser)
+        assertTrue("CI manual setup code must be six decimal digits",
+            setupUser.matches(Regex("aap2e[0-9]{6}")))
+        // Real manual entry has NO clipboard or Unix name prefix.
+        composeRule.onNodeWithTag("a1-setup-user").performTextInput(setupUser.removePrefix("aap2e"))
         composeRule.onNodeWithTag("a1-pin").performTextInput(pin)
         composeRule.onNodeWithTag("a1-probe").performScrollTo().performClick()
         composeRule.waitUntil(30_000) {
