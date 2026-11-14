@@ -88,31 +88,37 @@ background tests on the disposable Seuic, not on the working Zebra.
 
 ## Physical Wi-Fi toggle under PIN-locked screen — Seuic 20004 (2026-11-14)
 
-On the physical Seuic Cruise2 after a successful pre-unlock reboot/Direct
-Boot test, ADB toggled Wi-Fi OFF and then ON while the Android primary user
-remained `RUNNING_LOCKED` and a lock-screen PIN was configured. With Wi-Fi
-off, the server-side reverse listener `127.0.0.1:11010` disappeared.
-Despite enabling Wi-Fi, the Android `cmd wifi status` later reported
-`Wifi is enabled` but `Wifi is not connected`, with no IPv4 Wi-Fi
-address or route; all server-side curl attempts failed with connection
-refused. The Wi-Fi dump showed `mAutoJoinEnabled=true` after the toggle,
-but no subsequent successful connection to saved SSID `O3`.
+**Direct Boot: PASS.** After an ADB reboot with a configured lock-screen
+PIN, Android reported `RUNNING_LOCKED`, the AAP2 foreground service had
+started from `LOCKED_BOOT_COMPLETED`, and `cmd wifi status` showed the
+saved WLAN `O3` connected. Cloudflare HTTPS passed through the existing
+server-side SOCKS5 `127.0.0.1:11010` without unlocking.
 
-At 16:47, after the user unlocked the physical device, Android reported
-`RUNNING_UNLOCKED` and connected to `O3` (`10.54.10.79`).
-Without restarting or re-enrolling AAP2, Cloudflare HTTPS again passed
-via the **same** reverse SOCKS5 listener `127.0.0.1:11010` and exit
-IP `195.91.221.147`. **Reconnect after Wi-Fi connectivity returned:
-PASS. Wi-Fi autojoin while locked after an explicit ADB toggle: NOT PASS.**
+**Artificial Wi-Fi toggle while screen asleep:** ADB `svc wifi disable`,
+then `enable`, left Android's Wi-Fi setting enabled but unassociated
+(`Wifi is not connected`) for several minutes; the remote reverse
+listener was absent. The phone was not online; this alone cannot be
+classified as an AAP2 reconnect defect.
 
-Do not misattribute the missing server listener to an AAP2 failure:
-Android itself had no Wi-Fi connection. The observations do not distinguish
-whether the recovery was triggered by simply waking the screen, by
-entering the lock-screen PIN (credential unlock), or by additional time.
-A controlled follow-up should repeat the Wi-Fi toggle while locked, then
-wake the display **without entering PIN** and inspect `cmd wifi status`
-and the remote SOCKS listener before unlocking as a recovery action.
-Keep experiments on Seuic, not production Zebra.
+**Controlled wake-only reproduction: PASS.** The user repeated the
+toggle after another locked reboot; Wi-Fi again remained enabled but
+disconnected while the screen slept. At 17:03, a single
+`adb shell input keyevent KEYCODE_WAKEUP` (NO PIN entry) was sufficient
+for the saved `O3` connection to return. Android STILL reported
+`RUNNING_LOCKED`; at 17:04 Cloudflare HTTPS again succeeded over the
+**same** S2 reverse SOCKS5 port and exit IP `195.91.221.147`.
+There was no manual app restart, re-enrollment or credential unlock.
+
+**Conclusion:** AAP2 restored the SSH reverse tunnel once Wi-Fi came
+back, independently of the first PIN unlock. On this Seuic, explicitly
+turning the Wi-Fi radio off/on while the display sleeps may defer
+association until the screen wakes. This is an ADB/admin-initiated
+radio toggle, **not a representative natural Wi-Fi outage**. Do not
+work around it with forced Wi-Fi control, wake locks or screen wakeups
+in AAP2. To test realistic network interruption, disrupt the **AP or
+upstream network** without changing the Android Wi-Fi enabled state;
+or separately test server-side SSH-session loss/retry. All such tests
+remain restricted to the disposable Seuic and S2, not production Zebra.
 
 ## Failure recovery and migration
 
