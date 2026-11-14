@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -33,6 +35,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import net.isaeff.android.asproxy.ui.theme.AAPTheme
@@ -69,10 +72,15 @@ fun MainScreen() {
     // Refresh profile visibility on resume, without ever changing the stored profile.
     val lifecycleOwner = LocalLifecycleOwner.current
     var configured by remember { mutableStateOf(DirectBootTunnelProfile.hasProfile(context)) }
+    var profile by remember {
+        mutableStateOf(runCatching { DirectBootTunnelProfile.load(context) }.getOrNull())
+    }
+    var showDetails by remember { mutableStateOf(false) }
     DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 configured = DirectBootTunnelProfile.hasProfile(context)
+                profile = runCatching { DirectBootTunnelProfile.load(context) }.getOrNull()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -111,6 +119,16 @@ fun MainScreen() {
         }
     }
 
+    BackHandler(enabled = showDetails) { showDetails = false }
+    val detailsProfile = profile
+    if (showDetails && detailsProfile != null) {
+        ConnectionDetailsScreen(
+            profile = detailsProfile,
+            state = connectionState,
+            traffic = traffic,
+            onClose = { showDetails = false }
+        )
+    } else {
     Scaffold(topBar = { TopAppBar(title = { Text("Android As Proxy 2") }) }) { padding ->
         Column(
             modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
@@ -125,6 +143,13 @@ fun MainScreen() {
                 },
                 style = MaterialTheme.typography.titleMedium
             )
+            if (profile != null) {
+                Text(
+                    "Connection ID: ${ConnectionIdentity.id(profile!!.username)}",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.testTag("a1-connection-id")
+                )
+            }
             Text(
                 "Traffic: " +
                     android.text.format.Formatter.formatShortFileSize(context, traffic.first) +
@@ -166,11 +191,21 @@ fun MainScreen() {
                     else -> {}
                 }
             }
-            Row(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 Button(
                     onClick = { context.startActivity(Intent(context, LogViewActivity::class.java)) }
                 ) { Text("Show log") }
+                if (profile != null) {
+                    OutlinedButton(
+                        onClick = { showDetails = true },
+                        modifier = Modifier.testTag("a1-open-details")
+                    ) { Text("Details") }
+                }
             }
         }
+    }
     }
 }
