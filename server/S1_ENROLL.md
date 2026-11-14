@@ -107,18 +107,36 @@ systemctl enable --now aap2-cleanup.timer
 \`\`\`sh
 aap2-setup print-config
 aap2-setup doctor
-aap2-setup enroll TC21-test --server ssh.example.net:22222 \
-  --client-addr 192.0.2.10 --client-host phone.example.net \
-  --server-addr 192.0.2.20 --server-port 22
+aap2-setup enroll TC21-test --server ssh.example.net:22222
 aap2-setup list
+aap2-setup list --all
 aap2-setup cleanup
 \`\`\`
 
-\`--server-addr\` and \`--server-port\` refer to **the sshd process itself**
-(e.g. Incus guest port 22), not the host's forwarded port 22222.
-\`--client-addr\` and \`--client-host\` describe the *connecting* client.
-The administrator must provide real context because global/source-address
-Match blocks can change the effective policy.
+For simple enrollment, the SSH Match security check uses sample
+values: client source 198.51.100.1, client hostname unknown,
+server-local address 127.0.0.1 and local port 22. These are probe
+inputs, NOT actual connection guarantees. The CLI warns about sample
+source and local addresses; strict role-specific SSH Match checks still
+run before the PIN is activated.
+
+Use \`aap2-setup enroll --help-all\` for full probe options. If your
+sshd policy depends on \`Match Address\`, \`Match Host\`,
+\`Match LocalAddress\` or \`Match LocalPort\`, supply real context:
+
+\`\`\`sh
+aap2-setup enroll TC21-test --server ssh.example.net:22222 \
+  --client-addr 192.0.2.10 --client-host phone.example.net \
+  --server-addr 192.0.2.20 --server-port 22
+\`\`\`
+
+\`--server-addr\` and \`--server-port\` refer to the sshd process
+itself (e.g. Incus guest port 22), not a forwarded host port. Even
+explicit values cannot prove all conditional policies for arbitrary
+clients behind NAT; review source-dependent Match rules separately.
+
+\`list\` hides revoked history by default; \`list --all\` shows it,
+with the same behavior under \`-j\` / \`--json\`.
 
 For \`doctor\` without actual AAP2 accounts, exit **2** means PENDING, not
 a green light for enrollment. A previous account audit alone is **never**
