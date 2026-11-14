@@ -29,8 +29,11 @@ aap2-setup enroll SpareAndroid --manual-code \
 Six-digit codes are **not authentication secrets**: they only select a
 short-lived Unix account. The ten-digit PIN, the verified SSH host-key
 fingerprint and explicit administrator approval are unchanged. The
-10-minute PIN TTL is unchanged; issue invitations only when the user is
-ready. Existing 12-hex enrollment IDs, approved accounts and stored
+manual-entry PIN lasts **20 minutes** (10 minutes in the legacy mode).
+The temporary password still expires automatically via the cleanup timer;
+do not treat the public six-digit code as an authentication secret. Issue
+invitations only when the user is ready. Existing 12-hex enrollment IDs,
+approved accounts and stored
 Android profiles remain valid. The new option does **not** migrate or
 alter existing accounts, or silently change the default enroll format.
 
