@@ -1310,9 +1310,10 @@ def list_enrollments(args):
     print('AAP2 devices ({}):'.format(len(records)))
     for record in records:
         state = record['state']
-        print('  {} [{}]  {}  reserved SOCKS5 127.0.0.1:{}'.format(
+        port_label = 'former SOCKS5' if state == 'revoked' else 'reserved SOCKS5'
+        print('  {} [{}]  {}  {} 127.0.0.1:{}'.format(
             record['device_name'], record['id'], state.upper(),
-            record['remote_port']))
+            port_label, record['remote_port']))
         if state == 'active':
             expiry = datetime.datetime.fromtimestamp(
                 record['expires_at'], datetime.timezone.utc)
