@@ -6,7 +6,7 @@ The Android client derives from the tested P0 Keystore/Direct Boot/strict-host-k
 
 ## Activation
 
-1. On an unconfigured device, the user opens **Activate AAP2 using one-time PIN** and enters the server host[:port], server-issued `aap2e...` setup user and ten-digit PIN (4-4-2 grouping; leading zeros preserved).
+1. On an unconfigured device, the user opens **Activate AAP2 using one-time PIN** and manually types the server host[:port], **six-digit numeric setup code** (no Unix prefix), and **ten-digit PIN**. The server issues the six-digit form with `aap2-setup enroll ... --manual-code`; Android expands it to `aap2eNNNNNN`. Leading zeros are preserved. Printed `XXXX-XXXX-XX` PIN dashes are for the administrator's readability **only** — the user enters ten digits on the numeric keypad, without dashes. An older full `aap2e` + 12-hex setup username remains accepted.
 2. **Check server fingerprint** performs SSH KEX, captures the public host-key blob and **rejects user authentication**. The UI displays the **complete** `SHA256:` fingerprint, the key algorithm, host and port. The user must compare it with an administrator through an independent trusted channel. There is no TOFU, auto-accept or PIN transmission at this stage.
 3. Only **Verified — send PIN and activate** can start a second SSH session with an exactly pinned host key. The PIN authenticates a temporary SFTP-only account; strictly bounded/schema-validated `config.json` supplies permanent username and assigned remote port. Android creates/reuses a permanent Android Keystore P-256 key, persists **non-secret** pending details, then uploads the **public** key only.
 4. The administrator explicitly approves the uploaded key on S2. Android reads `status.json`, proves a separate permanent **publickey-only** SSH login and the exact loopback `-R 127.0.0.1:PORT`. Only then does it commit the device-protected `DirectBootTunnelProfile`, clear pending metadata and start the foreground SOCKS5 service.
@@ -37,6 +37,7 @@ All tests above exercise a disposable emulator and test signing certificate. The
 
 ## Remaining acceptance gates
 
+- [ ] Six-digit manual-typing Compose enrollment with disposable S2 `--manual-code` — CI regression is being validated; long-username legacy E2E passed previously.
 - [x] Positive Compose UI enrollment, S2 approval, actual SOCKS5 HTTP and revoke on emulator.
 - [x] Negative host/PIN/SFTP/JSON/`permitlisten` paths and no-PIN Resume.
 - [x] Same-certificate in-place APK update and pre-first-unlock FBE reboot on emulator.
