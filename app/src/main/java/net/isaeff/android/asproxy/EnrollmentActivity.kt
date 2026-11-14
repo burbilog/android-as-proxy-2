@@ -159,7 +159,7 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                         }
                         if (address != null) {
                             busy = true
-                            message = "Checking server key BEFORE sending PIN…"
+                            message = "Checking server identity before activation…"
                             scope.launch {
                                 try {
                                     candidate = withContext(Dispatchers.IO) {
@@ -177,7 +177,7 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                     }, modifier = Modifier.testTag("a1-probe")) { Text("Check server fingerprint") }
 
                     if (pending) {
-                        Text("An enrollment is pending. Resume only after the administrator approved the key.")
+                        Text("Activation is pending. Resume after the administrator approves the device.")
                         Button(enabled = !busy, onClick = {
                             busy = true
                             error = ""
@@ -214,7 +214,7 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                     Text("Full fingerprint:", style = MaterialTheme.typography.titleMedium)
                     Text(probe.fingerprint, modifier = Modifier.testTag("a1-fingerprint-full"))
                     Text(EnrollmentInput.groupedFingerprint(probe.fingerprint), modifier = Modifier.testTag("a1-fingerprint-grouped"))
-                    Text("Do not continue unless every fingerprint character matches. The PIN has not been sent.")
+                    Text("Do not continue unless every fingerprint character matches. No activation credentials have been sent.")
 
                     Button(enabled = !busy, onClick = {
                         busy = true
@@ -250,7 +250,7 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                                 busy = false
                             }
                         }
-                    }, modifier = Modifier.testTag("a1-verified-activate")) { Text("Verified — send PIN and activate") }
+                    }, modifier = Modifier.testTag("a1-verified-activate")) { Text("Verified — activate") }
 
                     TextButton(enabled = !busy, onClick = {
                         candidate = null
