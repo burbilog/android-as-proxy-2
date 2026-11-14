@@ -251,6 +251,8 @@ class LifecycleTests(unittest.TestCase):
                 self.assertEqual(aap.enroll(args), 0)
             state = json.loads(meta_path.read_text())
             self.assertEqual(state['id'], '000012')
+            self.assertGreaterEqual(state['expires_at'] - state['created_at'], 1200)
+            self.assertIn('20 minutes', out.getvalue())
             self.assertEqual(state['users'][aap.GROUP_ENROLL]['name'], 'aap2e000012')
             self.assertEqual(state['users'][aap.GROUP_PROXY]['name'], 'aap2p000012')
             self.assertIn('Phone setup code (6 digits, no prefix): 000012', out.getvalue())
