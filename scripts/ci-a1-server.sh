@@ -68,7 +68,7 @@ EOF
   invite)
     [ -d "$STATE" ] || { echo 'Fixture not initialized' >&2; exit 2; }
     # The PIN is retained ONLY in a root-only fixture file, never CI log.
-    aap2-setup enroll A1-CI --server 127.0.0.1:22224 \
+    aap2-setup enroll A1-CI --manual-code --server 127.0.0.1:22224 \
       --client-addr 127.0.0.1 --client-host localhost \
       --server-addr 127.0.0.1 --server-port 22224 > "$INVITE"
     sed -n 's/^Enrollment ID: //p' "$INVITE" > "$IDENTIFIER"
