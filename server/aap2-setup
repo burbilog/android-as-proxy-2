@@ -78,6 +78,24 @@ POLICY = {
 }
 
 
+def json_mode(args):
+    return getattr(args, 'json', False)
+
+
+def emit_json(command, ok, **fields):
+    data = {'schema': 1, 'command': command, 'ok': ok}
+    data.update(fields)
+    print(json.dumps(data, sort_keys=True, separators=(',', ':')))
+
+
+class Aap2ArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        if '-j' in sys.argv[1:] or '--json' in sys.argv[1:]:
+            emit_json('cli', False, error=message)
+            self.exit(2)
+        super().error(message)
+
+
 class Checks:
     """Read-only diagnostics. Warnings are not passed security invariants."""
     def __init__(self):
@@ -1126,11 +1144,22 @@ def revoke(args):
 
 
 
-def list_enrollments(_args):
+def list_enrollments(args):
     """Read stored enrollment state, not inferred online state or parsed logs."""
     require_root()
     with state_lock():
         records = list(all_records())
+    if json_mode(args):
+        devices = []
+        for record in records:
+            row = {'id': record['id'], 'name': record['device_name'],
+                   'state': record['state'], 'remote_port': record['remote_port'],
+                   'listen_address': '127.0.0.1'}
+            if record['state'] == 'active':
+                row['temporary_pin_expires_at'] = record['expires_at']
+            devices.append(row)
+        emit_json('list', True, devices=devices)
+        return 0
     if not records:
         print('AAP2 devices: none')
         print('To add one: aap2-setup enroll --help')
@@ -1155,9 +1184,11 @@ def list_enrollments(_args):
 
 
 def main():
-    parser = argparse.ArgumentParser(prog='aap2-setup',
+    parser = Aap2ArgumentParser(prog='aap2-setup',
         description='AAP2 OpenSSH server CLI: PIN, SFTP key approval and per-device revoke')
-    sub = parser.add_subparsers(dest='action', required=True)
+    parser.add_argument('-j', '--json', action='store_true', help='machine-readable JSON on stdout')
+    sub = parser.add_subparsers(dest='action', required=True,
+                              parser_class=Aap2ArgumentParser)
     pc = sub.add_parser('print-config', help='print manual-only SSH Match template')
     pc.set_defaults(func=print_config)
     doc = sub.add_parser('doctor', help='read-only preflight and effective OpenSSH checks')
@@ -1189,8 +1220,18 @@ def main():
     cl.set_defaults(func=cleanup)
     li = sub.add_parser('list', help='list root-owned invitation metadata')
     li.set_defaults(func=list_enrollments)
+    for command in (pc, doc, en, ap, rv, cl, li):
+        command.add_argument('-j', '--json', action='store_true',
+                             default=argparse.SUPPRESS,
+                             help='machine-readable JSON on stdout')
     args = parser.parse_args()
-    return args.func(args)
+    try:
+        return args.func(args)
+    except (SetupError, OSError, ValueError, json.JSONDecodeError) as exc:
+        if json_mode(args):
+            emit_json(args.action, False, error=str(exc))
+            return 1
+        raise
 
 
 if __name__ == '__main__':
