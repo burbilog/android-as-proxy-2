@@ -3,6 +3,8 @@ package net.isaeff.android.asproxy
 import android.content.Context
 import android.os.Build
 import android.text.format.Formatter
+import java.security.KeyStore
+import java.security.interfaces.ECPublicKey
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -53,9 +55,10 @@ internal data class ConnectionDetailsInfo(
             // Read ONLY the existing public key; do not create an identity or ask
             // the server to check anything while the details page is open.
             val publicFingerprint = runCatching {
-                VerifiedSshHostKey.sha256Fingerprint(
-                    AndroidKeystoreIdentity.getExisting(context).getPublicKeyBlob()
-                )
+                val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+                val public = store.getCertificate(AndroidKeystoreIdentity.ALIAS)?.publicKey as? ECPublicKey
+                    ?: error("SSH public key not present")
+                VerifiedSshHostKey.sha256Fingerprint(SshEcWire.publicKeyBlob(public))
             }.getOrElse { "Unavailable (Keystore)" }
             val pkg = runCatching {
                 context.packageManager.getPackageInfo(context.packageName, 0)
