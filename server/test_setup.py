@@ -271,7 +271,7 @@ class LifecycleTests(unittest.TestCase):
             self.assertEqual(state['users'][aap.GROUP_ENROLL]['name'], 'aap2e000012')
             self.assertEqual(state['users'][aap.GROUP_PROXY]['name'], 'aap2p000012')
             self.assertIn('Phone setup code (6 digits, no prefix): 000012', out.getvalue())
-            self.assertIn('One-time PIN: 0000-0000-12', out.getvalue())
+            self.assertIn('One-time PIN (type all 10 digits): 0000000012', out.getvalue())
             self.assertNotIn('0000000012', meta_path.read_text())
             self.assertEqual(events[2][0], 'chpasswd')
             self.assertTrue(aap.ID_RE.fullmatch('000012'))
