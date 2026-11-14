@@ -93,6 +93,24 @@ aap2-setup revoke <enrollment-id>
 # Type REVOKE to confirm.
 \`\`\`
 
+### CLI output and list semantics
+
+`enroll` prints three short sections in order: **PHONE** (endpoint and
+one-time activation code or legacy credentials), **VERIFY SERVER**
+(full SHA256 host-key fingerprints and key types), and **ADMIN**
+(enrollment ID and the exact `approve` command). The one-time
+activation code is displayed **once**; the PIN is not written into
+persistent state or Android logs. The CLI remains usable over plain
+SSH and in scripts; no TUI or third-party Python dependencies.
+
+`aap2-setup list` is a compact read-only view of each device's
+root-owned enrollment state and **reserved** loopback SOCKS5 port.
+`APPROVED` means its public key is authorized; it does **not** mean
+the phone is online. The temporary PIN expiry is shown for `ACTIVE`
+invitations only, never as an expiry date for an approved permanent
+key. No network probing or log parsing is used to guess online status.
+An empty list explains how to display `enroll --help`.
+
 ### Approval security
 
 - Only one \`ecdsa-sha2-nistp256\` key line (max 1024 bytes, optional
