@@ -68,8 +68,7 @@ aap2-setup enroll CI-TEST --server 127.0.0.1:22224 \
   --client-addr 127.0.0.1 --client-host localhost \
   --server-addr 127.0.0.1 --server-port 22224 > "$TMP/invite.txt"
 E=$(sed -n 's/^Setup username: //p' "$TMP/invite.txt")
-DISPLAY_PIN=$(sed -n 's/^One-time PIN: //p' "$TMP/invite.txt")
-PIN=$(printf '%s' "$DISPLAY_PIN" | tr -d '-')
+PIN=$(sed -n 's/^One-time PIN (type all 10 digits): //p' "$TMP/invite.txt")
 ID=$(sed -n 's/^Enrollment ID: //p' "$TMP/invite.txt")
 [ "${#PIN}" -eq 10 ] && [ -n "$E" ] && [ -n "$ID" ]
 case "$PIN" in *[!0-9]*) echo 'PIN not decimal' >&2; exit 1;; esac
@@ -89,7 +88,7 @@ printf 'put %s inbox/public_key\nbye\n' "$TMP/device.pub" |
     -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
     -o PubkeyAuthentication=no -o PreferredAuthentications=password \
     "$E@127.0.0.1" >/dev/null
-unset SSHPASS PIN DISPLAY_PIN
+unset SSHPASS PIN
 cmp "$TMP/device.pub" "/var/lib/aap2/enroll/$E/inbox/public_key"
 echo 'S1-B PASS: real PIN SFTP-only upload into precreated file'
 
