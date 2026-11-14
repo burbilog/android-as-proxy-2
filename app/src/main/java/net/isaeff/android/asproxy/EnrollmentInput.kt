@@ -35,6 +35,27 @@ internal object EnrollmentInput {
         return Endpoint(host, port)
     }
 
+    data class Activation(val setupUser: String, val pin: String)
+
+    /** 18 numeric digits: 6 account selector, 10 secret PIN, 2 MOD97 check digits. */
+    fun activationCode(value: String): Activation {
+        require(value.all { it in '0'..'9' || it == '-' || it == ' ' }) {
+            "Activation code: digits only"
+        }
+        val digits = value.filter { it in '0'..'9' }
+        require(digits.length == 18) { "Activation code must contain 18 digits" }
+        // Streaming remainder avoids converting 18 digits to signed Long and
+        // preserves all leading zeroes.
+        val remainder = digits.fold(0) { rem, c ->
+            (rem * 10 + (c - '0')) % 97
+        }
+        require(remainder == 1) { "Activation code typo: check the digits" }
+        return Activation("aap2e" + digits.substring(0, 6), digits.substring(6, 16))
+    }
+
+    fun formatActivationCode(digits: String): String =
+        digits.chunked(4).joinToString("-")
+
     fun setupUser(value: String): String {
         val code = value.trim()
         // Human entry: only six numeric digits, with leading zeros intact.
