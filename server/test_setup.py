@@ -259,7 +259,8 @@ class LifecycleTests(unittest.TestCase):
             self.assertEqual(events[2][0], 'chpasswd')
             self.assertTrue(aap.ID_RE.fullmatch('000012'))
             self.assertTrue(aap.ID_RE.fullmatch('123456abcdef'))
-            self.assertFalse(aap.ID_RE.fullmatch('123456'))
+            self.assertFalse(aap.ID_RE.fullmatch('12345'))
+            self.assertFalse(aap.ID_RE.fullmatch('ab12cd'))
 
     def test_crash_before_useradd_never_activates_pin(self):
         with tempfile.TemporaryDirectory() as d:
