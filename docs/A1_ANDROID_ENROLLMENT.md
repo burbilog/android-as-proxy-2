@@ -6,7 +6,7 @@ The Android client derives from the tested P0 Keystore/Direct Boot/strict-host-k
 
 ## Activation
 
-1. On an unconfigured device, the user opens **Activate AAP2 using one-time PIN** and manually types the server host[:port], **six-digit numeric setup code** (no Unix prefix), and **ten-digit PIN**. The server issues the six-digit form with `aap2-setup enroll ... --manual-code`; Android expands it to `aap2eNNNNNN`. Leading zeros are preserved. Printed `XXXX-XXXX-XX` PIN dashes are for the administrator's readability **only** — the user enters ten digits on the numeric keypad, without dashes. New short-code invitations have a **20-minute PIN lifetime** for completely manual entry; legacy S2 invitations retain the original 10-minute expiry. An older full `aap2e` + 12-hex setup username remains accepted.
+1. On an unconfigured device, the user opens **Activate AAP2 using one-time PIN** and types the server host[:port] and exactly **one activation code**. The server issues it with `aap2-setup enroll ... --manual-code` as **18 decimal digits grouped 4-4-4-4-2**. Android has one numeric field, inserts separators visually, and offers Show/Hide. Internally the first six digits select the temporary SSH username `aap2eNNNNNN`, the next ten are the actual random password/PIN, and the last two are a decimal MOD97 check. The user's screen deliberately does not distinguish the account and PIN. A failed checksum is rejected locally **before any SSH connection or PIN transfer**; it detects every single mistyped digit and all unequal adjacent digit swaps, but adds no authentication entropy. The code is never saved to disk, copied to saved instance state, or logged. The code stays in the in-memory form after SSH authentication failure so it can be corrected without retyping the whole form. Manual activation grants a **20-minute PIN lifetime**; existing legacy enrollments remain valid but legacy two-field enrollment input is not shown in the new UI.
 2. **Check server fingerprint** performs SSH KEX, captures the public host-key blob and **rejects user authentication**. The UI displays the **complete** `SHA256:` fingerprint, the key algorithm, host and port. The user must compare it with an administrator through an independent trusted channel. There is no TOFU, auto-accept or PIN transmission at this stage.
 3. Only **Verified — send PIN and activate** can start a second SSH session with an exactly pinned host key. The PIN authenticates a temporary SFTP-only account; strictly bounded/schema-validated `config.json` supplies permanent username and assigned remote port. Android creates/reuses a permanent Android Keystore P-256 key, persists **non-secret** pending details, then uploads the **public** key only.
 4. The administrator explicitly approves the uploaded key on S2. Android reads `status.json`, proves a separate permanent **publickey-only** SSH login and the exact loopback `-R 127.0.0.1:PORT`. Only then does it commit the device-protected `DirectBootTunnelProfile`, clear pending metadata and start the foreground SOCKS5 service.
@@ -27,7 +27,7 @@ Code at commit `833d44b7c9f56f4b43118dda58fb17502ddb6acf`:
 
 - [Android build and unit tests #43534858536](https://github.com/burbilog/android-as-proxy-2/actions/runs/43534858536) — **PASS** after removal of the legacy password SSH implementation.
 - [Android 11 real OpenSSH S2 E2E #43534858498](https://github.com/burbilog/android-as-proxy-2/actions/runs/43534858498) — **PASS** on a fresh disposable Android 11/API 30 emulator with disposable OpenSSH/PAM/S2 on the GitHub runner.
-- Real **Compose UI click-through**: three fields → fingerprint probe → full SHA256 compared with runner's independently obtained `ssh-keygen` result → confirm Verified. Server inbox is checked empty **before** that click. The public key is then uploaded and administratively approved, the actual Android foreground SSH -R/SOCKS5 proxy returns an HTTP body, and server revoke tears it down.
+- Historical tested **Compose UI click-through** (commit `833d44b`): three fields → fingerprint probe → full SHA256 compared with runner's independently obtained `ssh-keygen` result → confirm Verified. Server inbox is checked empty **before** that click. The public key is then uploaded and administratively approved, the actual Android foreground SSH -R/SOCKS5 proxy returns an HTTP body, and server revoke tears it down.
 - Negative checks: changed SSH host pin rejected before authentication; malformed JSON and fractional/string integer fields rejected; expired setup PIN removed by **real S2 cleanup**; forcibly broken SFTP after key upload → explicit admin approval → successful **no-PIN Resume using same Keystore identity**; OpenSSH rejects the wrong `permitlisten` port.
 - A separate enrollment on the same disposable emulator drives an in-place `adb install -r` from `versionCode 20000` to `20001` with the **same temporary debug signing certificate**. Existing public Keystore key, pinned SSH host key and real reverse-forward/SOCKS5 HTTP survive the APK update without uninstall.
 - The file-based-encrypted Android emulator is PIN-locked and **cold-rebooted** with **no adb reverse**. CI requires user 0 to stay `RUNNING_LOCKED` while SOCKS5 HTTP succeeds through the restored SSH reverse tunnel. Server is reached via emulator's `10.0.2.2` host route; no instrumentation/user unlock occurs during the pre-unlock check.
@@ -85,6 +85,30 @@ Uninstall deletes the previous AAP2 profile/Keystore identity by design;
 new enrollment must receive a new key and server account. A factory reset
 of the whole phone is not required. **Never** apply this procedure to
 Zebra, the separate `aap2-test` VM, or the soak monitor.
+
+## Single-code UX revision — in development, 2026-11-14
+
+Physical Seuic test of the earlier six-digit+PIN UI passed: code `692103`,
+new permanent SSH user `aap2p692103`, verified phone key approved by S2,
+HTTPS via `127.0.0.1:11010` succeeded. A real manual-entry mistake
+(`792103` instead of `692103`) caused `JSchException`, and the
+two-field interface obscured the exact cause. New UX deliberately collapses
+account selector and password into one checksum-protected entry.
+
+- Server S2 `--manual-code`: prints one 18-digit code with two MOD97 check
+  digits, grouped 4-4-4-4-2. Legacy non-manual CLI still displays a distinct
+  ten-digit PIN, to avoid altering older disposable SSH tests.
+- Android: one masked numeric entry with Show/Hide and automatic visual
+  grouping; code can be checked before SSH. Its value stays in RAM on
+  retry, but is never written into saved-state/preferences/logcat.
+  Full host fingerprint still requires explicit independent confirmation;
+  one code does **not** combine or bypass host-key verification.
+- The internal PIN remains ten random digits; check digits detect typos,
+  **not** malicious guesses. S2 policy still limits PIN lifetime and
+  requires manual admin approval and restricted publickey forwarding.
+- CI and physical acceptance of this *new single-code* UI are separate from
+  the previously passed two-field physical and CI tests. Do not alter
+  running Seuic or working Zebra until the revised build passes CI.
 
 ## Remaining acceptance gates
 
