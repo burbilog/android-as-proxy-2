@@ -333,7 +333,8 @@ def print_config(_args):
 
 # S1-B lifecycle. Only operations on verified, registered AAP2 accounts are
 # permitted. The state root and chroots are never writable by those accounts.
-ID_RE = re.compile(r'^(?:[0-9a-f]{12}|[0-9]{6})PORT_LOW, PORT_HIGH = 11010, 11509
+ID_RE = re.compile(r'(?:[0-9a-f]{12}|[0-9]{6})')
+PORT_LOW, PORT_HIGH = 11010, 11509
 PIN_TTL = 600
 SAFE_ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C'}
 LOCK = STATE / '.lock'
