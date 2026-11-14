@@ -44,7 +44,7 @@ internal object EnrollmentPending {
         )
         require(result.sshPort in 1..65535 && result.remotePort in 1024..65535 &&
             result.host.isNotBlank() &&
-            result.permanentUser.matches(Regex("aap2p[0-9a-f]{12}"))) {
+            result.permanentUser.matches(Regex("aap2p(?:[0-9]{6}|[0-9a-f]{12})"))) {
             "Corrupted pending enrollment"
         }
         SshEcWire.hostKeyAlgorithm(result.verifiedHostKey)
