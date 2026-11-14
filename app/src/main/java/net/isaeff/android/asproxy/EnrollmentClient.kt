@@ -200,7 +200,7 @@ internal class EnrollmentClient(private val context: Context) {
             "Unsupported enrollment schema"
         }
         val username = obj.getString("username")
-        require(username.matches(Regex("aap2p[0-9a-f]{12}"))) {
+        require(username.matches(Regex("aap2p(?:[0-9]{6}|[0-9a-f]{12})"))) {
             "Unexpected permanent username"
         }
         require(exactPositiveInteger(obj, "remote_port") in 11010L..11509L) {
