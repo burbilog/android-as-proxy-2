@@ -13,8 +13,8 @@ For **new** S2 invitations, use `--manual-code` with the ordinary
 **exactly six decimal digits**, including leading zeros. In the A1
 Android screen, the user types **only those six digits**, not the
 `aap2e` Unix username prefix. The phone constructs the exact SSH
-username locally. The one-time PIN remains **ten digits**; printed
-hyphens are separators and must not be entered on the phone.
+username locally. The one-time PIN is printed as **exactly ten consecutive
+digits**, without separators, matching the Android input. Leading zeros matter.
 The server address and port are still typed separately.
 
 Example (fill in real addresses):
@@ -104,7 +104,8 @@ aap2-setup revoke <enrollment-id>
   status publication, retrying \`approve\` with the same snapshot is
   safe. Android can attempt the permanent key even when its SFTP
   connection was interrupted; no need to delete/regenerate that key.
-- The temporary PIN stays active until the 10-minute TTL. On expiry the
+- The temporary PIN stays active until its 10-minute legacy / 20-minute
+  manual-code TTL. On expiry the
   systemd cleanup removes only temporary access and its chroot; the
   permanent key stays approved, including across a cleanup run.
 
