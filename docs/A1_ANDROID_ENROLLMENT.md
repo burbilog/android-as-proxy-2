@@ -147,6 +147,28 @@ this device-specific observation. Future realistic resilience testing
 needs either another OEM or a network path that can be disrupted without
 losing Wi-Fi association, and should isolate AAP2's own SSH retry behavior.
 
+## Physical server-side SSH termination test — Seuic 20004 (2026-11-14)
+
+A deliberately isolated test on the disposable S2 server terminated the
+existing AAP2 device user's SSH session with `pkill -TERM -u` on the
+dedicated permanent account. No Wi-Fi changes, phone restart, enrollment
+change, revocation, or `sshd` restart were involved.
+
+A two-second poll of the reserved loopback listener on S2 reported:
+`14:41:53Z` through `14:41:59Z UP`; `14:42:01Z`,
+`14:42:03Z` and `14:42:05Z DOWN`; from `14:42:07Z`
+onward `UP`. An immediate HTTPS request through the original
+`socks5h://127.0.0.1:11010` again succeeded, with the unchanged
+exit IP `195.91.221.147`. **Physical SSH reconnect after server-side
+session termination: PASS.**
+
+The polling interval constrains the outage measurement: listener
+absence was observed over approximately six seconds between the first
+DOWN and first following UP sample. No claim is made about exact SSH
+reconnection latency or black-holed TCP failures (which are a separate
+scenario). This validates AAP2's reconnect loop with the phone network
+available, independently of the Seuic firmware's dozing Wi-Fi issue.
+
 ## Failure recovery and migration
 
 - A terminated SFTP session after upload preserves the original host pin, permanent username/port and Keystore key alias in pending state, with **no PIN**. **Resume approved enrollment** makes **one** pinned permanent publickey SSH / reverse-port attempt using the **existing** identity. No password or automatic enrollment retry loop.
