@@ -22,7 +22,7 @@ import java.security.KeyStore
 
 /**
  * Uses the real Activity and real SSH host KEX against disposable CI OpenSSH.
- * A fake setup username/PIN intentionally cannot enroll: the test stops at
+ * A manually typed activation code cannot enroll before explicit Verified click: test stops at
  * the trust boundary. The independent trusted fingerprint comes from the
  * ephemeral runner's ssh-keygen, not from the Android probe.
  */
@@ -43,12 +43,11 @@ class A1EnrollmentUiTest {
 
         composeRule.onNodeWithTag("a1-verified-activate").assertDoesNotExist()
         composeRule.onNodeWithTag("a1-server").performTextInput("10.0.2.2:22224")
-        composeRule.onNodeWithTag("a1-setup-user").performTextInput("aap2e123456abcdef")
-        composeRule.onNodeWithTag("a1-pin").performTextInput("0000-0000-12")
-        composeRule.onNodeWithTag("a1-pin-toggle").assertTextEquals("Show")
-        composeRule.onNodeWithTag("a1-pin-toggle").performClick()
-        composeRule.onNodeWithTag("a1-pin-toggle").assertTextEquals("Hide")
-        composeRule.onNodeWithTag("a1-pin-toggle").performClick()
+        composeRule.onNodeWithTag("a1-activation-code").performTextInput("123456987654321060")
+        composeRule.onNodeWithTag("a1-code-toggle").assertTextEquals("Show")
+        composeRule.onNodeWithTag("a1-code-toggle").performClick()
+        composeRule.onNodeWithTag("a1-code-toggle").assertTextEquals("Hide")
+        composeRule.onNodeWithTag("a1-code-toggle").performClick()
         composeRule.onNodeWithTag("a1-verified-activate").assertDoesNotExist()
         composeRule.onNodeWithTag("a1-probe").performScrollTo().performClick()
 
@@ -57,8 +56,13 @@ class A1EnrollmentUiTest {
                 .fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithTag("a1-fingerprint-full").assertTextEquals(expected)
-        composeRule.onNodeWithTag("a1-setup-code-confirmation")
-            .assertTextEquals("Setup code / username: aap2e123456abcdef")
+        composeRule.onNodeWithTag("a1-code-check-ok").assertTextEquals("Activation code checksum: OK")
+        composeRule.onNodeWithTag("a1-code-confirmation")
+            .assertTextEquals("Activation code: ••••-••••-••••-••••-••")
+        composeRule.onNodeWithTag("a1-code-confirmation-toggle").performClick()
+        composeRule.onNodeWithTag("a1-code-confirmation")
+            .assertTextEquals("Activation code: 1234-5698-7654-3210-60")
+        composeRule.onNodeWithTag("a1-code-confirmation-toggle").performClick()
         composeRule.onNodeWithTag("a1-fingerprint-grouped").assertTextEquals(
             EnrollmentInput.groupedFingerprint(expected)
         )
@@ -77,15 +81,26 @@ class A1EnrollmentUiTest {
         assertFalse(DirectBootTunnelProfile.hasProfile(context))
     }
 
+    @Test fun activationChecksumRejectsMistypeBeforeAnyNetworkAttempt() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        assertFalse(DirectBootTunnelProfile.hasProfile(context))
+        composeRule.onNodeWithTag("a1-server").performTextInput("10.0.2.2:22224")
+        composeRule.onNodeWithTag("a1-activation-code").performTextInput("123456987654321061")
+        composeRule.onNodeWithTag("a1-probe").performScrollTo().performClick()
+        composeRule.onNodeWithTag("a1-fingerprint-full").assertDoesNotExist()
+        composeRule.onNodeWithTag("a1-verified-activate").assertDoesNotExist()
+        assertTrue(EnrollmentPending.load(context) == null)
+    }
+
     @Test fun realComposeVerifiedClickEnrollsAndStartsSocks() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val invitation = File(context.filesDir, "a1-ci-ui-invitation")
         val lines = invitation.readLines(Charsets.UTF_8)
         check(invitation.delete()) { "Failed to remove temporary UI invitation" }
-        require(lines.size == 3) { "Private CI UI invitation requires three fields" }
-        val setupUser = EnrollmentInput.setupUser(lines[0])
-        val pin = EnrollmentInput.pin(lines[1])
-        val independentlyVerified = lines[2]
+        require(lines.size == 2) { "Private CI UI invitation requires activation code and fingerprint" }
+        val code = lines[0]
+        val parsed = EnrollmentInput.activationCode(code)
+        val independentlyVerified = lines[1]
         require(independentlyVerified.matches(Regex("SHA256:[A-Za-z0-9+/]{43}")))
         assertFalse(DirectBootTunnelProfile.hasProfile(context))
         assertTrue(EnrollmentPending.load(context) == null)
@@ -95,11 +110,9 @@ class A1EnrollmentUiTest {
 
         composeRule.onNodeWithTag("a1-verified-activate").assertDoesNotExist()
         composeRule.onNodeWithTag("a1-server").performTextInput("10.0.2.2:22224")
-        assertTrue("CI manual setup code must be six decimal digits",
-            setupUser.matches(Regex("aap2e[0-9]{6}")))
-        // Real manual entry has NO clipboard or Unix name prefix.
-        composeRule.onNodeWithTag("a1-setup-user").performTextInput(setupUser.removePrefix("aap2e"))
-        composeRule.onNodeWithTag("a1-pin").performTextInput(pin)
+        assertTrue("CI must supply 18 numeric digits", code.matches(Regex("[0-9]{18}")))
+        // Real Compose UI has ONE numeric activation input; no user/PIN split.
+        composeRule.onNodeWithTag("a1-activation-code").performTextInput(code)
         composeRule.onNodeWithTag("a1-probe").performScrollTo().performClick()
         composeRule.waitUntil(30_000) {
             composeRule.onAllNodesWithTag("a1-fingerprint-full")
@@ -107,8 +120,10 @@ class A1EnrollmentUiTest {
         }
         composeRule.onNodeWithTag("a1-fingerprint-full")
             .assertTextEquals(independentlyVerified)
-        composeRule.onNodeWithTag("a1-setup-code-confirmation")
-            .assertTextEquals("Setup code / username: " + setupUser.removePrefix("aap2e"))
+        composeRule.onNodeWithTag("a1-code-check-ok")
+            .assertTextEquals("Activation code checksum: OK")
+        composeRule.onNodeWithTag("a1-code-confirmation")
+            .assertTextEquals("Activation code: ••••-••••-••••-••••-••")
         composeRule.onNodeWithTag("a1-fingerprint-grouped")
             .assertTextEquals(EnrollmentInput.groupedFingerprint(independentlyVerified))
         assertFalse("Host key probe must not create a pending profile",
@@ -136,8 +151,8 @@ class A1EnrollmentUiTest {
         val profile = requireNotNull(DirectBootTunnelProfile.load(context))
         assertEquals("10.0.2.2", profile.host)
         assertEquals(22224, profile.sshPort)
-        // Six manually entered digits must select the matching permanent SSH account.
-        assertEquals("aap2p" + setupUser.removePrefix("aap2e"), profile.username)
+        // The first six internal digits must select the S2 permanent SSH account.
+        assertEquals("aap2p" + parsed.setupUser.removePrefix("aap2e"), profile.username)
         assertArrayEquals(
             "The stored pin must equal the host key independently checked on the UI",
             VerifiedSshHostKey.probe(profile.host, profile.sshPort).blob,
