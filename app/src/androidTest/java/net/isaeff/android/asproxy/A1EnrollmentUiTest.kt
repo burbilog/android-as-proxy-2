@@ -128,7 +128,8 @@ class A1EnrollmentUiTest {
         val profile = requireNotNull(DirectBootTunnelProfile.load(context))
         assertEquals("10.0.2.2", profile.host)
         assertEquals(22224, profile.sshPort)
-        assertTrue(profile.username.matches(Regex("aap2p[0-9a-f]{12}")))
+        // Six manually entered digits must select the matching permanent SSH account.
+        assertEquals("aap2p" + setupUser.removePrefix("aap2e"), profile.username)
         assertArrayEquals(
             "The stored pin must equal the host key independently checked on the UI",
             VerifiedSshHostKey.probe(profile.host, profile.sshPort).blob,
