@@ -39,6 +39,16 @@ The Details page is a view only: Close/Android Back returns to the same
 MainActivity without changing the connection. Existing Zebra, its
 production server, and its separate soak monitor are unaffected.
 
+**Connection diagnostics CI:** on commit `ca46bdac0b8712cbfb531c8e5b19be8cfa02559c`,
+[Android build/unit workflow #43595391452](https://github.com/burbilog/android-as-proxy-2/actions/runs/43595391452)
+and [full Android 11/S2 E2E #43595391397](https://github.com/burbilog/android-as-proxy-2/actions/runs/43595391397)
+both **PASS**. The latter launches the real MainActivity after an actual
+administrator-approved enrollment and confirms that the main connection ID,
+full host/phone key fingerprints, server endpoints, ports and diagnostics
+footer are visible together in the same phone viewport, with a working
+Close action. Full PIN/SFTP/approval/SOCKS HTTP, APK update, Direct Boot and
+revoke regression gates also passed.
+
 ## Failure recovery and migration
 
 - A terminated SFTP session after upload preserves the original host pin, permanent username/port and Keystore key alias in pending state, with **no PIN**. **Resume approved enrollment** makes **one** pinned permanent publickey SSH / reverse-port attempt using the **existing** identity. No password or automatic enrollment retry loop.
