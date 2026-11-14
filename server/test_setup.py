@@ -130,6 +130,22 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(seen[0].server_addr, '192.0.2.10')
         self.assertTrue(seen[0].manual_code)
 
+    def test_activation_mod97_typo_detection_and_leading_zeros(self):
+        code = aap.activation_code('000012', '0000000012').replace('-', '')
+        self.assertEqual(len(code), 18)
+        self.assertTrue(code.startswith('0000120000000012'))
+        self.assertEqual(int(code) % 97, 1)
+        # Any one changed decimal digit must fail before SSH authentication.
+        for i in range(18):
+            replacement = '0' if code[i] != '0' else '1'
+            candidate = code[:i] + replacement + code[i + 1:]
+            self.assertNotEqual(int(candidate) % 97, 1)
+        # Any adjacent different digits exchanged must also fail.
+        for i in range(17):
+            if code[i] != code[i + 1]:
+                candidate = code[:i] + code[i + 1] + code[i] + code[i + 2:]
+                self.assertNotEqual(int(candidate) % 97, 1)
+
     def test_pin_always_ten_digits_including_leading_zeros(self):
         with mock.patch.object(aap.secrets, 'randbelow', return_value=12):
             self.assertEqual(aap.generate_pin(), '0000000012')
@@ -270,8 +286,11 @@ class LifecycleTests(unittest.TestCase):
             self.assertIn('20 minutes', out.getvalue())
             self.assertEqual(state['users'][aap.GROUP_ENROLL]['name'], 'aap2e000012')
             self.assertEqual(state['users'][aap.GROUP_PROXY]['name'], 'aap2p000012')
-            self.assertIn('Phone setup code (6 digits, no prefix): 000012', out.getvalue())
-            self.assertIn('One-time PIN (type all 10 digits): 0000000012', out.getvalue())
+            code = aap.activation_code('000012', '0000000012')
+            self.assertIn('Phone activation code (type digits only): ' + code, out.getvalue())
+            self.assertNotIn('One-time PIN (type all 10 digits):', out.getvalue())
+            self.assertEqual(int(code.replace('-', '')) % 97, 1)
+            self.assertEqual(len(code.replace('-', '')), 18)
             self.assertNotIn('0000000012', meta_path.read_text())
             self.assertEqual(events[2][0], 'chpasswd')
             self.assertTrue(aap.ID_RE.fullmatch('000012'))
