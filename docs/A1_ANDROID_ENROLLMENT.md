@@ -14,6 +14,31 @@ The Android client derives from the tested P0 Keystore/Direct Boot/strict-host-k
 
 The PIN is never put into saved instance state, preferences, Intent arguments or logs. CI sends temporary test PINs only into disposable Android private files and deletes them before connection. Private P-256 signing operations remain in Android Keystore.
 
+## Connection identification and one-screen support diagnostics
+
+After activation, MainActivity always displays **Connection ID** (the suffix
+of the approved permanent SSH user, e.g. `692103` from `aap2p692103`).
+It matches the first column of `aap2-setup list` on S2. It stays visible
+while disconnected, not just when the SSH tunnel is up. No server lookup is
+needed and no phone enrollment nickname is invented: S2 owns device labels.
+
+The **Details** button opens a single, non-scrollable support screen designed
+to be photographed or shown on a video call. It displays live connection
+state and traffic, ID, exact permanent SSH account, SSH server endpoint,
+server-side and phone-side loopback SOCKS5 ports, auto-connect setting,
+phone model/Android version, APK version/build, and **both full SHA256
+fingerprints**: the previously pinned server host key and the existing
+Android Keystore SSH **public** key. The latter matches the fingerprint
+an administrator sees at approval. It obtains information locally from
+the committed Direct Boot profile and public key; **no SSH probing,
+log parsing, network test, PIN exposure, key generation or storage mutation**
+is performed by the details screen. If the Keystore is unavailable,
+the page says so rather than attempting to replace the identity.
+
+The Details page is a view only: Close/Android Back returns to the same
+MainActivity without changing the connection. Existing Zebra, its
+production server, and its separate soak monitor are unaffected.
+
 ## Failure recovery and migration
 
 - A terminated SFTP session after upload preserves the original host pin, permanent username/port and Keystore key alias in pending state, with **no PIN**. **Resume approved enrollment** makes **one** pinned permanent publickey SSH / reverse-port attempt using the **existing** identity. No password or automatic enrollment retry loop.
