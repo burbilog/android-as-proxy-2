@@ -336,6 +336,7 @@ def print_config(_args):
 ID_RE = re.compile(r'(?:[0-9a-f]{12}|[0-9]{6})')
 PORT_LOW, PORT_HIGH = 11010, 11509
 PIN_TTL = 600
+MANUAL_PIN_TTL = 1200  # Manual entry of address/code/PIN may take longer
 SAFE_ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C'}
 LOCK = STATE / '.lock'
 
@@ -671,7 +672,8 @@ def enroll(args):
         euid = unused_uid(reserved_uid)
         puid = unused_uid(reserved_uid | {euid})
         port = unused_port(reserved_ports)
-        expiry = int(time.time()) + PIN_TTL
+        ttl = MANUAL_PIN_TTL if manual_code else PIN_TTL
+        expiry = int(time.time()) + ttl
         record = {
             'schema': 1, 'id': enrollment_id, 'device_name': name,
             'state': 'creating', 'created_at': int(time.time()),
@@ -720,7 +722,8 @@ def enroll(args):
         call_mutation(['/usr/sbin/chpasswd'],
                       input_text='{}:{}\n'.format(usernames[GROUP_ENROLL], pin))
 
-    print('Enrollment created. The PIN is valid for up to 10 minutes.')
+    print('Enrollment created. The PIN is valid for up to {} minutes.'.format(
+        (MANUAL_PIN_TTL if manual_code else PIN_TTL) // 60))
     print('Server: {}'.format(args.server))
     print('Setup username: {}'.format(usernames[GROUP_ENROLL]))
     if manual_code:
