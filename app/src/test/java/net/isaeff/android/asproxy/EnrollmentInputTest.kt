@@ -36,6 +36,17 @@ class EnrollmentInputTest {
         }
     }
 
+    @Test fun manualSetupCodeExpandsToRestrictedUnixAccount() {
+        assertEquals("aap2e000012", EnrollmentInput.setupUser("000012"))
+        assertEquals("aap2e123456", EnrollmentInput.setupUser("123456"))
+        assertEquals("aap2e000012", EnrollmentInput.setupUser("aap2e000012"))
+        for (bad in listOf("00012", "0000123", "12-3456", "12 3456", "abcdef")) {
+            assertThrows(bad, IllegalArgumentException::class.java) {
+                EnrollmentInput.setupUser(bad)
+            }
+        }
+    }
+
     @Test fun setupUserMustBeServerGenerated() {
         assertEquals("aap2e123456abcdef",
             EnrollmentInput.setupUser("aap2e123456abcdef"))
