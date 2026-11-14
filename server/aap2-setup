@@ -1070,7 +1070,13 @@ def approve(args):
     with state_lock():
         record = read_metadata(args.enrollment_id)
         if record['state'] == 'approved':
-            print('Already approved: {}'.format(args.enrollment_id))
+            if json_mode(args):
+                emit_json('approve', True, enrollment_id=args.enrollment_id,
+                          status='already_approved',
+                          permanent_username=record['users'][GROUP_PROXY]['name'],
+                          remote_port=record['remote_port'])
+            else:
+                print('Already approved: {}'.format(args.enrollment_id))
             return 0
         if record['state'] != 'active' or record.get('temp_removed'):
             raise SetupError('invitation is not active; cannot approve')
@@ -1083,16 +1089,27 @@ def approve(args):
         # Snapshot once, in root-only state. Subsequent upload has no effect.
         key_line, fingerprint = snapshot_key(record)
 
-    print('Device: {}'.format(record['device_name']))
-    print('Client key fingerprint: {}'.format(fingerprint))
-    print('Permanent username: {}'.format(record['users'][GROUP_PROXY]['name']))
-    print('Allowed listener: 127.0.0.1:{}'.format(record['remote_port']))
+    machine = json_mode(args)
+    stream = sys.stderr if machine else sys.stdout
+    print('Device: {}'.format(record['device_name']), file=stream)
+    print('Client key fingerprint: {}'.format(fingerprint), file=stream)
+    print('Permanent username: {}'.format(record['users'][GROUP_PROXY]['name']),
+          file=stream)
+    print('Allowed listener: 127.0.0.1:{}'.format(record['remote_port']), file=stream)
     try:
-        answer = input('Approve this exact key? [y/N]: ').strip()
+        if machine:
+            print('Approve this exact key? [y/N]: ', file=sys.stderr, end='', flush=True)
+            answer = input().strip()
+        else:
+            answer = input('Approve this exact key? [y/N]: ').strip()
     except EOFError:
         answer = ''
     if answer != 'y':
-        print('Cancelled; candidate snapshot unchanged, no key authorized')
+        if machine:
+            emit_json('approve', False, enrollment_id=args.enrollment_id,
+                      status='cancelled')
+        else:
+            print('Cancelled; candidate snapshot unchanged, no key authorized')
         return 1
 
     with state_lock():
@@ -1136,8 +1153,14 @@ def approve(args):
             }, 0o644)
         record['state'] = 'approved'
         atomic_json(record_path(record['id']) / 'metadata.json', record)
-    print('APPROVED: {}  127.0.0.1:{}'.format(
-        record['users'][GROUP_PROXY]['name'], record['remote_port']))
+    if machine:
+        emit_json('approve', True, enrollment_id=args.enrollment_id,
+                  status='approved', client_key_fingerprint=fingerprint,
+                  permanent_username=record['users'][GROUP_PROXY]['name'],
+                  remote_port=record['remote_port'])
+    else:
+        print('APPROVED: {}  127.0.0.1:{}'.format(
+            record['users'][GROUP_PROXY]['name'], record['remote_port']))
     return 0
 
 
@@ -1147,24 +1170,42 @@ def revoke(args):
     with state_lock():
         record = read_metadata(args.enrollment_id)
         if record['state'] == 'revoked':
-            print('Already revoked: {}'.format(args.enrollment_id))
+            if json_mode(args):
+                emit_json('revoke', True, enrollment_id=args.enrollment_id,
+                          status='already_revoked')
+            else:
+                print('Already revoked: {}'.format(args.enrollment_id))
             return 0
         if record['state'] == 'creating':
             raise SetupError('incomplete creating record; MANUAL repair required')
+        stream = sys.stderr if json_mode(args) else sys.stdout
         print('Revoke device {}, ID {}, user {}, port 127.0.0.1:{}?'.format(
             record['device_name'], record['id'],
-            record['users'][GROUP_PROXY]['name'], record['remote_port']))
+            record['users'][GROUP_PROXY]['name'], record['remote_port']), file=stream)
+    machine = json_mode(args)
     try:
-        answer = input('Type REVOKE to remove this device access: ').strip()
+        if machine:
+            print('Type REVOKE to remove this device access: ',
+                  file=sys.stderr, end='', flush=True)
+            answer = input().strip()
+        else:
+            answer = input('Type REVOKE to remove this device access: ').strip()
     except EOFError:
         answer = ''
     if answer != 'REVOKE':
-        print('Cancelled; no access changed')
+        if machine:
+            emit_json('revoke', False, enrollment_id=args.enrollment_id,
+                      status='cancelled')
+        else:
+            print('Cancelled; no access changed')
         return 1
 
     with state_lock():
         record = read_metadata(args.enrollment_id)
         if record['state'] == 'revoked':
+            if machine:
+                emit_json('revoke', True, enrollment_id=args.enrollment_id,
+                          status='already_revoked')
             return 0
         if record['state'] not in ('active', 'expired', 'approved', 'revoking'):
             raise SetupError('not a revocable enrollment state')
@@ -1202,7 +1243,12 @@ def revoke(args):
         auth_path.unlink()
         record['state'] = 'revoked'
         atomic_json(record_path(record['id']) / 'metadata.json', record)
-    print('REVOKED: {} (permanent key, account and temp PIN access)'.format(args.enrollment_id))
+    if machine:
+        emit_json('revoke', True, enrollment_id=args.enrollment_id,
+                  status='revoked')
+    else:
+        print('REVOKED: {} (permanent key, account and temp PIN access)'.format(
+            args.enrollment_id))
     return 0
 
 
