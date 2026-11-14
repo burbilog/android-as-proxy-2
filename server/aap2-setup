@@ -96,6 +96,24 @@ class Aap2ArgumentParser(argparse.ArgumentParser):
         super().error(message)
 
 
+# Keep the normal enroll help short while leaving all policy probes available.
+ENROLL_ADVANCED = {
+    'client_addr': 'SSH Match probe source IP (default: 198.51.100.1 sample, not phone ACL)',
+    'client_host': 'SSH Match probe client hostname (default: unknown)',
+    'server_addr': 'sshd local IP for SSH Match probe (default: 127.0.0.1)',
+    'server_port': 'sshd LOCAL port (default: 22, NOT forwarded/public port)',
+}
+
+
+class EnrollAdvancedHelp(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        for action in parser._actions:
+            if action.dest in ENROLL_ADVANCED:
+                action.help = ENROLL_ADVANCED[action.dest]
+        parser.print_help()
+        parser.exit()
+
+
 class Checks:
     """Read-only diagnostics; retain structured events for JSON."""
     def __init__(self, machine=False):
@@ -689,9 +707,13 @@ def enroll(args):
     # Client source IP is NOT an enrollment ACL and need not be known behind NAT.
     # When omitted, use a documentation-only external address for the probe.
     # Match Address/Host dependent installations require a separate review.
-    if args.client_addr == '198.51.100.1' and not json_mode(args):
-        print('WARN: sshd Match policy tested with a sample client address; '
-              'review any Match Address/Host rules separately.', file=sys.stderr)
+    if not json_mode(args):
+        if args.client_addr == '198.51.100.1':
+            print('WARN: sshd Match policy tested with a sample client address; '
+                  'review any Match Address/Host rules separately.', file=sys.stderr)
+        if args.server_addr == '127.0.0.1':
+            print('WARN: sshd Match policy tested with loopback local address; '
+                  'use --server-addr for Match LocalAddress setups.', file=sys.stderr)
     # Verify sshd -C context BEFORE any account creation; CLI does not
     # accept arbitrary SSH condition fragments such as comma-injected addr.
     try:
@@ -814,10 +836,14 @@ def enroll(args):
             'permanent_username': usernames[GROUP_PROXY],
             'remote_port': port, 'host_keys': host_keys,
             'approve_command': 'aap2-setup approve {}'.format(enrollment_id),
-            'warnings': ([
-                'sshd Match policy tested with a sample client address; '
-                'review any Match Address/Host rules separately.'
-            ] if args.client_addr == '198.51.100.1' else []),
+            'warnings': (
+                (['sshd Match policy tested with a sample client address; '
+                  'review any Match Address/Host rules separately.']
+                 if args.client_addr == '198.51.100.1' else [])
+                + (['sshd Match policy tested with loopback local address; '
+                    'use --server-addr for Match LocalAddress setups.']
+                   if args.server_addr == '127.0.0.1' else [])
+            ),
         }
         if manual_code:
             invitation['activation_code'] = activation_code(enrollment_id, pin)
@@ -1263,6 +1289,8 @@ def list_enrollments(args):
     require_root()
     with state_lock():
         records = list(all_records())
+    if not getattr(args, 'all', False):
+        records = [r for r in records if r['state'] != 'revoked']
     if json_mode(args):
         devices = []
         for record in records:
@@ -1315,14 +1343,15 @@ def main():
     doc.set_defaults(func=doctor)
     en = sub.add_parser('enroll', help='create temporary PIN/SFTP invitation (NO approval yet)')
     en.add_argument('device_name', help='admin-facing device label')
-    en.add_argument('--server', required=True, help='SSH host[:port] shown to user')
-    en.add_argument('--client-addr', default='198.51.100.1',
-                    help='optional SSH Match policy probe source IP; defaults to TEST-NET-2 example, NOT a required phone address')
-    en.add_argument('--client-host', default='unknown', help='client hostname for sshd -T')
-    en.add_argument('--server-addr', required=True, help='real sshd listen IP')
-    en.add_argument('--server-port', default='22', help='sshd LOCAL port')
+    en.add_argument('--server', required=True, help='SSH host[:port] shown to phone')
     en.add_argument('--manual-code', action='store_true',
-                    help='issue a six-digit numeric setup code for manual Android entry')
+                    help='generate one 18-digit code for manual Android entry')
+    en.add_argument('--help-all', action=EnrollAdvancedHelp, nargs=0,
+                    help='show all options including SSH Match context probes')
+    en.add_argument('--client-addr', default='198.51.100.1', help=argparse.SUPPRESS)
+    en.add_argument('--client-host', default='unknown', help=argparse.SUPPRESS)
+    en.add_argument('--server-addr', default='127.0.0.1', help=argparse.SUPPRESS)
+    en.add_argument('--server-port', default='22', help=argparse.SUPPRESS)
     en.set_defaults(func=enroll)
     ap = sub.add_parser('approve', help='snapshot uploaded key and manually approve')
     ap.add_argument('enrollment_id', help='S2 enrollment ID (six digits or legacy hex)')
@@ -1332,7 +1361,9 @@ def main():
     rv.set_defaults(func=revoke)
     cl = sub.add_parser('cleanup', help='expire temporary PIN/SFTP users')
     cl.set_defaults(func=cleanup)
-    li = sub.add_parser('list', help='list root-owned invitation metadata')
+    li = sub.add_parser('list', help='list devices (hide revoked history by default)')
+    li.add_argument('--all', action='store_true',
+                    help='include revoked registrations in text and JSON output')
     li.set_defaults(func=list_enrollments)
     for command in (pc, doc, en, ap, rv, cl, li):
         command.add_argument('-j', '--json', action='store_true',
