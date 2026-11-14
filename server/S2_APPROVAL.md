@@ -111,6 +111,50 @@ invitations only, never as an expiry date for an approved permanent
 key. No network probing or log parsing is used to guess online status.
 An empty list explains how to display `enroll --help`.
 
+### JSON output for scripts
+
+Use `-j` or `--json` either before or after a subcommand:
+
+```sh
+aap2-setup -j list | jq -r '.devices[] | select(.state == "approved") | .id'
+aap2-setup list --json | jq '.devices'
+aap2-setup doctor -j | jq '.checks[] | select(.level != "ok")'
+```
+
+The format is **JSON schema 1**, Python 3.9 standard-library only; no
+YAML/third-party dependency. Each JSON invocation writes exactly one
+JSON object on stdout, with `schema`, `command`, `ok`, and typed
+command-specific fields. Parse failures return a JSON error and exit
+status 2; operational failures return a JSON error or `ok:false` with
+a nonzero exit status; doctor retains exit status 2 for pending
+verification gates. The `--help` display remains human-facing.
+
+- `list`: `devices[]` with `id`, `name`, `state`, integer
+  `remote_port` and `listen_address`. Only an `active` invitation
+  has integer Unix `temporary_pin_expires_at`. Never infer `online`
+  from a stored approval, logs or a reserved port.
+- `enroll`: `invitation` with the endpoint, usernames, port, TTL,
+  host-key SHA256 fingerprint/type records and `approve_command`.
+  With `--manual-code`, the **single 18-digit secret** is supplied
+  once as `invitation.activation_code`; legacy mode instead has
+  `invitation.one_time_pin`. Neither is written to server state,
+  but **stdout contains a bearer secret**: do not archive, log or
+  publish the JSON response.
+- `doctor`: `checks[]` (`level`, `message`), `failures`,
+  `pending` and `status`. `print-config`: the raw manual-only
+  SSH Match `template` as a string. `cleanup`: `expired_ids[]`
+  and `errors[]`. `approve` and `revoke`: resulting `status`,
+  enrollment ID and relevant approved identity fields.
+
+**No auto-approval or auto-revocation:** JSON only changes formatting,
+not security or the interactive decision. For `approve -j`, the
+public-key fingerprint and the administrator prompt are printed to
+**stderr** for review, while **stdout stays JSON-only**. For
+`revoke -j`, the literal `REVOKE` confirmation is still mandatory.
+A cancelled confirmation returns `ok:false`, `status:"cancelled"`
+and a nonzero exit code. If invoking non-interactively, do not mistake
+`--json` for consent to make changes.
+
 ### Approval security
 
 - Only one \`ecdsa-sha2-nistp256\` key line (max 1024 bytes, optional
