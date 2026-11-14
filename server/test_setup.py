@@ -311,6 +311,37 @@ class LifecycleTests(unittest.TestCase):
             self.assertFalse(aap.ID_RE.fullmatch('12345'))
             self.assertFalse(aap.ID_RE.fullmatch('ab12cd'))
 
+    def test_json_enroll_manual_code_once_no_separate_pin(self):
+        with tempfile.TemporaryDirectory() as d:
+            stack, meta_path, args, events = self.make_enroll_fixture(
+                d, manual_code=True)
+            args.json = True
+            with stack, contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(aap.enroll(args), 0)
+            data = json.loads(out.getvalue())
+            invite = data['invitation']
+            self.assertEqual(data['schema'], 1)
+            self.assertEqual(data['command'], 'enroll')
+            self.assertEqual(invite['enrollment_id'], '000012')
+            self.assertEqual(invite['remote_port'], 11010)
+            self.assertEqual(invite['server'], 'example.net:22222')
+            self.assertEqual(invite['activation_code'],
+                             aap.activation_code('000012', '0000000012'))
+            self.assertNotIn('one_time_pin', invite)
+            self.assertNotIn('0000000012', meta_path.read_text())
+            self.assertEqual(out.getvalue().count(invite['activation_code']), 1)
+            self.assertEqual(out.getvalue().count('\n'), 1)
+
+    def test_json_enroll_legacy_one_time_pin(self):
+        with tempfile.TemporaryDirectory() as d:
+            stack, _, args, _ = self.make_enroll_fixture(d)
+            args.json = True
+            with stack, contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(aap.enroll(args), 0)
+            invite = json.loads(out.getvalue())['invitation']
+            self.assertEqual(invite['one_time_pin'], '0000000012')
+            self.assertNotIn('activation_code', invite)
+
     def test_crash_before_useradd_never_activates_pin(self):
         with tempfile.TemporaryDirectory() as d:
             stack, meta_path, args, events = self.make_enroll_fixture(
@@ -504,37 +535,6 @@ class ApprovalTests(unittest.TestCase):
             self.assertEqual(data['devices'][1]['temporary_pin_expires_at'],
                              1794664800)
             self.assertEqual(out.getvalue().count('\n'), 1)
-
-    def test_json_enroll_manual_code_once_no_separate_pin(self):
-        with tempfile.TemporaryDirectory() as d:
-            stack, meta_path, args, events = self.make_enroll_fixture(
-                d, manual_code=True)
-            args.json = True
-            with stack, contextlib.redirect_stdout(io.StringIO()) as out:
-                self.assertEqual(aap.enroll(args), 0)
-            data = json.loads(out.getvalue())
-            invite = data['invitation']
-            self.assertEqual(data['schema'], 1)
-            self.assertEqual(data['command'], 'enroll')
-            self.assertEqual(invite['enrollment_id'], '000012')
-            self.assertEqual(invite['remote_port'], 11010)
-            self.assertEqual(invite['server'], 'example.net:22222')
-            self.assertEqual(invite['activation_code'],
-                             aap.activation_code('000012', '0000000012'))
-            self.assertNotIn('one_time_pin', invite)
-            self.assertNotIn('0000000012', meta_path.read_text())
-            self.assertEqual(out.getvalue().count(invite['activation_code']), 1)
-            self.assertEqual(out.getvalue().count('\n'), 1)
-
-    def test_json_enroll_legacy_one_time_pin(self):
-        with tempfile.TemporaryDirectory() as d:
-            stack, _, args, _ = self.make_enroll_fixture(d)
-            args.json = True
-            with stack, contextlib.redirect_stdout(io.StringIO()) as out:
-                self.assertEqual(aap.enroll(args), 0)
-            invite = json.loads(out.getvalue())['invitation']
-            self.assertEqual(invite['one_time_pin'], '0000000012')
-            self.assertNotIn('activation_code', invite)
 
     def test_json_doctor_reports_failures_as_data(self):
         args = types.SimpleNamespace(json=True)
