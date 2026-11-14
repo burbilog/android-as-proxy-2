@@ -1,6 +1,7 @@
 package net.isaeff.android.asproxy
 
 import android.content.Intent
+import android.content.Context
 import android.os.Build
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -233,6 +234,20 @@ class A1EnrollmentIntegrationTest {
         File(context.filesDir, "a1-ci-before-update-publickey")
             .writeBytes(identity.getPublicKeyBlob())
 
+        // Simulate old development-version credential preferences BEFORE
+        // installing the new signed APK. These are dummy CI values, never
+        // the real SSH PIN or any genuine password. The newer MainActivity
+        // must delete this entire legacy CE file without touching the
+        // verified device-protected profile or the Keystore identity.
+        check(context.getSharedPreferences("aap_prefs", Context.MODE_PRIVATE).edit()
+            .putString("ssh_password", "dummy-obsolete-password-do-not-use")
+            .putString("server_key", "dummy-obsolete-TOFU-key")
+            .putBoolean("auto_connect", true)
+            .putBoolean("desired_running", true)
+            .commit()) { "Could not write disposable legacy migration fixture" }
+        assertTrue("Legacy preference fixture was not written",
+            File(context.applicationInfo.dataDir, "shared_prefs/aap_prefs.xml").isFile)
+
         // A real SSH publickey authentication must succeed, but OpenSSH's
         // permitlisten on THIS key must reject a neighboring reserved port.
         // The check uses the same client implementation as enrollment; no
@@ -290,6 +305,32 @@ class A1EnrollmentIntegrationTest {
         assertTrue("Missing pre-upgrade PUBLIC key fixture", baseline.isNotEmpty())
         val current = AndroidKeystoreIdentity.getExisting(context).getPublicKeyBlob()
         assertArrayEquals("In-place APK update changed Android Keystore SSH identity", baseline, current)
+
+        val legacyPrefs = File(context.applicationInfo.dataDir, "shared_prefs/aap_prefs.xml")
+        assertTrue("Legacy fixture must survive the APK update until MainActivity cleans it",
+            legacyPrefs.isFile)
+        val oldPrefs = context.getSharedPreferences("aap_prefs", Context.MODE_PRIVATE)
+        assertTrue("Legacy fixture was lost before the migration test",
+            oldPrefs.contains("ssh_password") && oldPrefs.contains("server_key"))
+
+        // Actually open the Activity on the upgraded APK. Calling a cleanup
+        // helper directly would not prove that the user-facing upgrade path
+        // invokes it. No uninstall or data wipe takes place.
+        val activity = InstrumentationRegistry.getInstrumentation().startActivitySync(
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+        try {
+            assertFalse("Old plaintext credentials remained on disk after MainActivity launch",
+                legacyPrefs.exists())
+            assertFalse("Obsolete SSH password remained in SharedPreferences",
+                context.getSharedPreferences("aap_prefs", Context.MODE_PRIVATE)
+                    .contains("ssh_password"))
+        } finally {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { activity.finish() }
+        }
+        assertArrayEquals("Legacy preferences cleanup replaced the Keystore SSH identity",
+            baseline, AndroidKeystoreIdentity.getExisting(context).getPublicKeyBlob())
+        Log.i("AAP2-A1", "A1_LEGACY_PASSWORD_TOFU_MIGRATION_WIPED_IDENTITY_PRESERVED")
         val profile = requireNotNull(DirectBootTunnelProfile.load(context))
         assertTrue("In-place update cleared desired_running", DirectBootTunnelProfile.wantsConnection(context))
         assertEquals(host, profile.host)
