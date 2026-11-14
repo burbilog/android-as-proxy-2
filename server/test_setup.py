@@ -598,8 +598,10 @@ class ApprovalTests(unittest.TestCase):
                 self.assertEqual([x['id'] for x in devices],
                                  ['111111', '222222'] if full else ['222222'])
             else:
-                self.assertIn('Current [222222]', text)
+                self.assertIn('Current [222222]  APPROVED  reserved SOCKS5', text)
                 self.assertEqual('Old [111111]' in text, full)
+                if full:
+                    self.assertIn('Old [111111]  REVOKED  former SOCKS5', text)
 
     def test_list_only_revoked_becomes_empty_until_all(self):
         records = [{'id': '111111', 'state': 'revoked', 'device_name': 'Old',
