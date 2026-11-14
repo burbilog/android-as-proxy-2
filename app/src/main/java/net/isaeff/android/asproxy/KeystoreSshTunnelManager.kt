@@ -113,6 +113,9 @@ internal class KeystoreSshTunnelManager(
                     ConnectionStateHolder.setState(ConnectionState.DISCONNECTED)
                 }
                 if (!isActive) break
+                // The foreground service is still running and will try again.
+                // DISCONNECTED is reserved for an actually stopped service.
+                ConnectionStateHolder.setState(ConnectionState.RETRYING)
                 // Wait for either backoff expiry or a new default network (e.g. Wi-Fi
                 // returns). A network change resets backoff; an offline server does not.
                 val wokeOnNetwork = withTimeoutOrNull(retryMs) {
