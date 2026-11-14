@@ -29,12 +29,10 @@ import androidx.compose.ui.unit.sp
 
 /** The server's enrollment ID is the suffix of the permanent SSH account. */
 internal object ConnectionIdentity {
-    fun id(username: String): String {
-        require(username.matches(Regex("aap2p(?:[0-9]{6}|[0-9a-f]{12})"))) {
-            "Not an AAP2 permanent SSH account"
-        }
-        return username.removePrefix("aap2p")
-    }
+    fun id(username: String): String =
+        if (username.matches(Regex("aap2p(?:[0-9]{6}|[0-9a-f]{12})")))
+            username.removePrefix("aap2p")
+        else username // Older P0 profiles may use a named SSH account. Never crash the UI.
 }
 
 /** Non-secret snapshot, exclusively from the committed local profile and public device data. */
