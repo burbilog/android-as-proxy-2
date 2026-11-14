@@ -109,7 +109,7 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                     )
                     OutlinedTextField(
                         value = setupUser, onValueChange = { setupUser = it },
-                        label = { Text("Setup username") },
+                        label = { Text("Setup code (6 digits)") },
                         modifier = Modifier.fillMaxWidth().testTag("a1-setup-user"), singleLine = true,
                         enabled = !busy
                     )
