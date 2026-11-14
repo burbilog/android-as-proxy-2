@@ -139,8 +139,10 @@ fun MainScreen() {
                     ConnectionState.CONNECTED -> "Connected"
                     ConnectionState.DISCONNECTED -> "Disconnected"
                     ConnectionState.CONNECTING -> "Connecting…"
+                    ConnectionState.RETRYING -> "Reconnecting…"
                     ConnectionState.DISCONNECTING -> "Disconnecting…"
                 },
+                modifier = Modifier.testTag("a1-main-status"),
                 style = MaterialTheme.typography.titleMedium
             )
             if (profile != null) {
@@ -182,11 +184,12 @@ fun MainScreen() {
                                 control("net.isaeff.android.asproxy.action.START_SERVICE")
                             }
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().testTag("a1-connect")
                     ) { Text("Connect") }
-                    ConnectionState.CONNECTED -> Button(
+                    ConnectionState.CONNECTED, ConnectionState.CONNECTING,
+                    ConnectionState.RETRYING -> Button(
                         onClick = { control("net.isaeff.android.asproxy.action.STOP_SERVICE") },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().testTag("a1-disconnect")
                     ) { Text("Disconnect") }
                     else -> {}
                 }
