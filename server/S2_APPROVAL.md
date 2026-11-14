@@ -8,13 +8,16 @@ Match configuration must be installed MANUALLY, independently of this CLI;
 
 ## Manual typing on a phone (no clipboard, no QR)
 
-For **new** S2 invitations, use `--manual-code` with the ordinary
-`enroll` arguments. The CLI then displays **Phone setup code** as
-**exactly six decimal digits**, including leading zeros. In the A1
-Android screen, the user types **only those six digits**, not the
-`aap2e` Unix username prefix. The phone constructs the exact SSH
-username locally. The one-time PIN is printed as **exactly ten consecutive
-digits**, without separators, matching the Android input. Leading zeros matter.
+For **new** S2 invitations, use `--manual-code` with ordinary `enroll`
+arguments. CLI displays **one Phone activation code**, formatted in 4-4-4-4-2
+blocks. Android has one entry field and inserts separators automatically;
+users type **only 18 decimal digits**. The code consists of a six-digit
+temporary account selector, ten random PIN digits and two MOD97 check
+digits, all invisible as separate parts to the user. Leading zeros matter.
+A failed local checksum is a typing mistake and MUST NOT open SSH or send PIN.
+Checksum digits do **not** increase authentication entropy; only the ten
+random PIN digits are secret. Existing 12-hex invitations still use the
+legacy setup username + ten-digit PIN for older clients.
 The server address and port are still typed separately.
 
 Example (fill in real addresses):
@@ -36,9 +39,9 @@ restrictions on both generated accounts. On servers with source-sensitive
 independently verify policy for the real connection; no one sample IP can
 prove those policies for arbitrary NAT clients.
 
-Six-digit codes are **not authentication secrets**: they only select a
-short-lived Unix account. The ten-digit PIN, the verified SSH host-key
-fingerprint and explicit administrator approval are unchanged. The
+The first six digits are **not authentication secrets**: they select a
+short-lived Unix account. The ten-digit PIN, verified SSH host-key
+fingerprint and explicit administrator approval remain unchanged. The
 manual-entry PIN lasts **20 minutes** (10 minutes in the legacy mode).
 The temporary password still expires automatically via the cleanup timer;
 do not treat the public six-digit code as an authentication secret. Issue
