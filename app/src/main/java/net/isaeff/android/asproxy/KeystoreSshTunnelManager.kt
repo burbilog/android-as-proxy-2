@@ -110,7 +110,6 @@ internal class KeystoreSshTunnelManager(
                 } finally {
                     next?.disconnect()
                     session = null
-                    ConnectionStateHolder.setState(ConnectionState.DISCONNECTED)
                 }
                 if (!isActive) break
                 // The foreground service is still running and will try again.
