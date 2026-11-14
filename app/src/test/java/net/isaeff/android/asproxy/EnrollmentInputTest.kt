@@ -61,11 +61,9 @@ class EnrollmentInputTest {
         assertEquals("000012", ConnectionIdentity.id("aap2p000012"))
         assertEquals("692103", ConnectionIdentity.id("aap2p692103"))
         assertEquals("3c0292d79ef2", ConnectionIdentity.id("aap2p3c0292d79ef2"))
-        for (bad in listOf("root", "aap2e692103", "aap2p12345")) {
-            assertThrows(bad, IllegalArgumentException::class.java) {
-                ConnectionIdentity.id(bad)
-            }
-        }
+        // Existing P0 profiles have a named account, not an S2 numeric ID.
+        // The diagnostics screen must still load and identify them.
+        assertEquals("aap2user", ConnectionIdentity.id("aap2user"))
     }
 
     @Test fun fullFingerprintGroupsWithoutTruncating() {
