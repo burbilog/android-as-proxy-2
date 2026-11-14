@@ -130,6 +130,41 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(seen[0].server_addr, '192.0.2.10')
         self.assertTrue(seen[0].manual_code)
 
+    def test_enroll_simple_cli_defaults_to_loopback_probe(self):
+        argv = ['aap2-setup', 'enroll', 'SpareAndroid', '--manual-code',
+                '--server', 'ssh.example.net:22225']
+        with mock.patch.object(aap.sys, 'argv', argv), \
+             mock.patch.object(aap, 'enroll', return_value=0) as handler:
+            self.assertEqual(aap.main(), 0)
+        args = handler.call_args.args[0]
+        self.assertEqual(args.server_addr, '127.0.0.1')
+        self.assertEqual(args.server_port, '22')
+        self.assertEqual(args.client_addr, '198.51.100.1')
+        self.assertEqual(args.client_host, 'unknown')
+        self.assertTrue(args.manual_code)
+
+    def test_enroll_help_is_short_with_explicit_advanced_help(self):
+        def help_text(option):
+            argv = ['aap2-setup', 'enroll', option]
+            with mock.patch.object(aap.sys, 'argv', argv), \
+                 contextlib.redirect_stdout(io.StringIO()) as out:
+                with self.assertRaises(SystemExit) as exc:
+                    aap.main()
+            self.assertEqual(exc.exception.code, 0)
+            return out.getvalue()
+
+        short = help_text('--help')
+        extended = help_text('--help-all')
+        self.assertIn('--server SERVER', short)
+        self.assertIn('--manual-code', short)
+        self.assertIn('--help-all', short)
+        self.assertNotIn('--client-addr', short)
+        self.assertNotIn('--server-addr', short)
+        self.assertIn('--client-addr', extended)
+        self.assertIn('--client-host', extended)
+        self.assertIn('--server-addr', extended)
+        self.assertIn('--server-port', extended)
+
     def test_activation_mod97_typo_detection_and_leading_zeros(self):
         code = aap.activation_code('000012', '0000000012').replace('-', '')
         self.assertEqual(len(code), 18)
@@ -535,6 +570,46 @@ class ApprovalTests(unittest.TestCase):
             self.assertEqual(data['devices'][1]['temporary_pin_expires_at'],
                              1794664800)
             self.assertEqual(out.getvalue().count('\n'), 1)
+
+    def test_list_omits_revoked_by_default_and_all_shows_history(self):
+        records = [
+            {'id': '111111', 'state': 'revoked', 'device_name': 'Old',
+             'remote_port': 11010, 'expires_at': 1},
+            {'id': '222222', 'state': 'approved', 'device_name': 'Current',
+             'remote_port': 11010, 'expires_at': 1},
+        ]
+        cases = [
+            (['aap2-setup', 'list'], False, False),
+            (['aap2-setup', 'list', '--all'], False, True),
+            (['aap2-setup', '-j', 'list'], True, False),
+            (['aap2-setup', 'list', '--json', '--all'], True, True),
+        ]
+        for argv, machine, full in cases:
+            with self.subTest(argv=argv), \
+                 mock.patch.object(aap.sys, 'argv', argv), \
+                 mock.patch.object(aap, 'require_root'), \
+                 mock.patch.object(aap, 'state_lock', side_effect=contextlib.nullcontext), \
+                 mock.patch.object(aap, 'all_records', side_effect=lambda: iter(records)), \
+                 contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(aap.main(), 0)
+            text = out.getvalue()
+            if machine:
+                devices = json.loads(text)['devices']
+                self.assertEqual([x['id'] for x in devices],
+                                 ['111111', '222222'] if full else ['222222'])
+            else:
+                self.assertIn('Current [222222]', text)
+                self.assertEqual('Old [111111]' in text, full)
+
+    def test_list_only_revoked_becomes_empty_until_all(self):
+        records = [{'id': '111111', 'state': 'revoked', 'device_name': 'Old',
+                    'remote_port': 11010, 'expires_at': 1}]
+        with mock.patch.object(aap, 'require_root'), \
+             mock.patch.object(aap, 'state_lock', side_effect=contextlib.nullcontext), \
+             mock.patch.object(aap, 'all_records', return_value=iter(records)), \
+             contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(aap.list_enrollments(types.SimpleNamespace(all=False)), 0)
+        self.assertIn('AAP2 devices: none', out.getvalue())
 
     def test_json_doctor_reports_failures_as_data(self):
         args = types.SimpleNamespace(json=True)
