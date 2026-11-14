@@ -1,8 +1,5 @@
 package net.isaeff.android.asproxy
 
-import android.security.keystore.KeyProperties
-import androidx.compose.ui.test.assertDoesNotExist
-import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
