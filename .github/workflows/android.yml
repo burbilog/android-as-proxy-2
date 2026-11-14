@@ -40,7 +40,7 @@ jobs:
 
       - name: Check local build and soak scripts shell syntax
         run: |
-          for s in scripts/soak-monitor.sh scripts/build-signed-apk.sh scripts/aap2-local.sh; do
+          for s in scripts/soak-monitor.sh scripts/build-signed-apk.sh scripts/aap2-local.sh scripts/aap2-spare-upgrade.sh; do
             sh -n "$s"
           done
 
