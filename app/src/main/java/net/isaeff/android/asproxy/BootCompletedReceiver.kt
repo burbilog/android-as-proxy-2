@@ -4,7 +4,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.os.UserManager
 import android.util.Log
 
 /**
@@ -18,16 +17,10 @@ class BootCompletedReceiver : BroadcastReceiver() {
             action != Intent.ACTION_BOOT_COMPLETED) return
 
         try {
-            if (DirectBootTunnelProfile.hasProfile(context)) {
-                if (!DirectBootTunnelProfile.wantsConnection(context)) return
-            } else {
-                // Existing password config is CE-only and must not be touched before unlock.
-                if (action != Intent.ACTION_BOOT_COMPLETED ||
-                    context.getSystemService(UserManager::class.java)?.isUserUnlocked != true) return
-                val prefs = context.getSharedPreferences("aap_prefs", Context.MODE_PRIVATE)
-                if (!prefs.getBoolean("auto_connect", false) ||
-                    !prefs.getBoolean("desired_running", false)) return
-            }
+            // There is no legacy password-mode auto-connect fallback in AAP2.
+            // Do not start anything (before OR after unlock) without a verified
+            // device-protected profile explicitly marked as desired_running.
+            if (!DirectBootTunnelProfile.wantsConnection(context)) return
 
             val serviceIntent = Intent(context, SocksForegroundService::class.java).apply {
                 this.action = SocksForegroundService.ACTION_BOOT
