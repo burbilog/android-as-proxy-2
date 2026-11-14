@@ -26,7 +26,7 @@ jobs:
       - name: Checkout pinned S2 disposable SSH fixture (separate branch)
         uses: actions/checkout@v4
         with:
-          ref: b75fc8c3d4c129e62342d961e959228a5c4d1baa
+          ref: 8a8de467b68e1d885d47d87cd922dd9290d9f89f
           path: s2-fixture
           persist-credentials: false
       - name: Set up JDK 17
