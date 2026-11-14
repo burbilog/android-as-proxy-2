@@ -32,7 +32,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import com.jcraft.jsch.JSchException
 import androidx.compose.ui.unit.dp
@@ -40,6 +42,21 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import net.isaeff.android.asproxy.ui.theme.AAPTheme
+
+private class GroupedActivationTransformation(private val revealed: Boolean) : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val digits = text.text
+        val visible = if (revealed) digits else "•".repeat(digits.length)
+        val formatted = EnrollmentInput.formatActivationCode(visible)
+        val mapping = object : OffsetMapping {
+            override fun originalToTransformed(offset: Int): Int =
+                (offset + (offset / 4).coerceAtMost(4)).coerceIn(0, formatted.length)
+            override fun transformedToOriginal(offset: Int): Int =
+                (offset - (offset / 5).coerceAtMost(4)).coerceIn(0, digits.length)
+        }
+        return TransformedText(AnnotatedString(formatted), mapping)
+    }
+}
 
 /**
  * Separate enrollment screen: no PIN leaves the device before the user has
@@ -78,11 +95,10 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
     val client = remember { EnrollmentClient(context.applicationContext) }
 
     var server by remember { mutableStateOf("") }
-    var setupUser by remember { mutableStateOf("") }
-    // Intentionally NOT rememberSaveable: never put the PIN into Android
-    // saved-instance-state Bundles, Intent extras, preferences or logcat.
-    var pin by remember { mutableStateOf("") }
-    var pinVisible by remember { mutableStateOf(false) }
+    // The activation code contains the PIN. Hold it only in volatile UI state;
+    // never rememberSaveable, logcat, preferences, intents or AAPLog.
+    var activationCode by remember { mutableStateOf("") }
+    var codeVisible by remember { mutableStateOf(false) }
     var candidate by remember { mutableStateOf<VerifiedSshHostKey.Probe?>(null) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
@@ -103,7 +119,7 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                 TextButton(onClick = onCancel) { Text("Close") }
             } else {
                 if (candidate == null) {
-                    Text("Enter server address, six-digit setup code, and ten-digit PIN exactly as printed by the administrator.")
+                    Text("Enter the server address and the 18-digit activation code. Separators appear automatically.")
                     OutlinedTextField(
                         value = server, onValueChange = { server = it },
                         label = { Text("Server (host[:port])") },
@@ -111,23 +127,22 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                         enabled = !busy
                     )
                     OutlinedTextField(
-                        value = setupUser, onValueChange = { setupUser = it },
-                        label = { Text("Setup code (6 digits)") },
-                        modifier = Modifier.fillMaxWidth().testTag("a1-setup-user"), singleLine = true,
-                        enabled = !busy
-                    )
-                    OutlinedTextField(
-                        value = pin, onValueChange = { pin = it },
-                        label = { Text("One-time PIN (10 digits)") },
-                        modifier = Modifier.fillMaxWidth().testTag("a1-pin"),
-                        visualTransformation = if (pinVisible) VisualTransformation.None
-                            else PasswordVisualTransformation(),
+                        value = activationCode,
+                        onValueChange = { value ->
+                            if (value.all { it in '0'..'9' || it == '-' || it == ' ' }) {
+                                val digits = value.filter { it in '0'..'9' }
+                                if (digits.length <= 18) activationCode = digits
+                            }
+                        },
+                        label = { Text("Activation code (18 digits)") },
+                        modifier = Modifier.fillMaxWidth().testTag("a1-activation-code"),
+                        visualTransformation = GroupedActivationTransformation(codeVisible),
                         trailingIcon = {
                             TextButton(
-                                onClick = { pinVisible = !pinVisible },
+                                onClick = { codeVisible = !codeVisible },
                                 enabled = !busy,
-                                modifier = Modifier.testTag("a1-pin-toggle")
-                            ) { Text(if (pinVisible) "Hide" else "Show") }
+                                modifier = Modifier.testTag("a1-code-toggle")
+                            ) { Text(if (codeVisible) "Hide" else "Show") }
                         },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                         singleLine = true,
@@ -136,8 +151,7 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                     Button(enabled = !busy, onClick = {
                         error = ""
                         val address = try {
-                            EnrollmentInput.setupUser(setupUser)
-                            EnrollmentInput.pin(pin)
+                            EnrollmentInput.activationCode(activationCode)
                             EnrollmentInput.endpoint(server)
                         } catch (e: IllegalArgumentException) {
                             error = e.message.orEmpty()
@@ -151,6 +165,7 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                                     candidate = withContext(Dispatchers.IO) {
                                         VerifiedSshHostKey.probe(address.host, address.port)
                                     }
+                                    codeVisible = false
                                     message = "Read the entire fingerprint to your administrator."
                                 } catch (e: Exception) {
                                     error = "Host key probe failed: ${e.message.orEmpty()}"
@@ -169,7 +184,7 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                             scope.launch {
                                 try {
                                     client.resume { message = it }
-                                    pin = ""
+                                    activationCode = ""
                                     onEnrolled()
                                 } catch (e: Exception) {
                                     error = "Not approved or unavailable: ${e.javaClass.simpleName}"
@@ -186,8 +201,15 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                     val probe = candidate!!
                     Text("Verify this key with the administrator over a separate trusted channel.")
                     Text("Server: ${probe.host}:${probe.port}")
-                    Text("Setup code / username: ${setupUser.trim()}",
-                        modifier = Modifier.testTag("a1-setup-code-confirmation"))
+                    Text("Activation code checksum: OK", modifier = Modifier.testTag("a1-code-check-ok"))
+                    Text("Activation code: " + if (codeVisible)
+                        EnrollmentInput.formatActivationCode(activationCode) else
+                        EnrollmentInput.formatActivationCode("•".repeat(activationCode.length)),
+                        modifier = Modifier.testTag("a1-code-confirmation"))
+                    TextButton(onClick = { codeVisible = !codeVisible },
+                        modifier = Modifier.testTag("a1-code-confirmation-toggle")) {
+                        Text(if (codeVisible) "Hide code" else "Show code")
+                    }
                     Text("Host key type: ${probe.algorithm}")
                     Text("Full fingerprint:", style = MaterialTheme.typography.titleMedium)
                     Text(probe.fingerprint, modifier = Modifier.testTag("a1-fingerprint-full"))
@@ -199,12 +221,13 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                         error = ""
                         scope.launch {
                             try {
-                                client.enroll(probe, setupUser, pin) { progress ->
+                                val typed = EnrollmentInput.activationCode(activationCode)
+                                client.enroll(probe, typed.setupUser, typed.pin) { progress ->
                                     message = progress
                                     // EnrollmentClient progress strings are fixed, non-secret stages.
                                     AAPLog.append(progress)
                                 }
-                                pin = ""
+                                activationCode = ""
                                 AAPLog.append("Enrollment verified and profile saved")
                                 onEnrolled()
                             } catch (e: Exception) {
@@ -221,6 +244,7 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                                 pending = runCatching {
                                     EnrollmentPending.load(context)
                                 }.getOrNull() != null
+                                codeVisible = false
                                 candidate = null
                             } finally {
                                 busy = false
@@ -230,6 +254,7 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
 
                     TextButton(enabled = !busy, onClick = {
                         candidate = null
+                        codeVisible = false
                         message = ""
                     }, modifier = Modifier.testTag("a1-cancel-verification")) { Text("Cancel fingerprint verification") }
                 }
@@ -237,7 +262,7 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                 if (message.isNotBlank()) Text(message)
                 if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
                 TextButton(enabled = !busy, onClick = {
-                    pin = ""
+                    activationCode = ""
                     onCancel()
                 }) { Text("Back") }
             }
