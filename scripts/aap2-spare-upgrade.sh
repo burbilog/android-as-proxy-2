@@ -71,12 +71,16 @@ printf 'ADB serial: %s\nModel: %s\n' "$SERIAL" "$MODEL"
 
 # Neither action ever uninstalls AAP2, touches its data or touches AAP1.
 # The FIRST action is intentionally blocked for already installed AAP2.
-installed=$(adb_device shell pm path "$PACKAGE" 2>/dev/null | tr -d '\r' || :)
-case "$installed" in
-    package:*) ;;
-    '') ;;
-    *) fail "Unexpected pm path response for $PACKAGE: $installed" ;;
-esac
+# list packages returns success even if the app is absent; unlike pm path,
+# an inaccessible package manager is a hard error, never interpreted as
+# "empty device".
+package_list=$(adb_device shell pm list packages "$PACKAGE" 2>/dev/null) ||
+    fail 'Android package manager query failed'
+case "$package_list" in *Exception*|*Error:*) fail "Package manager error" ;; esac
+installed=
+if printf '%s\n' "$package_list" | tr -d '\r' | grep -Fxq "package:$PACKAGE"; then
+    installed=yes
+fi
 case "$ACTION" in
     first)
         [ -z "$installed" ] ||
