@@ -63,8 +63,27 @@ class A1ConnectionDetailsUiTest {
         assertTrue("Public SSH fingerprint must be full SHA256", hostFingerprint.length > 40)
         assertEquals("Public identity must match persisted SSH account", "aap2p$id", profile.username)
 
-        composeRule.onNodeWithTag("a1-details-close").performClick()
-        composeRule.onNodeWithTag("a1-connection-id")
-            .assertTextEquals("Connection ID: $id")
+        // Simulate a retry state in the shared UI flow WITHOUT touching the
+        // actual foreground service or interrupting the real E2E SSH tunnel.
+        val previousState = ConnectionStateHolder.connectionState.value
+        try {
+            composeRule.runOnUiThread {
+                ConnectionStateHolder.setState(ConnectionState.RETRYING)
+            }
+            composeRule.onNodeWithTag("a1-details-status")
+                .assertTextEquals("Reconnecting")
+            composeRule.onNodeWithTag("a1-details-close").performClick()
+            composeRule.onNodeWithTag("a1-connection-id")
+                .assertTextEquals("Connection ID: $id")
+            composeRule.onNodeWithTag("a1-main-status")
+                .assertTextEquals("Reconnecting…")
+            composeRule.onNodeWithTag("a1-disconnect").assertIsDisplayed()
+            composeRule.onNodeWithTag("a1-connect").assertDoesNotExist()
+            // Only check button visibility; do NOT click Disconnect here.
+        } finally {
+            composeRule.runOnUiThread {
+                ConnectionStateHolder.setState(previousState)
+            }
+        }
     }
 }
