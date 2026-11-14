@@ -54,7 +54,7 @@ internal data class ConnectionDetailsInfo(
             // the server to check anything while the details page is open.
             val publicFingerprint = runCatching {
                 VerifiedSshHostKey.sha256Fingerprint(
-                    AndroidKeystoreIdentity.getExisting(context).publicKeyBlob
+                    AndroidKeystoreIdentity.getExisting(context).getPublicKeyBlob()
                 )
             }.getOrElse { "Unavailable (Keystore)" }
             val pkg = runCatching {
