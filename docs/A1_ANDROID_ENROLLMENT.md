@@ -14,6 +14,31 @@ The Android client derives from the tested P0 Keystore/Direct Boot/strict-host-k
 
 The PIN is never put into saved instance state, preferences, Intent arguments or logs. CI sends temporary test PINs only into disposable Android private files and deletes them before connection. Private P-256 signing operations remain in Android Keystore.
 
+## User-facing reconnect status (2026-11-14)
+
+An SSH outage with the foreground service still running is now displayed
+as **Reconnecting…**, not **Disconnected**. The state is set by the existing
+SSH retry loop, after a failed/lost connection and before the existing
+backoff/network-callback wait. **Connecting…** remains the label during
+each actual SSH connection attempt; **Connected** means the exact
+loopback reverse forward succeeded. **Disconnected** remains for a
+stopped service. The same retry state is visible in the one-screen
+**Details** view as **Reconnecting**.
+
+On the main screen, **Disconnect** remains available during
+**Connecting** and **Reconnecting**, so the user can stop an ongoing
+automatic retry instead of being offered a redundant **Connect**
+button. The explicit stop action retains the prior Direct Boot
+`desired_running=false` behavior, preventing automatic boot restart
+until the user next presses **Connect**. No extra service, wake lock,
+Wi-Fi manipulation, network probe, log parsing, or background job is
+introduced. Existing fingerprint/Keystore profiles are not changed.
+
+The instrumentation test on an **already enrolled disposable device**
+verifies the main-screen and Details labels and the visible Disconnect
+control by temporarily changing only the in-process UI state, without
+actually stopping the live SSH tunnel.
+
 ## Connection identification and one-screen support diagnostics
 
 After activation, MainActivity always displays **Connection ID** (the suffix
