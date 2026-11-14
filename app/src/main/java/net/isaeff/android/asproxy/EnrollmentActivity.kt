@@ -30,6 +30,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -103,21 +104,22 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                     OutlinedTextField(
                         value = server, onValueChange = { server = it },
                         label = { Text("Server (host[:port])") },
-                        modifier = Modifier.fillMaxWidth(), singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("a1-server"), singleLine = true,
                         enabled = !busy
                     )
                     OutlinedTextField(
                         value = setupUser, onValueChange = { setupUser = it },
                         label = { Text("Setup username") },
-                        modifier = Modifier.fillMaxWidth(), singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("a1-setup-user"), singleLine = true,
                         enabled = !busy
                     )
                     OutlinedTextField(
                         value = pin, onValueChange = { pin = it },
                         label = { Text("One-time PIN (4-4-2)") },
+                        modifier = Modifier.fillMaxWidth().testTag("a1-pin"),
                         visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                        modifier = Modifier.fillMaxWidth(), singleLine = true,
+                        singleLine = true,
                         enabled = !busy
                     )
                     Button(enabled = !busy, onClick = {
@@ -146,7 +148,7 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                                 }
                             }
                         }
-                    }) { Text("Check server fingerprint") }
+                    }, modifier = Modifier.testTag("a1-probe")) { Text("Check server fingerprint") }
 
                     if (pending) {
                         Text("An enrollment is pending. Resume only after the administrator approved the key.")
@@ -175,8 +177,8 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                     Text("Server: ${probe.host}:${probe.port}")
                     Text("Host key type: ${probe.algorithm}")
                     Text("Full fingerprint:", style = MaterialTheme.typography.titleMedium)
-                    Text(probe.fingerprint)
-                    Text(EnrollmentInput.groupedFingerprint(probe.fingerprint))
+                    Text(probe.fingerprint, modifier = Modifier.testTag("a1-fingerprint-full"))
+                    Text(EnrollmentInput.groupedFingerprint(probe.fingerprint), modifier = Modifier.testTag("a1-fingerprint-grouped"))
                     Text("Do not continue unless every fingerprint character matches. The PIN has not been sent.")
 
                     Button(enabled = !busy, onClick = {
@@ -199,12 +201,12 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                                 busy = false
                             }
                         }
-                    }) { Text("Verified — send PIN and activate") }
+                    }, modifier = Modifier.testTag("a1-verified-activate")) { Text("Verified — send PIN and activate") }
 
                     TextButton(enabled = !busy, onClick = {
                         candidate = null
                         message = ""
-                    }) { Text("Cancel fingerprint verification") }
+                    }, modifier = Modifier.testTag("a1-cancel-verification")) { Text("Cancel fingerprint verification") }
                 }
 
                 if (message.isNotBlank()) Text(message)
