@@ -120,6 +120,33 @@ upstream network** without changing the Android Wi-Fi enabled state;
 or separately test server-side SSH-session loss/retry. All such tests
 remain restricted to the disposable Seuic and S2, not production Zebra.
 
+## Physical AP disappearance test: Wi-Fi doze wake dependency — Seuic 20004 (2026-11-14)
+
+This is a **real AP-disappearance** test, not `svc wifi disable/enable`.
+The O3 AP runs in a separate VM. The user powered that VM off, then
+brought it back up. Another phone was able to join O3, but the Seuic
+remained `RUNNING_UNLOCKED` with `Wifi is enabled` and
+`Wifi is not connected`; the display was `mWakefulness=Dozing`.
+
+The server-side 30-second curl monitor (`/tmp/aap2-o3.log`) showed
+`rc=0 http=200` at 14:15:09 and 14:15:39 UTC; `rc=28` at 14:16:09;
+then `rc=7 http=000` from 14:16:44 through 14:27:46 UTC, with no
+listener at `127.0.0.1:11010`. After one
+`adb shell input keyevent KEYCODE_WAKEUP`, requests resumed as
+`rc=0 http=200` by 14:28:16 UTC and continued at ~0.12–0.15 s per
+request. AAP2 was **not restarted** and no re-enrollment occurred.
+
+**Interpretation:** The Seuic's Wi-Fi re-association after real AP loss
+appears gated on display wake, even after the primary user was unlocked
+earlier in this boot. SSH automatic reconnection on network restoration:
+**PASS**. Unattended Wi-Fi recovery while dozing on this firmware:
+**NOT PASS**. This should not be generalized to all Android OEMs;
+Zebra's earlier recovery observations differ. Do not implement an
+unconditional AAP2 wake lock, forced scans or display wakeups based on
+this device-specific observation. Future realistic resilience testing
+needs either another OEM or a network path that can be disrupted without
+losing Wi-Fi association, and should isolate AAP2's own SSH retry behavior.
+
 ## Failure recovery and migration
 
 - A terminated SFTP session after upload preserves the original host pin, permanent username/port and Keystore key alias in pending state, with **no PIN**. **Resume approved enrollment** makes **one** pinned permanent publickey SSH / reverse-port attempt using the **existing** identity. No password or automatic enrollment retry loop.
