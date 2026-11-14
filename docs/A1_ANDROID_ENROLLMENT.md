@@ -164,10 +164,44 @@ session termination: PASS.**
 
 The polling interval constrains the outage measurement: listener
 absence was observed over approximately six seconds between the first
-DOWN and first following UP sample. No claim is made about exact SSH
-reconnection latency or black-holed TCP failures (which are a separate
-scenario). This validates AAP2's reconnect loop with the phone network
+DOWN and first following UP sample. No claim is made about exact SSH reconnection latency. A subsequent
+per-session blackhole test is documented separately below. This validates AAP2's reconnect loop with the phone network
 available, independently of the Seuic firmware's dozing Wi-Fi issue.
+
+## Physical per-session TCP blackhole — Seuic 20004 (2026-11-14)
+
+**PASS:** A controlled 90-second, session-specific bidirectional nftables
+DROP was applied in the disposable S2 container, matching only the
+existing AAP2 SSH 4-tuple (server `172.16.172.92:22`, peer
+`192.168.0.165:46388`). This silently discarded packets on the old
+connection without FIN/RST, while leaving other and **new** SSH
+connections (different source port) eligible. The AP/Wi-Fi, Android
+application, S2 sshd and device credentials were not touched.
+
+Observed UTC timestamps:
+
+- `14:57:21`: BLACKHOLE START.
+- `14:57:28`: HTTP via SOCKS timed out, `rc=28 http=000`
+  after 5 seconds, although the port was still initially listening.
+- `14:57:58`: first server-side listener DOWN; polls at 2-second
+  intervals stayed DOWN through `14:58:04`.
+- `14:58:06`: listener UP again, **before** rule removal.
+- `14:58:33`: 30-second HTTP monitor confirms `rc=0 http=200`.
+- `14:58:51`: BLACKHOLE END; subsequent HTTP 200s continued.
+- Final independent Cloudflare HTTPS via `socks5h://127.0.0.1:11010`
+  also succeeded, with original exit IP `195.91.221.147`.
+
+The listener returned roughly 45 seconds after blackholing began,
+with approximately eight seconds between the first DOWN and following
+UP samples. Because the server had `ClientAliveInterval 15` /
+`ClientAliveCountMax 2` and the phone also has SSH keepalives,
+this establishes recovery of the **combined** failure detection and
+reconnect mechanism, not which side detected the silence first. The
+DROP affected only the old SSH 4-tuple: recovery during DROP means
+a fresh TCP connection could bypass that particular rule. This is
+not equivalent to an outage blocking all outbound SSH traffic.
+On-device network remained available and the test does not address
+the Seuic dozing Wi-Fi re-association limitation.
 
 ## Failure recovery and migration
 
