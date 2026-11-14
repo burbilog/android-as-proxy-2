@@ -146,7 +146,7 @@ SUCCESS=0
 for i in $(seq 1 30); do
   BODY=$(curl --noproxy '' --silent --show-error --max-time 3 \
     --proxy "socks5h://127.0.0.1:$PORT" \
-    http://127.0.0.1:18887/ 2>/dev/null || true)
+    http://10.0.2.2:18887/ 2>/dev/null || true)
   if [ "$BODY" = "AAP2-A1-E2E-OK" ]; then
     SUCCESS=1
     break
@@ -164,7 +164,7 @@ done
   echo 'Detailed proxied curl diagnostic:' >&2
   curl --noproxy '' -v --max-time 6 \
     --proxy "socks5h://127.0.0.1:$PORT" \
-    http://127.0.0.1:18887/ >&2 || true
+    http://10.0.2.2:18887/ >&2 || true
   exit 1
 }
 echo "A1 PASS: emulator PIN→SFTP→approve→Keystore→-R→SOCKS5→HTTP"
@@ -194,7 +194,7 @@ SUCCESS=0
 for i in $(seq 1 30); do
   BODY=$(curl --noproxy '' --silent --max-time 3 \
     --proxy "socks5h://127.0.0.1:$PORT" \
-    http://127.0.0.1:18887/ 2>/dev/null || true)
+    http://10.0.2.2:18887/ 2>/dev/null || true)
   if [ "$BODY" = "AAP2-A1-E2E-OK" ]; then SUCCESS=1; break; fi
   sleep 1
 done
@@ -223,7 +223,7 @@ for i in $(seq 1 50); do
     { echo "User unlocked during Direct Boot test: $USER_STATE" >&2; exit 1; }
   BODY=$(curl --noproxy '' --silent --max-time 4 \
     --proxy "socks5h://127.0.0.1:$PORT" \
-    http://127.0.0.1:18887/ 2>/dev/null || true)
+    http://10.0.2.2:18887/ 2>/dev/null || true)
   if [ "$BODY" = "AAP2-A1-E2E-OK" ]; then SUCCESS=1; break; fi
   sleep 2
 done
@@ -234,7 +234,7 @@ sudo env GITHUB_ACTIONS=true AAP2_A1_DISPOSABLE=YES sh "$FIXTURE" "$SERVER" revo
 sleep 2
 if curl --noproxy '' --silent --max-time 3 \
    --proxy "socks5h://127.0.0.1:$PORT" \
-   http://127.0.0.1:18887/ >/dev/null 2>&1; then
+   http://10.0.2.2:18887/ >/dev/null 2>&1; then
   echo 'A1 ERROR: transport survived server revoke' >&2
   exit 1
 fi
