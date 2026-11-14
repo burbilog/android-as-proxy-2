@@ -28,6 +28,24 @@ aap2-setup enroll SpareAndroid --manual-code \
   --server-addr 192.0.2.10 --server-port 22
 ```
 
+The human-facing `enroll` result is organized into three short sections,
+without colors or terminal dependencies:
+
+- **PHONE:** the public server address and **one** bearer activation code.
+  For legacy invitations it instead shows setup username + ten-digit PIN.
+- **VERIFY SERVER:** complete SHA256 fingerprints returned by the local
+  `ssh-keygen`, for every installed SSH host-key algorithm. Compare the
+  **fingerprint and key type** shown on the phone; never accept an
+  unverified server key or suppress this section merely to shorten output.
+- **ADMIN:** the enrollment ID and the exact command
+  `aap2-setup approve ID` to use **after** the phone uploads its public key.
+  The admin-only setup username is also shown here for diagnostics.
+
+The stable machine-readable `Server:`, `Phone activation code ...:`,
+`Setup username:` and `Enrollment ID:` lines are preserved because the
+disposable integration checks extract them. CLI never writes the activation
+code to an on-disk metadata file; avoid pasting it into tickets or logs.
+
 The phone may be behind one or more NATs. The enrollment server does **not**
 require the phone's LAN IP or public NAT IP, and SSH authorization is **not**
 bound to either. `--client-addr` is optional: it is passed **only** to
