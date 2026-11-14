@@ -115,6 +115,21 @@ class CheckTests(unittest.TestCase):
 
 
 class LifecycleTests(unittest.TestCase):
+    def test_enroll_cli_accepts_missing_client_addr_without_guessing_phone_ip(self):
+        argv = ['aap2-setup', 'enroll', 'Cruise2', '--manual-code',
+                '--server', 'ssh.example.net:22225', '--server-addr', '192.0.2.10']
+        seen = []
+        def fake_enroll(args):
+            seen.append(args)
+            return 0
+        with mock.patch.object(aap.sys, 'argv', argv), \
+             mock.patch.object(aap, 'enroll', side_effect=fake_enroll):
+            self.assertEqual(aap.main(), 0)
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0].client_addr, '198.51.100.1')
+        self.assertEqual(seen[0].server_addr, '192.0.2.10')
+        self.assertTrue(seen[0].manual_code)
+
     def test_pin_always_ten_digits_including_leading_zeros(self):
         with mock.patch.object(aap.secrets, 'randbelow', return_value=12):
             self.assertEqual(aap.generate_pin(), '0000000012')
