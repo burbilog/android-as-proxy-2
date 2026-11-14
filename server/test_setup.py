@@ -477,6 +477,135 @@ class ApprovalTests(unittest.TestCase):
         self.assertIn('AAP2 devices: none', output.getvalue())
         self.assertIn('aap2-setup enroll --help', output.getvalue())
 
+    def test_json_list_and_both_flag_positions(self):
+        records = [
+            {'id': '000012', 'state': 'approved', 'device_name': 'Cruise2',
+             'remote_port': 11010, 'expires_at': 1},
+            {'id': '000013', 'state': 'active', 'device_name': 'Pending',
+             'remote_port': 11011, 'expires_at': 1794664800},
+        ]
+        for argv in (['aap2-setup', '-j', 'list'],
+                     ['aap2-setup', 'list', '--json']):
+            with self.subTest(argv=argv), \
+                 mock.patch.object(aap.sys, 'argv', argv), \
+                 mock.patch.object(aap, 'require_root'), \
+                 mock.patch.object(aap, 'state_lock', side_effect=contextlib.nullcontext), \
+                 mock.patch.object(aap, 'all_records', side_effect=lambda: iter(records)), \
+                 contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(aap.main(), 0)
+            data = json.loads(out.getvalue())
+            self.assertEqual(data['schema'], 1)
+            self.assertEqual(data['command'], 'list')
+            self.assertTrue(data['ok'])
+            self.assertEqual(len(data['devices']), 2)
+            self.assertEqual(data['devices'][0]['remote_port'], 11010)
+            self.assertNotIn('temporary_pin_expires_at', data['devices'][0])
+            self.assertNotIn('online', data['devices'][0])
+            self.assertEqual(data['devices'][1]['temporary_pin_expires_at'],
+                             1794664800)
+            self.assertEqual(out.getvalue().count('\n'), 1)
+
+    def test_json_enroll_manual_code_once_no_separate_pin(self):
+        with tempfile.TemporaryDirectory() as d:
+            stack, meta_path, args, events = self.make_enroll_fixture(
+                d, manual_code=True)
+            args.json = True
+            with stack, contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(aap.enroll(args), 0)
+            data = json.loads(out.getvalue())
+            invite = data['invitation']
+            self.assertEqual(data['schema'], 1)
+            self.assertEqual(data['command'], 'enroll')
+            self.assertEqual(invite['enrollment_id'], '000012')
+            self.assertEqual(invite['remote_port'], 11010)
+            self.assertEqual(invite['server'], 'example.net:22222')
+            self.assertEqual(invite['activation_code'],
+                             aap.activation_code('000012', '0000000012'))
+            self.assertNotIn('one_time_pin', invite)
+            self.assertNotIn('0000000012', meta_path.read_text())
+            self.assertEqual(out.getvalue().count(invite['activation_code']), 1)
+            self.assertEqual(out.getvalue().count('\n'), 1)
+
+    def test_json_enroll_legacy_one_time_pin(self):
+        with tempfile.TemporaryDirectory() as d:
+            stack, _, args, _ = self.make_enroll_fixture(d)
+            args.json = True
+            with stack, contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(aap.enroll(args), 0)
+            invite = json.loads(out.getvalue())['invitation']
+            self.assertEqual(invite['one_time_pin'], '0000000012')
+            self.assertNotIn('activation_code', invite)
+
+    def test_json_doctor_reports_failures_as_data(self):
+        args = types.SimpleNamespace(json=True)
+        with mock.patch.object(aap.os, 'geteuid', return_value=1000), \
+             contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(aap.doctor(args), 1)
+        result = json.loads(out.getvalue())
+        self.assertEqual(result['command'], 'doctor')
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['failures'], 1)
+        self.assertEqual(result['checks'][0]['level'], 'fail')
+
+    def test_json_print_config_template(self):
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(aap.print_config(types.SimpleNamespace(json=True)), 0)
+        data = json.loads(out.getvalue())
+        self.assertTrue(data['ok'])
+        self.assertTrue(data['manual_only'])
+        self.assertIn('Match Group aap2-proxy', data['template'])
+
+    def test_json_cleanup_empty_state(self):
+        with tempfile.TemporaryDirectory() as d, \
+             mock.patch.object(aap, 'STATE', Path(d)), \
+             mock.patch.object(aap, 'require_root'), \
+             mock.patch.object(aap, 'verified_dir'), \
+             mock.patch.object(aap, 'state_lock', side_effect=contextlib.nullcontext), \
+             contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(aap.cleanup(types.SimpleNamespace(json=True)), 0)
+        self.assertEqual(json.loads(out.getvalue())['expired_ids'], [])
+
+    def test_json_approve_and_revoke_preserve_confirmation(self):
+        record = {
+            'id': '000012', 'state': 'active', 'device_name': 'Cruise2',
+            'expires_at': 9999999999, 'temp_removed': False, 'remote_port': 11010,
+            'users': {
+                aap.GROUP_ENROLL: {'name': 'aap2e000012'},
+                aap.GROUP_PROXY: {'name': 'aap2p000012'},
+            }
+        }
+        for action, rejected in ((aap.approve, 'N'), (aap.revoke, 'NOT REVOKE')):
+            with self.subTest(action=action.__name__), \
+                 mock.patch.object(aap, 'require_root'), \
+                 mock.patch.object(aap, 'state_lock', side_effect=contextlib.nullcontext), \
+                 mock.patch.object(aap, 'read_metadata', return_value=record), \
+                 mock.patch.object(aap, 'timer_active', return_value=True), \
+                 mock.patch.object(aap, 'check_real_identity'), \
+                 mock.patch.object(aap, 'snapshot_key',
+                                   return_value=('ecdsa-sha2-nistp256 ABC\n', '256 SHA256:abc (ECDSA)')), \
+                 mock.patch('builtins.input', return_value=rejected), \
+                 mock.patch.object(aap, 'atomic_json',
+                                   side_effect=AssertionError('must not mutate')), \
+                 contextlib.redirect_stdout(io.StringIO()) as out, \
+                 contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(action(types.SimpleNamespace(
+                    enrollment_id='000012', json=True)), 1)
+            data = json.loads(out.getvalue())
+            self.assertFalse(data['ok'])
+            self.assertEqual(data['status'], 'cancelled')
+            self.assertEqual(data['command'], action.__name__)
+
+    def test_json_parse_error_returns_single_object(self):
+        with mock.patch.object(aap.sys, 'argv', ['aap2-setup', '-j', 'list', '--bad']), \
+             contextlib.redirect_stdout(io.StringIO()) as out, \
+             contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as exc:
+                aap.main()
+        self.assertEqual(exc.exception.code, 2)
+        result = json.loads(out.getvalue())
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['command'], 'cli')
+
     def test_revoke_requires_confirmation_before_key_change(self):
         record = {'id': '123456abcdef', 'state': 'approved', 'device_name': 'TC21',
                   'users': {aap.GROUP_PROXY: {'name': 'aap2p123456abcdef'}},
