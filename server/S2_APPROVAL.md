@@ -23,8 +23,13 @@ The server address and port are still typed separately.
 Example (fill in real addresses):
 
 ```sh
+aap2-setup enroll SpareAndroid --manual-code --server ssh.example.net:22225
+
+# For unusual SSH Match rules, the full context is still available:
+aap2-setup enroll --help-all
 aap2-setup enroll SpareAndroid --manual-code \
   --server ssh.example.net:22225 \
+  --client-addr 192.0.2.5 --client-host phone.example.net \
   --server-addr 192.0.2.10 --server-port 22
 ```
 
@@ -48,14 +53,22 @@ code to an on-disk metadata file; avoid pasting it into tickets or logs.
 
 The phone may be behind one or more NATs. The enrollment server does **not**
 require the phone's LAN IP or public NAT IP, and SSH authorization is **not**
-bound to either. `--client-addr` is optional: it is passed **only** to
-`sshd -T -C` as a sample source address to inspect effective `Match`
-policy. By default the CLI uses documentation address `198.51.100.1`,
-prints a warning, and still checks the role-specific `Match Group`
-restrictions on both generated accounts. On servers with source-sensitive
-`Match Address` or `Match Host` conditions, an administrator must
-independently verify policy for the real connection; no one sample IP can
-prove those policies for arbitrary NAT clients.
+bound to either. To keep simple enrollment usable, the `sshd -T -C`
+security probe defaults to the documentation source address
+`198.51.100.1`, client hostname `unknown`, loopback local SSH address
+`127.0.0.1` and local port `22`. These are **SSH Match probe inputs**,
+not the phone's public endpoint, and do not change listening settings.
+The CLI warns about the sample client and loopback server addresses;
+JSON `invitation.warnings[]` carries those warnings as structured data.
+
+For a server whose `Match Address`, `Match Host`, `Match LocalAddress`
+or `Match LocalPort` differs by connection context, explicitly supply
+the actual addresses and local SSH port via the advanced options shown by
+`enroll --help-all`. A successful sample-context `sshd -T -C` does **not**
+prove every possible real connection context; review such conditional
+rules independently before inviting the phone. The strict group and
+key restrictions for the sampled context are still checked before
+any temporary PIN is activated.
 
 The first six digits are **not authentication secrets**: they select a
 short-lived Unix account. The ten-digit PIN, verified SSH host-key
@@ -103,8 +116,13 @@ activation code is displayed **once**; the PIN is not written into
 persistent state or Android logs. The CLI remains usable over plain
 SSH and in scripts; no TUI or third-party Python dependencies.
 
-`aap2-setup list` is a compact read-only view of each device's
-root-owned enrollment state and **reserved** loopback SOCKS5 port.
+`aap2-setup list` is a compact read-only view of current devices,
+hiding `REVOKED` historical entries by default. Use `list --all`
+to include them (the same filter applies to `list -j` and
+`list -j --all`). Other states, including `EXPIRED` and
+`REVOKING`, remain visible so a failed or incomplete cleanup cannot
+be silently hidden. Each row shows the root-owned enrollment state
+and **reserved** loopback SOCKS5 port.
 `APPROVED` means its public key is authorized; it does **not** mean
 the phone is online. The temporary PIN expiry is shown for `ACTIVE`
 invitations only, never as an expiry date for an approved permanent
@@ -117,7 +135,7 @@ Use `-j` or `--json` either before or after a subcommand:
 
 ```sh
 aap2-setup -j list | jq -r '.devices[] | select(.state == "approved") | .id'
-aap2-setup list --json | jq '.devices'
+aap2-setup list --all --json | jq '.devices'
 aap2-setup doctor -j | jq '.checks[] | select(.level != "ok")'
 ```
 
