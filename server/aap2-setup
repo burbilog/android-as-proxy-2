@@ -615,6 +615,23 @@ def generate_pin():
     return '{:010d}'.format(secrets.randbelow(10000000000))
 
 
+def activation_code(enrollment_id, pin):
+    """One manually typed value: 6-digit selector + 10-digit PIN + 2 check digits.
+
+    MOD 97-10 detects all single-digit substitutions and adjacent unequal
+    transpositions. This is only typo detection; the final digits add ZERO
+    authentication entropy. Always preserve leading zeroes.
+    """
+    if not (re.fullmatch(r'[0-9]{6}', enrollment_id) and
+            re.fullmatch(r'[0-9]{10}', pin)):
+        raise SetupError('activation code needs six-digit ID and ten-digit PIN')
+    body = enrollment_id + pin
+    check = (1 - (int(body) * 100) % 97) % 97
+    value = body + '{:02d}'.format(check)
+    return '-'.join((value[:4], value[4:8], value[8:12],
+                     value[12:16], value[16:]))
+
+
 def enroll(args):
     require_root()
     name = args.device_name
@@ -733,8 +750,10 @@ def enroll(args):
     print('Server: {}'.format(args.server))
     print('Setup username: {}'.format(usernames[GROUP_ENROLL]))
     if manual_code:
-        print('Phone setup code (6 digits, no prefix): {}'.format(enrollment_id))
-    print('One-time PIN (type all 10 digits): {}'.format(pin))
+        print('Phone activation code (type digits only): {}'.format(
+            activation_code(enrollment_id, pin)))
+    else:
+        print('One-time PIN (type all 10 digits): {}'.format(pin))
     print('Enrollment ID: {}'.format(enrollment_id))
     for path in sorted(Path('/etc/ssh').glob('ssh_host_*_key.pub')):
         if path.is_file() and not path.is_symlink():
