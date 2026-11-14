@@ -42,6 +42,6 @@ All tests above exercise a disposable emulator and test signing certificate. The
 - [x] Same-certificate in-place APK update and pre-first-unlock FBE reboot on emulator.
 - [x] Legacy password/TOFU implementation removal and Android CI regression.
 - [ ] Physical A1 enrollment, foreground-service lifetime and Direct Boot before first unlock on a **spare device** (or later in an explicitly planned maintenance window for Zebra).
-- [ ] Update from one **release-signed** APK to another using the long-term key kept on `marduk`, preserving identity and verified host key. See `docs/P0_RELEASE_SIGNING.md`.
+- [ ] Update from one **release-signed** APK to another using the long-term key kept on `marduk`, preserving identity and verified host key. See `docs/P0_RELEASE_SIGNING.md`. The guarded local `scripts/aap2-spare-upgrade.sh` verifies both signatures and versions and requires an explicit spare-device ADB serial; it never uninstalls AAP2 or touches the working Zebra by default.
 
 **Do not install the A1 development APK on the working Zebra just to close the remaining gates.** Leave PR #10 draft until physical and long-term-signing tests are explicitly accepted.
