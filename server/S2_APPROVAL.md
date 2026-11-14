@@ -6,6 +6,34 @@ host until explicit review. Do not copy this configuration into the existing
 Match configuration must be installed MANUALLY, independently of this CLI;
 \`aap2-setup\` never edits or reloads sshd.
 
+## Manual typing on a phone (no clipboard, no QR)
+
+For **new** S2 invitations, use `--manual-code` with the ordinary
+`enroll` arguments. The CLI then displays **Phone setup code** as
+**exactly six decimal digits**, including leading zeros. In the A1
+Android screen, the user types **only those six digits**, not the
+`aap2e` Unix username prefix. The phone constructs the exact SSH
+username locally. The one-time PIN remains **ten digits**; printed
+hyphens are separators and must not be entered on the phone.
+The server address and port are still typed separately.
+
+Example (fill in real addresses):
+
+```sh
+aap2-setup enroll SpareAndroid --manual-code \
+  --server ssh.example.net:22225 \
+  --client-addr 192.0.2.5 --client-host phone.example.net \
+  --server-addr 192.0.2.10 --server-port 22
+```
+
+Six-digit codes are **not authentication secrets**: they only select a
+short-lived Unix account. The ten-digit PIN, the verified SSH host-key
+fingerprint and explicit administrator approval are unchanged. The
+10-minute PIN TTL is unchanged; issue invitations only when the user is
+ready. Existing 12-hex enrollment IDs, approved accounts and stored
+Android profiles remain valid. The new option does **not** migrate or
+alter existing accounts, or silently change the default enroll format.
+
 ## Administrator workflow
 
 After the server setup from [S1_ENROLL.md](S1_ENROLL.md), with a working
