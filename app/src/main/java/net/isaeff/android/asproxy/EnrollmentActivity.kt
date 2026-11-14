@@ -234,7 +234,7 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                                 // Never log or display the PIN or private SSH key.
                                 error = if (e is JSchException &&
                                     e.message?.contains("Auth fail") == true) {
-                                    "SSH login rejected. Check the six-digit setup code and PIN."
+                                    "Activation code rejected or expired. Check the code or request a new one."
                                 } else {
                                     "Enrollment incomplete: ${e.javaClass.simpleName}. " +
                                         "If approval happened, use Resume; otherwise ask the administrator."
