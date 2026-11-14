@@ -62,9 +62,27 @@ All tests above exercise a disposable emulator and test signing certificate. The
   Hardware trial uses the earlier pre-short-code A1 release APKs; it does not
   validate the later six-digit manual-typing enrollment changes.
 
+## Updated short-code CI acceptance — 2026-11-14
+
+Commit `8531166ec940ddb46cbfd8260c986105e5d9f7a1`:
+[Android build/unit tests](https://github.com/burbilog/android-as-proxy-2/actions/runs/43581141232)
+and [real Android 11 emulator/S2 E2E](https://github.com/burbilog/android-as-proxy-2/actions/runs/43581141257)
+both **PASS**. The actual Compose test types only the six-digit setup
+code (not the Unix prefix), verifies the independently derived full SSH
+host fingerprint, and confirms the generated permanent S2 SSH account is
+exactly the matching `aap2pNNNNNN`. The real server approves the Keystore
+public key and the test reaches HTTP through the restricted reverse SOCKS.
+The same run also passes signed test APK update, locked pre-unlock reboot,
+and server revoke.
+
+The short-code user experience is therefore accepted in emulator CI.
+A physical *fresh enrollment* with the new user interface is a separate
+test; do not erase or overwrite the already validated Seuic profile,
+and do not touch Zebra or the soak monitor.
+
 ## Remaining acceptance gates
 
-- [ ] Six-digit manual-typing Compose enrollment with disposable S2 `--manual-code` — CI regression is being validated; long-username legacy E2E passed previously.
+- [x] Six-digit manual-typing Compose enrollment with disposable S2 `--manual-code` — full [Android 11 E2E run #43581141257](https://github.com/burbilog/android-as-proxy-2/actions/runs/43581141257) **PASS** (2026-11-14), including Compose text entry, PIN/SFTP/approval/SSH `-R`/SOCKS5 HTTP, signed in-place test upgrade, pre-unlock Direct Boot and revoke.
 - [x] Positive Compose UI enrollment, S2 approval, actual SOCKS5 HTTP and revoke on emulator.
 - [x] Negative host/PIN/SFTP/JSON/`permitlisten` paths and no-PIN Resume.
 - [x] Same-certificate in-place APK update and pre-first-unlock FBE reboot on emulator.
