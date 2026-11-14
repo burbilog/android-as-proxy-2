@@ -35,6 +35,32 @@ Code at commit `833d44b7c9f56f4b43118dda58fb17502ddb6acf`:
 
 All tests above exercise a disposable emulator and test signing certificate. They do **not** establish OEM device behavior or validate the user's permanent production release signing key.
 
+
+## Physical acceptance — Seuic Cruise2, Android 14 (2026-11-14)
+
+- Installed permanent-release-signed `20000` on a previously unconfigured
+  spare Android 14/API 34 phone; manually enrolled into isolated Debian 13
+  S2 container (`aap2-a1-test`, external SSH port `22225`). Admin approved
+  the phone's Android Keystore P-256 public key. Loopback-only reverse SSH
+  forward `127.0.0.1:11010` and SOCKS5 DNS/HTTPS to Cloudflare succeeded.
+- Upgraded `20000 → 20001` using the same release signing certificate and
+  guarded `adb install -r` (no uninstall, no `pm clear`). AAP2 reported
+  an already verified server identity and showed `Connect`, not new-enrollment
+  prompts. After one explicit `Connect` press the SAME server-approved
+  account/forward worked for real SOCKS5 HTTPS, without PIN or reapproval.
+- Rebooted the phone; once Android completed boot, `dumpsys user` reported
+  **`RUNNING_LOCKED`** before first user unlock. Without unlocking or manually
+  launching AAP2, SOCKS5 HTTPS on the existing `11010` reverse port returned
+  a valid Cloudflare response. This demonstrates true physical Direct Boot
+  SSH/Keystore/reverse-forward/foreground-service start.
+- Initial `dumpsys user` immediately after `adb wait-for-device` briefly
+  returned `Can't find service: user`: Android's framework was still starting;
+  retry yielded a valid `RUNNING_LOCKED` state. A separate earlier reboot was
+  `RUNNING_UNLOCKED` and was **not** counted as pre-unlock evidence.
+- No production Zebra, existing `aap2-test`, or original soak CSV was modified.
+  Hardware trial uses the earlier pre-short-code A1 release APKs; it does not
+  validate the later six-digit manual-typing enrollment changes.
+
 ## Remaining acceptance gates
 
 - [ ] Six-digit manual-typing Compose enrollment with disposable S2 `--manual-code` — CI regression is being validated; long-username legacy E2E passed previously.
@@ -42,7 +68,8 @@ All tests above exercise a disposable emulator and test signing certificate. The
 - [x] Negative host/PIN/SFTP/JSON/`permitlisten` paths and no-PIN Resume.
 - [x] Same-certificate in-place APK update and pre-first-unlock FBE reboot on emulator.
 - [x] Legacy password/TOFU implementation removal and Android CI regression.
-- [ ] Physical A1 enrollment, foreground-service lifetime and Direct Boot before first unlock on a **spare device** (or later in an explicitly planned maintenance window for Zebra).
-- [ ] Update from one **release-signed** APK to another using the long-term key kept on `marduk`, preserving identity and verified host key. See `docs/P0_RELEASE_SIGNING.md`. The guarded local `scripts/aap2-spare-upgrade.sh` verifies both signatures and versions and requires an explicit spare-device ADB serial; it never uninstalls AAP2 or touches the working Zebra by default.
+- [x] Physical A1 enrollment and Direct Boot before first unlock on a **spare device** (Seuic Cruise2, Android 14/API 34, 2026-11-14).
+- [ ] Long-running foreground-service reliability, Wi-Fi loss/restore and OEM battery restrictions on the physical device.
+- [x] Update from one **release-signed** APK to another using the long-term key kept on `marduk`, preserving identity and verified host key, confirmed with real SSH and SOCKS5 HTTP on Seuic Cruise2, 2026-11-14. See `docs/P0_RELEASE_SIGNING.md`. The guarded local `scripts/aap2-spare-upgrade.sh` verifies both signatures and versions and requires an explicit spare-device ADB serial; it never uninstalls AAP2 or touches the working Zebra by default.
 
-**Do not install the A1 development APK on the working Zebra just to close the remaining gates.** Leave PR #10 draft until physical and long-term-signing tests are explicitly accepted.
+**Do not install the A1 development APK on the working Zebra.** Hardware release-signing and pre-unlock tests passed on the spare Cruise2, but the newer six-digit enrollment UX, long-running reliability and Wi-Fi loss/restore remain separate gates. Leave PR #10 draft until those are accepted.
