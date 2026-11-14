@@ -57,6 +57,7 @@ All tests above exercise a disposable emulator and test signing certificate. The
   returned `Can't find service: user`: Android's framework was still starting;
   retry yielded a valid `RUNNING_LOCKED` state. A separate earlier reboot was
   `RUNNING_UNLOCKED` and was **not** counted as pre-unlock evidence.
+- After manual Wi-Fi disable/enable on Cruise2, a repeat request from isolated S2 through `--socks5-hostname 127.0.0.1:11010` returned Cloudflare trace and public IP `195.91.221.147` again. This confirms basic network recovery; it does not alone establish long-term background reliability or repeated Wi-Fi cycling.
 - No production Zebra, existing `aap2-test`, or original soak CSV was modified.
   Hardware trial uses the earlier pre-short-code A1 release APKs; it does not
   validate the later six-digit manual-typing enrollment changes.
@@ -69,7 +70,8 @@ All tests above exercise a disposable emulator and test signing certificate. The
 - [x] Same-certificate in-place APK update and pre-first-unlock FBE reboot on emulator.
 - [x] Legacy password/TOFU implementation removal and Android CI regression.
 - [x] Physical A1 enrollment and Direct Boot before first unlock on a **spare device** (Seuic Cruise2, Android 14/API 34, 2026-11-14).
-- [ ] Long-running foreground-service reliability, Wi-Fi loss/restore and OEM battery restrictions on the physical device.
+- [x] Basic physical Wi-Fi off/on recovery: after disabling and re-enabling Wi-Fi on Seuic Cruise2, SOCKS5 HTTPS again succeeded via the same S2 reverse port `11010` (2026-11-14).
+- [ ] Long-running foreground-service reliability and OEM battery restrictions under extended soak; repeated network-loss/reconnect cycles remain a separate gate.
 - [x] Update from one **release-signed** APK to another using the long-term key kept on `marduk`, preserving identity and verified host key, confirmed with real SSH and SOCKS5 HTTP on Seuic Cruise2, 2026-11-14. See `docs/P0_RELEASE_SIGNING.md`. The guarded local `scripts/aap2-spare-upgrade.sh` verifies both signatures and versions and requires an explicit spare-device ADB serial; it never uninstalls AAP2 or touches the working Zebra by default.
 
 **Do not install the A1 development APK on the working Zebra.** Hardware release-signing and pre-unlock tests passed on the spare Cruise2, but the newer six-digit enrollment UX, long-running reliability and Wi-Fi loss/restore remain separate gates. Leave PR #10 draft until those are accepted.
