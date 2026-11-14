@@ -1,0 +1,59 @@
+name: S2 Debian 13 isolated OpenSSH enrollment gate
+
+on:
+  pull_request:
+    branches: [develop, master]
+    paths:
+      - 'server/**'
+      - '.github/workflows/server-s2-debian13.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  debian13:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build a disposable Debian 13 systemd environment
+        run: |
+          cat >/tmp/aap2-s2.Dockerfile <<'EOF'
+          FROM debian:13
+          ENV DEBIAN_FRONTEND=noninteractive
+          RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+              systemd systemd-sysv dbus openssh-server openssh-client sshpass \
+              python3 curl procps passwd ca-certificates \
+              && apt-get clean && rm -rf /var/lib/apt/lists/*
+          STOPSIGNAL SIGRTMIN+3
+          CMD ["/sbin/init"]
+          EOF
+          docker build -t aap2-s2-debian13 -f /tmp/aap2-s2.Dockerfile /tmp
+      - name: Boot systemd and real SSH/PAM in disposable Debian 13
+        run: |
+          docker run -d --name aap2-s2-debian13 \
+            --privileged --cgroupns=host \
+            --tmpfs /run --tmpfs /run/lock \
+            -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
+            -v "$GITHUB_WORKSPACE":/workspace:ro \
+            -e GITHUB_ACTIONS=true -e AAP2_S1_DISPOSABLE=YES \
+            -e AAP2_S2_INTEGRATION=YES -e AAP2_S2_DEBIAN_GATES=YES \
+            aap2-s2-debian13
+          for i in $(seq 1 30); do
+            if docker exec aap2-s2-debian13 systemctl list-units --no-legend >/dev/null 2>&1; then
+              docker exec aap2-s2-debian13 cat /etc/os-release | grep '^VERSION_ID="13"'
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs aap2-s2-debian13
+          exit 1
+      - name: Full real Debian 13 PIN/SFTP/restricted -R/expiry/revoke and tamper tests
+        run: |
+          docker exec aap2-s2-debian13 /bin/sh -n /workspace/server/test-s1-live.sh
+          docker exec aap2-s2-debian13 /bin/sh /workspace/server/test-s1-live.sh
+      - name: Cleanup disposable environment
+        if: always()
+        run: |
+          docker rm -f aap2-s2-debian13 >/dev/null 2>&1 || true
