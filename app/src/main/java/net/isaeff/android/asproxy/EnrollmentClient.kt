@@ -80,7 +80,11 @@ internal class EnrollmentClient(private val context: Context) {
             // One SFTP session; status polling, never SSH exec or shell.
             // Timer is based on elapsed time to avoid the phone wall clock
             // differing from the SSH server's time.
-            val deadline = SystemClock.elapsedRealtime() + 600_000L
+            // Manual 6-digit invitations allow more time for human entry and
+            // administrator approval. Legacy invitations keep their 10-min cap.
+            val approvalWindowMs = if (user.matches(Regex("aap2e[0-9]{6}")))
+                1_200_000L else 600_000L
+            val deadline = SystemClock.elapsedRealtime() + approvalWindowMs
             emit(onProgress, "Waiting for administrator approval…")
             while (SystemClock.elapsedRealtime() < deadline) {
                 val status = parseStatus(readLimited(channel.get("status.json"), 2048))
