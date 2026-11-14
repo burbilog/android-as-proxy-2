@@ -611,8 +611,7 @@ def make_chroot(record):
 
 
 def generate_pin():
-    # Exactly 10 decimal digits, including zero prefixes; 4-4-2 formatting
-    # belongs ONLY in the invitation display, not on disk or in chpasswd.
+    # Exactly 10 decimal digits, including zero prefixes. Print as typed.
     return '{:010d}'.format(secrets.randbelow(10000000000))
 
 
@@ -735,7 +734,7 @@ def enroll(args):
     print('Setup username: {}'.format(usernames[GROUP_ENROLL]))
     if manual_code:
         print('Phone setup code (6 digits, no prefix): {}'.format(enrollment_id))
-    print('One-time PIN: {}-{}-{}'.format(pin[:4], pin[4:8], pin[8:]))
+    print('One-time PIN (type all 10 digits): {}'.format(pin))
     print('Enrollment ID: {}'.format(enrollment_id))
     for path in sorted(Path('/etc/ssh').glob('ssh_host_*_key.pub')):
         if path.is_file() and not path.is_symlink():
