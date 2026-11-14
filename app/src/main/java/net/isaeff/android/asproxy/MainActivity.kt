@@ -46,6 +46,11 @@ import net.isaeff.android.asproxy.ui.theme.AAPTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Older development APKs stored a plaintext SSH password and TOFU
+        // host key in this CE-only preference file. Neither is supported by
+        // AAP2 enrollment. Erase them on first normal UI start; never touch
+        // the device-protected verified profile or Android Keystore identity.
+        deleteSharedPreferences("aap_prefs")
         setContent { AAPTheme { MainScreen() } }
     }
 
