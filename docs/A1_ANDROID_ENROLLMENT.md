@@ -39,6 +39,43 @@ verifies the main-screen and Details labels and the visible Disconnect
 control by temporarily changing only the in-process UI state, without
 actually stopping the live SSH tunnel.
 
+## Physical reconnect UI acceptance — Seuic Cruise2, 20005 (2026-11-14)
+
+**PASS on spare hardware; no production Zebra or soak changes.** Local release build
+`20005` from A1 commit `147d211` was signed with the same long-term certificate
+as installed `20004`; `scripts/aap2-spare-upgrade.sh check` verified matching
+signing-certificate SHA256 and strictly increasing versionCode. Guarded in-place
+`adb install -r` on the existing enrolled Cruise2 (`484cf6e0`) succeeded,
+without clearing app data, replacing the Android Keystore identity, or
+re-enrolling.
+
+The disposable Debian S2 container `aap2-a1-test` had one approved Cruise2
+registration `840437` (permanent account `aap2p840437`, loopback SOCKS5
+`127.0.0.1:11010`). First, terminating that account's SSH session recovered
+very quickly: 2-second server polls stayed UP, but the Android log added
+`Keystore SSH reverse forward ready` at 23:06:20 local time. **This did not
+establish that the retry state was visible to a human.**
+
+To test the screen deliberately, the operator temporarily stopped S2 SSH
+service/socket and terminated the disposable account session, with restoration
+after a bounded 40-second outage. The physical phone visibly displayed
+**Reconnecting…** during the outage. In a repeat test, the operator pressed
+**Disconnect** while reconnecting. After the S2 SSH service returned, AAP2
+**remained disconnected**, as explicitly requested. Pressing **Connect**
+manually restored the tunnel, and the isolated S2 host successfully fetched
+Cloudflare HTTPS via the same server-side SOCKS5 listener.
+
+**Accepted:** real service-to-Compose retry indication, manual cancellation
+during retry, persistence of desired stopped state after connectivity returns,
+and manual recovery with working SOCKS5. CI build/unit
+[#43633853165](https://github.com/burbilog/android-as-proxy-2/actions/runs/43633853165)
+and full Android 11/real OpenSSH S2 E2E
+[#43633853171](https://github.com/burbilog/android-as-proxy-2/actions/runs/43633853171)
+also PASS on `147d211` (the E2E passed on the second attempt after the
+first attempt's emulator process disappeared). This does **not** close the
+separate long-term OEM/Doze Wi-Fi auto-reassociation gate. No forced Wi-Fi
+scan, wake lock, separate monitor, or log parsing was added.
+
 ## Connection identification and one-screen support diagnostics
 
 After activation, MainActivity always displays **Connection ID** (the suffix
@@ -364,6 +401,7 @@ operational Zebra and its independent soak.
 - [x] Physical A1 enrollment and Direct Boot before first unlock on a **spare device** (Seuic Cruise2, Android 14/API 34, 2026-11-14).
 - [x] Basic physical Wi-Fi off/on recovery: after disabling and re-enabling Wi-Fi on Seuic Cruise2, SOCKS5 HTTPS again succeeded via the same S2 reverse port `11010` (2026-11-14).
 - [x] Physical single 18-digit activation-code enrollment on Seuic Cruise2 with release-signed `20003`, administrative approval, and actual SOCKS5 HTTPS via Cloudflare (2026-11-14).
+- [x] Physical reconnect UI on release-signed `20005`: visible Reconnecting state, Disconnect while retrying remains stopped after SSH restoration, manual Connect returns working SOCKS5 (Seuic Cruise2; isolated S2, 2026-11-14).
 - [ ] Long-running foreground-service reliability and OEM battery restrictions under extended soak; repeated network-loss/reconnect cycles remain a separate gate.
 - [x] Update from one **release-signed** APK to another using the long-term key kept on `marduk`, preserving identity and verified host key, confirmed with real SSH and SOCKS5 HTTP on Seuic Cruise2, 2026-11-14. See `docs/P0_RELEASE_SIGNING.md`. The guarded local `scripts/aap2-spare-upgrade.sh` verifies both signatures and versions and requires an explicit spare-device ADB serial; it never uninstalls AAP2 or touches the working Zebra by default.
 
