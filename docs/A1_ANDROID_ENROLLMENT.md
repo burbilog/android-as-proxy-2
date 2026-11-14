@@ -86,6 +86,34 @@ ready yet, not that Direct Boot failed. Wait for `sys.boot_completed=1`
 before querying the activity service. Continue remaining recovery/
 background tests on the disposable Seuic, not on the working Zebra.
 
+## Physical Wi-Fi toggle under PIN-locked screen — Seuic 20004 (2026-11-14)
+
+On the physical Seuic Cruise2 after a successful pre-unlock reboot/Direct
+Boot test, ADB toggled Wi-Fi OFF and then ON while the Android primary user
+remained `RUNNING_LOCKED` and a lock-screen PIN was configured. With Wi-Fi
+off, the server-side reverse listener `127.0.0.1:11010` disappeared.
+Despite enabling Wi-Fi, the Android `cmd wifi status` later reported
+`Wifi is enabled` but `Wifi is not connected`, with no IPv4 Wi-Fi
+address or route; all server-side curl attempts failed with connection
+refused. The Wi-Fi dump showed `mAutoJoinEnabled=true` after the toggle,
+but no subsequent successful connection to saved SSID `O3`.
+
+At 16:47, after the user unlocked the physical device, Android reported
+`RUNNING_UNLOCKED` and connected to `O3` (`10.54.10.79`).
+Without restarting or re-enrolling AAP2, Cloudflare HTTPS again passed
+via the **same** reverse SOCKS5 listener `127.0.0.1:11010` and exit
+IP `195.91.221.147`. **Reconnect after Wi-Fi connectivity returned:
+PASS. Wi-Fi autojoin while locked after an explicit ADB toggle: NOT PASS.**
+
+Do not misattribute the missing server listener to an AAP2 failure:
+Android itself had no Wi-Fi connection. The observations do not distinguish
+whether the recovery was triggered by simply waking the screen, by
+entering the lock-screen PIN (credential unlock), or by additional time.
+A controlled follow-up should repeat the Wi-Fi toggle while locked, then
+wake the display **without entering PIN** and inspect `cmd wifi status`
+and the remote SOCKS listener before unlocking as a recovery action.
+Keep experiments on Seuic, not production Zebra.
+
 ## Failure recovery and migration
 
 - A terminated SFTP session after upload preserves the original host pin, permanent username/port and Keystore key alias in pending state, with **no PIN**. **Resume approved enrollment** makes **one** pinned permanent publickey SSH / reverse-port attempt using the **existing** identity. No password or automatic enrollment retry loop.
