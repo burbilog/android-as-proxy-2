@@ -45,6 +45,10 @@ class A1EnrollmentUiTest {
         composeRule.onNodeWithTag("a1-server").performTextInput("10.0.2.2:22224")
         composeRule.onNodeWithTag("a1-setup-user").performTextInput("aap2e123456abcdef")
         composeRule.onNodeWithTag("a1-pin").performTextInput("0000-0000-12")
+        composeRule.onNodeWithTag("a1-pin-toggle").assertTextEquals("Show")
+        composeRule.onNodeWithTag("a1-pin-toggle").performClick()
+        composeRule.onNodeWithTag("a1-pin-toggle").assertTextEquals("Hide")
+        composeRule.onNodeWithTag("a1-pin-toggle").performClick()
         composeRule.onNodeWithTag("a1-verified-activate").assertDoesNotExist()
         composeRule.onNodeWithTag("a1-probe").performScrollTo().performClick()
 
@@ -53,6 +57,8 @@ class A1EnrollmentUiTest {
                 .fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithTag("a1-fingerprint-full").assertTextEquals(expected)
+        composeRule.onNodeWithTag("a1-setup-code-confirmation")
+            .assertTextEquals("Setup code / username: aap2e123456abcdef")
         composeRule.onNodeWithTag("a1-fingerprint-grouped").assertTextEquals(
             EnrollmentInput.groupedFingerprint(expected)
         )
@@ -101,6 +107,8 @@ class A1EnrollmentUiTest {
         }
         composeRule.onNodeWithTag("a1-fingerprint-full")
             .assertTextEquals(independentlyVerified)
+        composeRule.onNodeWithTag("a1-setup-code-confirmation")
+            .assertTextEquals("Setup code / username: " + setupUser.removePrefix("aap2e"))
         composeRule.onNodeWithTag("a1-fingerprint-grouped")
             .assertTextEquals(EnrollmentInput.groupedFingerprint(independentlyVerified))
         assertFalse("Host key probe must not create a pending profile",
