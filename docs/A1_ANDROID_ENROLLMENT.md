@@ -77,8 +77,14 @@ and server revoke.
 
 The short-code user experience is therefore accepted in emulator CI.
 A physical *fresh enrollment* with the new user interface is a separate
-test; do not erase or overwrite the already validated Seuic profile,
-and do not touch Zebra or the soak monitor.
+test. **Seuic Cruise2 is a reusable, disposable A1 test phone**: after
+recording the successful 20000 → 20001 update / Direct Boot results,
+it is acceptable to revoke its S2 test account, uninstall AAP2,
+install a freshly release-signed higher-version APK, and enroll again.
+Uninstall deletes the previous AAP2 profile/Keystore identity by design;
+new enrollment must receive a new key and server account. A factory reset
+of the whole phone is not required. **Never** apply this procedure to
+Zebra, the separate `aap2-test` VM, or the soak monitor.
 
 ## Remaining acceptance gates
 
