@@ -90,6 +90,7 @@ internal data class ConnectionDetailsInfo(
 internal fun connectionStatusText(state: ConnectionState): String = when (state) {
     ConnectionState.CONNECTED -> "Connected"
     ConnectionState.CONNECTING -> "Connecting"
+    ConnectionState.RETRYING -> "Reconnecting"
     ConnectionState.DISCONNECTED -> "Disconnected"
     ConnectionState.DISCONNECTING -> "Disconnecting"
 }
