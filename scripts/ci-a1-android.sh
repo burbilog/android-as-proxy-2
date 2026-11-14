@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# GitHub Actions Android emulator -> adb reverse -> real disposable S2 sshd.
+# Disposable Android emulator -> host loopback OpenSSH S2; no adb reverse.
 # This modifies only an ephemeral CI runner, NEVER a real Android device.
 set -euo pipefail
 umask 077
@@ -18,10 +18,9 @@ STATE=/tmp/aap2-a1-ci
 sudo env GITHUB_ACTIONS=true AAP2_A1_DISPOSABLE=YES sh "$FIXTURE" "$SERVER" init
 adb install -r app/build/outputs/apk/debug/app-debug.apk >/dev/null
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk >/dev/null
-# Android emulator reaches the host loopback on 10.0.2.2, including after
-# reboot. Do NOT use adb reverse: its routes disappear across cold boots.
+# Android emulator 10.0.2.2 reaches runner host loopback across cold boots.
 [ "$(adb shell getprop ro.crypto.type | tr -d '\r')" = file ] ||
-  { echo 'A1 Direct Boot requires a file-based-encrypted emulator' >&2; exit 1; }
+  { echo 'A1 Direct Boot requires an FBE emulator' >&2; exit 1; }
 
 # Negative test uses an incorrect pinned host key and fake PIN;
 # must not create pending enrollment or alter the Direct Boot profile.
@@ -36,8 +35,6 @@ run_test() {
     return 1
   }
 }
-# UI test uses a fake setup credential: the real OpenSSH server is contacted
-# only for unauthenticated KEX. Fingerprint is supplied by host ssh-keygen.
 TRUSTED_SHA256=$(sudo ssh-keygen -lf /etc/ssh/ssh_host_ecdsa_key.pub -E sha256 | awk '{print $2}')
 UI_TEST=net.isaeff.android.asproxy.A1EnrollmentUiTest
 UI_OUTPUT=$(timeout 150 adb shell am instrument -w \
@@ -144,8 +141,7 @@ print(data['remote_port'])
 PY
 )
 
-# CI host -> loopback S2 SSH -R -> Android SOCKS5 ->
-# emulator 10.0.2.2 -> private CI HTTP server (no adb reverse).
+# CI host -> SSH -R -> Android SOCKS5 -> emulator 10.0.2.2 -> CI HTTP.
 SUCCESS=0
 for i in $(seq 1 30); do
   BODY=$(curl --noproxy '' --silent --show-error --max-time 3 \
@@ -161,7 +157,7 @@ done
   echo "No real HTTP over A1 SSH -R/SOCKS5 (port $PORT)" >&2
   echo 'Host direct HTTP:' >&2
   curl --noproxy '' -fsS --max-time 4 http://127.0.0.1:18887/ >&2 || true
-  echo 'Android adb reverse rules:' >&2
+  echo 'Android user state:' >&2
   adb shell am get-started-user-state 0 >&2 || true
   echo 'Remote SSH reverse listener:' >&2
   sudo ss -lntp | grep ":$PORT" >&2 || true
@@ -173,11 +169,9 @@ done
 }
 echo "A1 PASS: emulator PIN→SFTP→approve→Keystore→-R→SOCKS5→HTTP"
 
-# The same ephemeral debug signing certificate signs v20000 and v20001.
-# This is a genuine in-place Android package update, NOT uninstall/reinstall.
+# Test signed APK update WITHOUT ever uninstalling AAP2.
 adb shell -T "run-as $PKG sh -c 'touch files/a1-ci-release-test'"
 wait "$TEST_PID"
-
 cp app/build/outputs/apk/debug/app-debug.apk /tmp/aap2-a1-v20000.apk
 AAP2_VERSION_CODE=20001 AAP2_VERSION_NAME=2.0.1-ci-upgrade \
   ./gradlew --no-daemon :app:assembleDebug
@@ -190,20 +184,9 @@ CERT2=$("$SIGNER" verify --print-certs "$V2_APK" |
   sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
 [ -n "$CERT1" ] && [ "$CERT1" = "$CERT2" ] ||
   { echo 'A1 APK update certificate changed' >&2; exit 1; }
-adb install -r "$V2_APK" | grep -q '^Success
-sleep 2
-if curl --noproxy '' --silent --max-time 3 \
-   --proxy "socks5h://127.0.0.1:$PORT" \
-   http://127.0.0.1:18887/ >/dev/null 2>&1; then
-  echo 'A1 ERROR: transport survived server revoke' >&2
-  exit 1
-fi
-echo "A1 PASS: server revoke killed Android reverse SOCKS listener"
-
-# Both instrumentation sessions already finished; server revoke was last.
- ||
+adb install -r "$V2_APK" | grep -q '^Success$' ||
   { echo 'A1 in-place APK upgrade failed' >&2; exit 1; }
-echo 'A1 CI: installed versionCode 20001 over v20000 with same debug signing cert, no uninstall'
+echo 'A1 CI: in-place signed APK update v20000 to v20001, matching certificate'
 
 run_test a1_3_inPlaceSignedApkUpgradePreservesKeystoreAndPin &
 TEST_PID=$!
@@ -215,44 +198,37 @@ for i in $(seq 1 30); do
   if [ "$BODY" = "AAP2-A1-E2E-OK" ]; then SUCCESS=1; break; fi
   sleep 1
 done
-[ "$SUCCESS" = 1 ] || { echo 'A1 SSH/SOCKS failed after signed in-place APK update' >&2; exit 1; }
-echo 'A1 PASS: in-place signed APK update retained Keystore/host pin and live SSH SOCKS5'
+[ "$SUCCESS" = 1 ] || { echo 'A1 SOCKS5 failed after signed APK update' >&2; exit 1; }
+echo 'A1 PASS: signed in-place APK update kept Keystore, host pin, SSH and SOCKS5'
 adb shell -T "run-as $PKG sh -c 'touch files/a1-ci-release-upgrade-test'"
 wait "$TEST_PID"
 
-# True Direct Boot test: an Android 11 FBE emulator with lock PIN set,
-# genuinely rebooted without Android user 0 ever being unlocked by CI.
-# Do NOT restore adb reverse, call am start or launch instrumentation here.
+# A real FBE cold reboot: test no user unlock and no adb reverse repair.
 adb shell locksettings set-pin --user 0 2468
 adb reboot
 timeout 180 adb wait-for-device
 BOOTED=0
 for i in $(seq 1 120); do
-  if [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; then
-    BOOTED=1
-    break
-  fi
+  if [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; then BOOTED=1; break; fi
   sleep 1
 done
-[ "$BOOTED" = 1 ] || { echo 'Emulator did not complete cold boot' >&2; exit 1; }
+[ "$BOOTED" = 1 ] || { echo 'Android cold boot did not finish' >&2; exit 1; }
 USER_STATE=$(adb shell am get-started-user-state 0 | tr -d '\r')
 [ "$USER_STATE" = RUNNING_LOCKED ] ||
-  { echo "NOT a before-first-unlock test: user state=$USER_STATE" >&2; exit 1; }
-echo "A1 CI: reboot complete, user 0 remains $USER_STATE; checking real SOCKS5"
+  { echo "User not locked before first unlock: $USER_STATE" >&2; exit 1; }
 SUCCESS=0
 for i in $(seq 1 50); do
   USER_STATE=$(adb shell am get-started-user-state 0 | tr -d '\r')
   [ "$USER_STATE" = RUNNING_LOCKED ] ||
-    { echo "User was unlocked during Direct Boot test: $USER_STATE" >&2; exit 1; }
+    { echo "User unlocked during Direct Boot test: $USER_STATE" >&2; exit 1; }
   BODY=$(curl --noproxy '' --silent --max-time 4 \
     --proxy "socks5h://127.0.0.1:$PORT" \
     http://127.0.0.1:18887/ 2>/dev/null || true)
   if [ "$BODY" = "AAP2-A1-E2E-OK" ]; then SUCCESS=1; break; fi
   sleep 2
 done
-[ "$SUCCESS" = 1 ] ||
-  { echo 'A1 Direct Boot SOCKS5 unavailable before first unlock' >&2; exit 1; }
-echo 'A1 PASS: cold reboot → LOCKED_BOOT_COMPLETED → Keystore SSH -R → SOCKS5 HTTP while user locked'
+[ "$SUCCESS" = 1 ] || { echo 'A1 SOCKS5 failed before first unlock' >&2; exit 1; }
+echo 'A1 PASS: cold reboot pre-unlock Keystore SSH -R / SOCKS5 / HTTP'
 
 sudo env GITHUB_ACTIONS=true AAP2_A1_DISPOSABLE=YES sh "$FIXTURE" "$SERVER" revoke
 sleep 2
@@ -264,6 +240,4 @@ if curl --noproxy '' --silent --max-time 3 \
 fi
 echo "A1 PASS: server revoke killed Android reverse SOCKS listener"
 
-# Allow the instrumented process to finish only AFTER all network checks.
-adb shell -T "run-as $PKG sh -c 'touch files/a1-ci-release-test'"
-wait "$TEST_PID"
+# Both instrumentation sessions already finished; revoke tested last.
