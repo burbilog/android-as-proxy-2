@@ -6,6 +6,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
@@ -20,6 +21,7 @@
         <!-- https://stackoverflow.com/questions/77520968/why-am-i-encountering-the-error-starting-fgs-without-a-type-when-executing-the -->
         <service
             android:name=".SocksForegroundService"
+            android:directBootAware="true"
             android:exported="false"
             android:foregroundServiceType="specialUse"
             android:enabled="true"
@@ -34,8 +36,10 @@
         <!-- Start service automatically at boot if enabled -->
         <receiver
             android:name=".BootCompletedReceiver"
+            android:directBootAware="true"
             android:exported="false">
             <intent-filter>
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
@@ -49,6 +53,11 @@
                 <action android:name="android.intent.action.SHUTDOWN" />
             </intent-filter>
         </receiver>
+
+        <activity
+            android:name=".EnrollmentActivity"
+            android:exported="false"
+            android:label="Activate AAP2" />
 
         <activity
             android:name=".MainActivity"

@@ -1,0 +1,73 @@
+name: A1 disposable Android emulator / real S2 OpenSSH E2E
+
+on:
+  pull_request:
+    branches: [develop, master]
+    paths:
+      - 'app/**'
+      - 'scripts/ci-a1-*.sh'
+      - '.github/workflows/android-a1-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: a1-emulator-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  a1-real:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout A1 Android app
+        uses: actions/checkout@v4
+      - name: Checkout pinned S2 disposable SSH fixture (separate branch)
+        uses: actions/checkout@v4
+        with:
+          ref: 8a8de467b68e1d885d47d87cd922dd9290d9f89f
+          path: s2-fixture
+          persist-credentials: false
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          log-accepted-android-sdk-licenses: 'false'
+      - name: Android 35 build tools
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Configure Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Build A1 APK and Android instrumentation
+        run: |
+          chmod +x ./gradlew
+          sh -n scripts/ci-a1-server.sh
+          bash -n scripts/ci-a1-android.sh
+          ./gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Install disposable CI SSH/PAM prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq openssh-server openssh-client curl
+      - name: Enable KVM access for emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Real Android 11 Keystore / PIN / SFTP / SSH -R / SOCKS5 / HTTP / revoke
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          AAP2_A1_DISPOSABLE: YES
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          ram-size: 2048M
+          emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim
+          emulator-boot-timeout: 480
+          script: bash scripts/ci-a1-android.sh

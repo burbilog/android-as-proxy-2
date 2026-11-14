@@ -1,0 +1,82 @@
+package net.isaeff.android.asproxy
+
+/** Minimal, strict input parsing. No URL schemes, SSH usernames or paths in Server. */
+internal object EnrollmentInput {
+    data class Endpoint(val host: String, val port: Int)
+
+    fun endpoint(input: String): Endpoint {
+        val value = input.trim()
+        require(value.isNotEmpty() && value.length <= 300 &&
+            value.none { it.isWhitespace() || it == '/' || it == '@' || it == '\\' }) {
+            "Enter a host or host:port, not a URL"
+        }
+        val host: String
+        val port: Int
+        if (value.startsWith("[")) {
+            val end = value.indexOf(']')
+            require(end > 1) { "Invalid bracketed IPv6 address" }
+            host = value.substring(1, end)
+            val rest = value.substring(end + 1)
+            require(rest.isEmpty() || rest.startsWith(":") && rest.length > 1) {
+                "Invalid SSH port"
+            }
+            port = if (rest.isEmpty()) 22 else rest.substring(1).toIntOrNull() ?: -1
+        } else {
+            require(value.count { it == ':' } <= 1) { "Use [IPv6]:port for IPv6" }
+            host = value.substringBefore(':')
+            val rest = if (value.contains(':')) value.substringAfter(':') else ""
+            port = if (!value.contains(':')) 22 else rest.toIntOrNull() ?: -1
+        }
+        require(host.matches(Regex("[A-Za-z0-9._:-]{1,253}")) &&
+            host != "." && host != ".." && !host.startsWith("-")) {
+            "Invalid SSH hostname/address"
+        }
+        require(port in 1..65535) { "SSH port must be 1..65535" }
+        return Endpoint(host, port)
+    }
+
+    data class Activation(val setupUser: String, val pin: String)
+
+    /** 18 numeric digits: 6 account selector, 10 secret PIN, 2 MOD97 check digits. */
+    fun activationCode(value: String): Activation {
+        require(value.all { it in '0'..'9' || it == '-' || it == ' ' }) {
+            "Activation code: digits only"
+        }
+        val digits = value.filter { it in '0'..'9' }
+        require(digits.length == 18) { "Activation code must contain 18 digits" }
+        // Streaming remainder avoids converting 18 digits to signed Long and
+        // preserves all leading zeroes.
+        val remainder = digits.fold(0) { rem, c ->
+            (rem * 10 + (c - '0')) % 97
+        }
+        require(remainder == 1) { "Activation code typo: check the digits" }
+        return Activation("aap2e" + digits.substring(0, 6), digits.substring(6, 16))
+    }
+
+    fun formatActivationCode(digits: String): String =
+        digits.chunked(4).joinToString("-")
+
+    fun setupUser(value: String): String {
+        val code = value.trim()
+        // Human entry: only six numeric digits, with leading zeros intact.
+        // Keep full 12-hex S2 account names valid for older invitations.
+        if (code.matches(Regex("[0-9]{6}"))) return "aap2e" + code
+        require(code.matches(Regex("aap2e(?:[0-9]{6}|[0-9a-f]{12})"))) {
+            "Enter six-digit setup code (or complete legacy setup username)"
+        }
+        return code
+    }
+
+    fun pin(value: String): String {
+        val digits = value.replace("-", "").replace(" ", "")
+        require(digits.matches(Regex("[0-9]{10}"))) {
+            "One-time PIN must contain exactly ten digits"
+        }
+        return digits
+    }
+
+    fun groupedFingerprint(fingerprint: String): String {
+        require(fingerprint.startsWith("SHA256:"))
+        return "SHA256:" + fingerprint.removePrefix("SHA256:").chunked(4).joinToString("-")
+    }
+}
