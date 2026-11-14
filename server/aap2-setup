@@ -749,9 +749,9 @@ def enroll(args):
     # stable: disposable S1/S2 and Android E2E scripts extract these exact fields.
     # Do not print a second copy of the secret or hide SSH fingerprints.
     print()
-    print('AAP2: {} — ready ({} minutes)'.format(name, ttl // 60))
+    print('AAP2: {} - ready ({} minutes)'.format(name, ttl // 60))
     print()
-    print('PHONE — enter these fields:')
+    print('PHONE - enter these fields:')
     print('Server: {}'.format(args.server))
     if manual_code:
         print('Phone activation code (type digits only): {}'.format(
@@ -760,7 +760,7 @@ def enroll(args):
         print('Setup username: {}'.format(usernames[GROUP_ENROLL]))
         print('One-time PIN (type all 10 digits): {}'.format(pin))
     print()
-    print('VERIFY SERVER — match SHA256 fingerprint AND key type on phone:')
+    print('VERIFY SERVER - match SHA256 fingerprint AND key type on phone:')
     for path in sorted(Path('/etc/ssh').glob('ssh_host_*_key.pub')):
         if path.is_file() and not path.is_symlink():
             output = command_output(Checks(),
@@ -768,7 +768,7 @@ def enroll(args):
             if output:
                 print('  {}'.format(output.strip()))
     print()
-    print('ADMIN — after phone says "Waiting for administrator approval":')
+    print('ADMIN - after phone says "Waiting for administrator approval":')
     print('Enrollment ID: {}'.format(enrollment_id))
     if manual_code:
         print('Setup username: {}'.format(usernames[GROUP_ENROLL]))
