@@ -36,11 +36,14 @@ internal object EnrollmentInput {
     }
 
     fun setupUser(value: String): String {
-        val user = value.trim()
-        require(user.matches(Regex("aap2e[0-9a-f]{12}"))) {
-            "Invalid one-time setup username"
+        val code = value.trim()
+        // Human entry: only six numeric digits, with leading zeros intact.
+        // Keep full 12-hex S2 account names valid for older invitations.
+        if (code.matches(Regex("[0-9]{6}"))) return "aap2e" + code
+        require(code.matches(Regex("aap2e(?:[0-9]{6}|[0-9a-f]{12})"))) {
+            "Enter six-digit setup code (or complete legacy setup username)"
         }
-        return user
+        return code
     }
 
     fun pin(value: String): String {
