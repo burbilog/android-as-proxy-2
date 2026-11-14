@@ -100,7 +100,7 @@ private fun EnrollmentScreen(onCancel: () -> Unit, onEnrolled: () -> Unit) {
                 TextButton(onClick = onCancel) { Text("Close") }
             } else {
                 if (candidate == null) {
-                    Text("Enter the three values provided by your server administrator.")
+                    Text("Enter server address, six-digit setup code, and ten-digit PIN. Type PIN digits without the printed dashes.")
                     OutlinedTextField(
                         value = server, onValueChange = { server = it },
                         label = { Text("Server (host[:port])") },
