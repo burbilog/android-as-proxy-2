@@ -1284,13 +1284,44 @@ def revoke(args):
 
 
 
+def loopback_listeners():
+    """IPv4 127.0.0.1 TCP LISTEN ports from the kernel, without connecting.
+
+    SSH's reverse forwarding binds exactly 127.0.0.1:remote_port. We do not
+    parse SSH logs, inspect processes, or send any packet to a phone.
+    None means the Linux socket table was unavailable (status unknown).
+    """
+    ports = set()
+    try:
+        with open('/proc/net/tcp', encoding='ascii') as table:
+            next(table, None)  # kernel column headings
+            for line in table:
+                columns = line.split()
+                if len(columns) < 4 or columns[3] != '0A':
+                    continue
+                try:
+                    address, hex_port = columns[1].split(':', 1)
+                    if address == '0100007F':
+                        port = int(hex_port, 16)
+                        if PORT_LOW <= port <= PORT_HIGH:
+                            ports.add(port)
+                except ValueError:
+                    continue
+    except OSError:
+        return None
+    return ports
+
+
 def list_enrollments(args):
-    """Read stored enrollment state, not inferred online state or parsed logs."""
+    """Read saved enrollment state and passive live reverse-listener state."""
     require_root()
     with state_lock():
         records = list(all_records())
     if not getattr(args, 'all', False):
         records = [r for r in records if r['state'] != 'revoked']
+    # One passive kernel snapshot, never per-device SSH/network probes.
+    listeners = loopback_listeners() if any(
+        r['state'] == 'approved' for r in records) else set()
     if json_mode(args):
         devices = []
         for record in records:
@@ -1299,6 +1330,9 @@ def list_enrollments(args):
                    'listen_address': '127.0.0.1'}
             if record['state'] == 'active':
                 row['temporary_pin_expires_at'] = record['expires_at']
+            if record['state'] == 'approved':
+                row['listener_up'] = (None if listeners is None else
+                                      record['remote_port'] in listeners)
             devices.append(row)
         emit_json('list', True, devices=devices)
         return 0
@@ -1311,16 +1345,22 @@ def list_enrollments(args):
     for record in records:
         state = record['state']
         port_label = 'former SOCKS5' if state == 'revoked' else 'reserved SOCKS5'
-        print('  {} [{}]  {}  {} 127.0.0.1:{}'.format(
+        indicator = ''
+        if state == 'approved':
+            indicator = ' ({})'.format('UNKNOWN' if listeners is None else
+                                      'UP' if record['remote_port'] in listeners
+                                      else 'DOWN')
+        print('  {} [{}]  {}  {} 127.0.0.1:{}{}'.format(
             record['device_name'], record['id'], state.upper(),
-            port_label, record['remote_port']))
+            port_label, record['remote_port'], indicator))
         if state == 'active':
             expiry = datetime.datetime.fromtimestamp(
                 record['expires_at'], datetime.timezone.utc)
             print('    Temporary PIN expires: {} UTC'.format(
                 expiry.strftime('%Y-%m-%d %H:%M')))
     print()
-    print('APPROVED means the SSH key is authorized, NOT that the phone is online.')
+    print('APPROVED = authorized key; (UP)/(DOWN) = current loopback TCP listener,')
+    print('not proof of SOCKS5/Internet reachability or phone identity.')
     print('To approve: aap2-setup approve ID')
     print('To revoke:  aap2-setup revoke ID')
     return 0
