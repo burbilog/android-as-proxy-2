@@ -62,7 +62,7 @@ jobs:
           after=$(docker exec aap2-s2-debian13 sha256sum /etc/ssh/sshd_config | cut -d' ' -f1)
           test "$before" = "$after"
           docker exec aap2-s2-debian13 systemctl is-active --quiet aap2-cleanup.timer
-          docker exec aap2-s2-debian13 /usr/local/sbin/aap2-setup list --all --json > /dev/null
+          docker exec aap2-s2-debian13 /usr/local/sbin/aap2ctl list --all --json > /dev/null
       - name: Cleanup disposable environment
         if: always()
         run: |
