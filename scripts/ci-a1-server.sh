@@ -29,7 +29,7 @@ case "$ACTION" in
     install -d -o root -g root -m 0755 /var/lib/aap2 /var/lib/aap2/enroll
     install -d -o root -g root -m 0700 /var/lib/aap2/state
     install -d -o root -g root -m 0755 /etc/ssh/aap2-authorized-keys
-    install -o root -g root -m 0755 "$SERVER/aap2-setup" /usr/local/sbin/aap2-setup
+    install -o root -g root -m 0755 "$SERVER/aap2ctl" /usr/local/sbin/aap2ctl
     install -o root -g root -m 0644 "$SERVER/aap2-cleanup.service" /etc/systemd/system/
     install -o root -g root -m 0644 "$SERVER/aap2-cleanup.timer" /etc/systemd/system/
     systemctl daemon-reload
@@ -68,7 +68,7 @@ EOF
   invite)
     [ -d "$STATE" ] || { echo 'Fixture not initialized' >&2; exit 2; }
     # The PIN is retained ONLY in a root-only fixture file, never CI log.
-    aap2-setup enroll A1-CI --manual-code --server 127.0.0.1:22224 \
+    aap2ctl enroll A1-CI --manual-code --server 127.0.0.1:22224 \
       --client-addr 127.0.0.1 --client-host localhost \
       --server-addr 127.0.0.1 --server-port 22224 > "$INVITE"
     sed -n 's/^Enrollment ID: //p' "$INVITE" > "$IDENTIFIER"
@@ -92,7 +92,7 @@ record['expires_at'] = int(time.time()) - 1
 path.write_text(json.dumps(record, sort_keys=True, separators=(',', ':')) + '\n')
 path.chmod(0o600)
 PY
-    aap2-setup cleanup > "$STATE/expire-output"
+    aap2ctl cleanup > "$STATE/expire-output"
     grep -q "Expired temporary enrollment: $ID" "$STATE/expire-output"
     ! getent passwd "$(sed -n 's/^Setup username: //p' "$INVITE")" >/dev/null ||
       { echo 'Expired SFTP account still exists' >&2; exit 1; }
@@ -115,7 +115,7 @@ PY
       if [ -s "$FILE" ] &&
          [ "$(tail -c 1 "$FILE" | od -An -tu1 | tr -d ' \n')" = 10 ] &&
          ssh-keygen -lf "$FILE" -E sha256 >/dev/null 2>&1; then
-        printf 'y\n' | aap2-setup approve "$ID" > "$STATE/approve-output"
+        printf 'y\n' | aap2ctl approve "$ID" > "$STATE/approve-output"
         grep -q 'APPROVED:' "$STATE/approve-output"
         printf 'A1 ephemeral admin approved the immutable uploaded key\n'
         exit 0
@@ -129,13 +129,13 @@ PY
     ID=$(cat "$IDENTIFIER")
     # This action is called only after Android has recorded the interrupted
     # enrollment. The same uploaded public key is approved, without a new PIN.
-    printf 'y\n' | aap2-setup approve "$ID" > "$STATE/approve-output"
+    printf 'y\n' | aap2ctl approve "$ID" > "$STATE/approve-output"
     grep -q 'APPROVED:' "$STATE/approve-output"
     printf 'A1 ephemeral admin approved existing uploaded key after SFTP break\n'
     ;;
   revoke)
     ID=$(cat "$IDENTIFIER")
-    printf 'REVOKE\n' | aap2-setup revoke "$ID" > "$STATE/revoke-output"
+    printf 'REVOKE\n' | aap2ctl revoke "$ID" > "$STATE/revoke-output"
     grep -q 'REVOKED:' "$STATE/revoke-output"
     printf 'A1 ephemeral approved device revoked\n'
     ;;
