@@ -256,7 +256,7 @@ then explicit revocation and confirmation that the listener closes.
 The standalone S0/S1 regressions still run.
 
 \`\`\`sh
-python3 -m py_compile server/aap2-setup
+python3 -m py_compile server/aap2ctl
 python3 -m unittest discover -s server -p 'test_*.py' -v
 \`\`\`
 
