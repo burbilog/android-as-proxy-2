@@ -53,6 +53,16 @@ jobs:
         run: |
           docker exec aap2-s2-debian13 /bin/sh -n /workspace/server/test-s1-live.sh
           docker exec aap2-s2-debian13 /bin/sh /workspace/server/test-s1-live.sh
+      - name: Installer is repeatable and leaves SSH config untouched
+        run: |
+          docker exec aap2-s2-debian13 /bin/sh -n /workspace/server/install.sh
+          before=$(docker exec aap2-s2-debian13 sha256sum /etc/ssh/sshd_config | cut -d' ' -f1)
+          docker exec aap2-s2-debian13 /bin/sh /workspace/server/install.sh
+          docker exec aap2-s2-debian13 /bin/sh /workspace/server/install.sh
+          after=$(docker exec aap2-s2-debian13 sha256sum /etc/ssh/sshd_config | cut -d' ' -f1)
+          test "$before" = "$after"
+          docker exec aap2-s2-debian13 systemctl is-active --quiet aap2-cleanup.timer
+          docker exec aap2-s2-debian13 /usr/local/sbin/aap2-setup list --all --json > /dev/null
       - name: Cleanup disposable environment
         if: always()
         run: |
