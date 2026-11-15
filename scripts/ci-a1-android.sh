@@ -281,6 +281,25 @@ adb install -r "$V2_APK" | grep -q '^Success$' ||
   { echo 'A1 in-place APK upgrade failed' >&2; exit 1; }
 echo 'A1 CI: in-place signed APK update v20000 to v20001, matching certificate'
 
+# The app is killed by package replacement. No instrumentation or UI must
+# start the service: MY_PACKAGE_REPLACED must restore the desired tunnel.
+# Check actual TCP/SOCKS5/HTTP *before* the test runner launches any app code.
+SUCCESS=0
+for i in $(seq 1 35); do
+  BODY=$(curl --noproxy '' --silent --max-time 3 \
+    --proxy "socks5h://127.0.0.1:$PORT" \
+    http://10.0.2.2:18887/ 2>/dev/null || true)
+  if [ "$BODY" = "AAP2-A1-E2E-OK" ]; then SUCCESS=1; break; fi
+  sleep 1
+done
+[ "$SUCCESS" = 1 ] || {
+  echo 'A1 UPDATE AUTO-RESTORE FAILED: no SOCKS5 before launching Activity or instrumentation' >&2
+  adb shell dumpsys package "$PKG" | grep -E 'versionCode|MY_PACKAGE_REPLACED' >&2 || true
+  sudo ss -lntp | grep ":$PORT" >&2 || true
+  exit 1
+}
+echo 'A1 PASS: MY_PACKAGE_REPLACED automatically restored live SOCKS5 after install -r'
+
 run_test a1_3_inPlaceSignedApkUpgradePreservesKeystoreAndPin &
 TEST_PID=$!
 SUCCESS=0
