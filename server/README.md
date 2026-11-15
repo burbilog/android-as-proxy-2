@@ -20,8 +20,8 @@ the one-minute cleanup systemd timer. Repeat runs preserve device state.
 It **never** edits/reloads `sshd_config`, PAM or the firewall. The only
 manual SSH integration is to review and append the provided
 `sshd-aap2-match.conf` template at the correct position, check the
-effective policy and confirm independent administrator access before any
-manual sshd reload. Follow [INSTALL.md](INSTALL.md) for the short procedure.
+effective policy and confirm independent administrator access after a
+manual sshd reload, while keeping the original SSH session open. Follow [INSTALL.md](INSTALL.md) for the short procedure.
 
 ## Reference
 
