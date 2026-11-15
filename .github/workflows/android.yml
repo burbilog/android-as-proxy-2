@@ -44,6 +44,13 @@ jobs:
             sh -n "$s"
           done
 
+      - name: Check local maintainer Makefile without signing or ADB
+        run: |
+          make --no-print-directory -n build VERSION_CODE=20011
+          make --no-print-directory -n install Z=ci-device
+          make --no-print-directory -n curl S2=example.net PORT=11011
+          make --no-print-directory -n check
+
       - name: Build and unit tests
         run: |
           chmod +x ./gradlew
