@@ -49,7 +49,7 @@ An ephemeral integration run does **not** prove that another Debian server
 has identical PAM policy, an unmodified running SSH daemon, or identical
 systemd configuration. On production, the admin still reviews Match/Include
 order, applies sshd config **manually**, tests daemon reload and real
-connections independently. \`aap2-setup\` itself never alters system
+connections independently. \`aap2ctl\` itself never alters system
 sshd config or restarts/reloads sshd.
 
 This gate also does not provide the Android enrollment UI, the pre-PIN
