@@ -95,7 +95,7 @@ HTTP_PID=$!
 
 cleanup() {
   # Release either instrumentation process on earlier failure.
-  adb shell -T "run-as $PKG sh -c 'touch files/a1-ci-ui-verified-go; touch files/a1-ci-ui-release; touch files/a1-ci-release-test; touch files/a1-ci-release-upgrade-test'" \
+  adb shell -T "run-as $PKG sh -c 'touch files/a1-ci-ui-verified-go; touch files/a1-ci-ui-release; touch files/a1-ci-release-test; touch files/a1-ci-release-upgrade-test; touch files/a1-ci-release-disconnect-test'" \
     >/dev/null 2>&1 || true
   if [ -n "${WATCH_PID:-}" ]; then kill "$WATCH_PID" >/dev/null 2>&1 || true; fi
   kill "$HTTP_PID" >/dev/null 2>&1 || true
@@ -318,7 +318,8 @@ wait "$TEST_PID"
 # A fake direct receiver callback exercises the negative guard: a manual
 # Disconnect must survive any later MY_PACKAGE_REPLACED broadcast.
 # This test explicitly reconnects at the end for the subsequent boot gate.
-run_test a1_3b_packageReplaceNeverOverridesExplicitDisconnect
+run_test a1_3b_packageReplaceNeverOverridesExplicitDisconnect &
+TEST_PID=$!
 SUCCESS=0
 for i in $(seq 1 25); do
   BODY=$(curl --noproxy '' --silent --max-time 3 \
@@ -328,6 +329,8 @@ for i in $(seq 1 25); do
   sleep 1
 done
 [ "$SUCCESS" = 1 ] || { echo 'A1 manually reconnected SOCKS5 not usable' >&2; exit 1; }
+adb shell -T "run-as $PKG touch files/a1-ci-release-disconnect-test"
+wait "$TEST_PID"
 echo 'A1 PASS: explicit Disconnect suppresses update auto-restart; explicit Connect resumes'
 
 # A real FBE cold reboot: test no user unlock and no adb reverse repair.
