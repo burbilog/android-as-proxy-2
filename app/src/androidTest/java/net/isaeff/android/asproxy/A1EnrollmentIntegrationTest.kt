@@ -348,6 +348,9 @@ class A1EnrollmentIntegrationTest {
         assertTrue(DirectBootTunnelProfile.wantsConnection(context))
         Log.i("AAP2-A1", "A1_MANUAL_RECONNECT_AFTER_DISCONNECT_OK")
 
+        val ready = File(context.filesDir, "a1-ci-manual-reconnect-ready")
+        ready.delete()
+        check(ready.createNewFile())
         // Do not finish instrumentation until the CI host has tested real
         // HTTP over the restarted -R/SOCKS5. Finishing instrumentation may
         // terminate its target process and cause a false network failure.
