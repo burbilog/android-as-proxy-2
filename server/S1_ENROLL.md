@@ -52,7 +52,8 @@ No network daemon, no \`pip\`, no custom auth protocol, no log parsing.
 ## Files and fixed paths
 
 \`\`\`text
-/usr/local/sbin/aap2-setup                  root:root 0755
+/usr/local/sbin/aap2-setup                root:root 0755
+/usr/local/sbin/aap2ctl                    symlink -> aap2-setup
 /var/lib/aap2/                             root:root 0755
 /var/lib/aap2/state/                       root:root 0700
 /var/lib/aap2/state/.lock                  root:root 0600
@@ -104,6 +105,7 @@ install -d -o root -g root -m 0755 /var/lib/aap2 /var/lib/aap2/enroll
 install -d -o root -g root -m 0700 /var/lib/aap2/state
 install -d -o root -g root -m 0755 /etc/ssh/aap2-authorized-keys
 install -o root -g root -m 0755 server/aap2-setup /usr/local/sbin/aap2-setup
+ln -s /usr/local/sbin/aap2-setup /usr/local/sbin/aap2ctl
 install -o root -g root -m 0644 server/aap2-cleanup.service /etc/systemd/system/
 install -o root -g root -m 0644 server/aap2-cleanup.timer /etc/systemd/system/
 systemctl daemon-reload
@@ -113,12 +115,12 @@ systemctl enable --now aap2-cleanup.timer
 **Only after** manual SSH Match integration and testing:
 
 \`\`\`sh
-aap2-setup print-config
-aap2-setup doctor
-aap2-setup enroll TC21-test --server ssh.example.net:22222
-aap2-setup list
-aap2-setup list --all
-aap2-setup cleanup
+aap2ctl print-config
+aap2ctl doctor
+aap2ctl enroll TC21-test --server ssh.example.net:22222
+aap2ctl list
+aap2ctl list --all
+aap2ctl cleanup
 \`\`\`
 
 For simple enrollment, the SSH Match security check uses sample
@@ -128,12 +130,12 @@ inputs, NOT actual connection guarantees. The CLI warns about sample
 source and local addresses; strict role-specific SSH Match checks still
 run before the PIN is activated.
 
-Use \`aap2-setup enroll --help-all\` for full probe options. If your
+Use \`aap2ctl enroll --help-all\` for full probe options. If your
 sshd policy depends on \`Match Address\`, \`Match Host\`,
 \`Match LocalAddress\` or \`Match LocalPort\`, supply real context:
 
 \`\`\`sh
-aap2-setup enroll TC21-test --server ssh.example.net:22222 \
+aap2ctl enroll TC21-test --server ssh.example.net:22222 \
   --client-addr 192.0.2.10 --client-host phone.example.net \
   --server-addr 192.0.2.20 --server-port 22
 \`\`\`
