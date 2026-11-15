@@ -36,6 +36,9 @@ class A1ConnectionDetailsUiTest {
 
         composeRule.onNodeWithTag("a1-connection-id")
             .assertTextEquals("Connection ID: $id")
+        // Never click Update in CI: the latest release may not be published,
+        // and the test must not trigger Android's real package installer.
+        composeRule.onNodeWithTag("a1-update").assertIsDisplayed()
         composeRule.onNodeWithTag("a1-open-details").assertIsDisplayed()
             .performClick()
 
