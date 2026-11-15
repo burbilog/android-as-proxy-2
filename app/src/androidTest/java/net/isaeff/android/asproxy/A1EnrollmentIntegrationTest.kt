@@ -347,6 +347,16 @@ class A1EnrollmentIntegrationTest {
         }
         assertTrue(DirectBootTunnelProfile.wantsConnection(context))
         Log.i("AAP2-A1", "A1_MANUAL_RECONNECT_AFTER_DISCONNECT_OK")
+
+        // Do not finish instrumentation until the CI host has tested real
+        // HTTP over the restarted -R/SOCKS5. Finishing instrumentation may
+        // terminate its target process and cause a false network failure.
+        val release = File(context.filesDir, "a1-ci-release-disconnect-test")
+        release.delete()
+        withTimeout(90_000) {
+            while (!release.exists()) delay(250)
+        }
+        release.delete()
     }
 
     @Test
