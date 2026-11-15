@@ -75,6 +75,7 @@ printf '\nAAP2 server files and cleanup timer installed. Existing device state p
 printf 'SSH configuration has NOT been changed or reloaded.\n'
 printf 'NEXT: review and manually append the two Match blocks from:\n'
 printf '  %s/sshd-aap2-match.conf\n' "$src_dir"
-printf 'Run /usr/sbin/sshd -t, inspect sshd -T -C, then reload ssh.service\n'
-printf 'ONLY after confirming a second admin SSH session still works.\n'
+printf 'Run /usr/sbin/sshd -t and inspect effective sshd -T -C policy.\n'
+printf 'Keep this SSH session open; manually reload ssh.service, then test\n'
+printf 'a NEW admin SSH login before closing the first session.\n'
 printf 'Then run: /usr/local/sbin/aap2-setup doctor\n'
