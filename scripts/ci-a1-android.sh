@@ -315,6 +315,21 @@ echo 'A1 PASS: signed in-place APK update kept Keystore, host pin, SSH and SOCKS
 adb shell -T "run-as $PKG sh -c 'touch files/a1-ci-release-upgrade-test'"
 wait "$TEST_PID"
 
+# A fake direct receiver callback exercises the negative guard: a manual
+# Disconnect must survive any later MY_PACKAGE_REPLACED broadcast.
+# This test explicitly reconnects at the end for the subsequent boot gate.
+run_test a1_3b_packageReplaceNeverOverridesExplicitDisconnect
+SUCCESS=0
+for i in $(seq 1 25); do
+  BODY=$(curl --noproxy '' --silent --max-time 3 \
+    --proxy "socks5h://127.0.0.1:$PORT" \
+    http://10.0.2.2:18887/ 2>/dev/null || true)
+  if [ "$BODY" = "AAP2-A1-E2E-OK" ]; then SUCCESS=1; break; fi
+  sleep 1
+done
+[ "$SUCCESS" = 1 ] || { echo 'A1 manually reconnected SOCKS5 not usable' >&2; exit 1; }
+echo 'A1 PASS: explicit Disconnect suppresses update auto-restart; explicit Connect resumes'
+
 # A real FBE cold reboot: test no user unlock and no adb reverse repair.
 adb shell locksettings set-pin --user 0 2468
 adb reboot
