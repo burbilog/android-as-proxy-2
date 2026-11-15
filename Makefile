@@ -5,6 +5,7 @@ SHELL := /bin/sh
 .DEFAULT_GOAL := help
 
 RELEASE_DIR ?= $(HOME)/aap2-releases
+VERSION ?=
 Z ?=
 S2 ?=
 PORT ?=
@@ -15,13 +16,17 @@ PORT ?=
 LATEST_CODE = $(shell find "$(RELEASE_DIR)" -maxdepth 1 -type f -name 'aap2-[0-9]*.apk' -printf '%f\n' 2>/dev/null | sed -n 's/^aap2-\([0-9][0-9]*\)\.apk$$/\1/p' | sort -n | tail -1)
 VERSION_CODE ?= $(shell expr $(or $(LATEST_CODE),20010) + 1)
 VERSION_NAME ?= 2.0.0-local-$(VERSION_CODE)
+CODE ?= $(LATEST_CODE)
 APK = $(RELEASE_DIR)/aap2-$(LATEST_CODE).apk
 
-.PHONY: help sync build install curl status test check
+.PHONY: help sync build install curl status test check release publish verify-release
 
 help:
 	@printf '%s\n' \
 	  'make build    Pull current branch, sign next APK and archive it' \
+	  'make release VERSION=2.0.0   Build + check signed stable APK (no upload)' \
+	  'make publish VERSION=2.0.0   Publish archived APK + SHA256 on GitHub' \
+	  'make verify-release         Compare GitHub latest APK with local archive' \
 	  'make install  adb install -r newest archived APK (no data wipe)' \
 	  'make curl     Test S2 reverse SOCKS5 via Cloudflare trace' \
 	  'make status   Show S2 reverse SOCKS5 listener' \
@@ -84,3 +89,93 @@ check:
 
 test:
 	@./gradlew --no-daemon :app:testDebugUnitTest
+
+# Publishing is deliberately separate from building. Only a clean,
+# up-to-date master may produce a public stable version.
+release:
+	@set -eu; \
+	  version="$(VERSION)"; \
+	  printf '%s\\n' "$$version" | grep -Eq '^[0-9]+\\.[0-9]+\\.[0-9]+$$' || \
+	    { echo 'Use: make release VERSION=2.0.0 [VERSION_CODE=20012]' >&2; exit 1; }; \
+	  [ "$$(git branch --show-current)" = master ] || \
+	    { echo 'Release requires master branch' >&2; exit 1; }; \
+	  [ -z "$$(git status --porcelain --untracked-files=no)" ] || \
+	    { echo 'Commit tracked changes before release' >&2; exit 1; }; \
+	  git fetch origin master; \
+	  head=$$(git rev-parse HEAD); \
+	  [ "$$head" = "$$(git rev-parse origin/master)" ] || \
+	    { echo 'Local master differs from origin/master' >&2; exit 1; }; \
+	  code="$(VERSION_CODE)"; prev="$(LATEST_CODE)"; \
+	  case "$$code" in ''|*[!0-9]*) echo 'Invalid VERSION_CODE' >&2; exit 1;; esac; \
+	  if [ -n "$$prev" ] && [ "$$code" -le "$$prev" ]; then \
+	    echo "VERSION_CODE must exceed archived $$prev" >&2; exit 1; \
+	  fi; \
+	  $(MAKE) --no-print-directory build VERSION_CODE="$$code" VERSION_NAME="$$version"; \
+	  if [ -n "$$prev" ]; then \
+	    sh scripts/aap2-spare-upgrade.sh check \
+	      "$(RELEASE_DIR)/aap2-$$prev.apk" "$(RELEASE_DIR)/aap2-$$code.apk"; \
+	  else \
+	    echo 'No previous archived APK: signer continuity cannot be checked'; \
+	  fi; \
+	  printf '%s\\n' "$$head" > "$(RELEASE_DIR)/aap2-$$code.commit"; \
+	  echo "Release candidate ready: $(RELEASE_DIR)/aap2-$$code.apk (commit $$head)"; \
+	  echo "After review: make publish VERSION=$$version"
+
+publish:
+	@set -eu; \
+	  version="$(VERSION)"; code="$(CODE)"; \
+	  printf '%s\\n' "$$version" | grep -Eq '^[0-9]+\\.[0-9]+\\.[0-9]+$$' || \
+	    { echo 'Use: make publish VERSION=2.0.0 [CODE=20012]' >&2; exit 1; }; \
+	  case "$$code" in ''|*[!0-9]*) echo 'No numbered APK to publish' >&2; exit 1;; esac; \
+	  [ "$$(git branch --show-current)" = master ] || \
+	    { echo 'Publish requires master branch' >&2; exit 1; }; \
+	  [ -z "$$(git status --porcelain --untracked-files=no)" ] || \
+	    { echo 'Commit tracked changes before publication' >&2; exit 1; }; \
+	  git fetch origin master; \
+	  head=$$(git rev-parse HEAD); \
+	  [ "$$head" = "$$(git rev-parse origin/master)" ] || \
+	    { echo 'Local master differs from origin/master' >&2; exit 1; }; \
+	  apk="$(RELEASE_DIR)/aap2-$$code.apk"; \
+	  [ -s "$$apk" ] || { echo "Missing $$apk" >&2; exit 1; }; \
+	  [ -f "$(RELEASE_DIR)/aap2-$$code.commit" ] && \
+	  [ "$$(cat "$(RELEASE_DIR)/aap2-$$code.commit")" = "$$head" ] || \
+	    { echo 'APK was not prepared from this master: run make release' >&2; exit 1; }; \
+	  notes="docs/RELEASE_NOTES_$$version.md"; \
+	  [ -s "$$notes" ] || { echo "Missing $$notes" >&2; exit 1; }; \
+	  sdk="$${ANDROID_HOME:-$${ANDROID_SDK_ROOT:-$(HOME)/Android/Sdk}}"; \
+	  tools="$${AAP2_BUILD_TOOLS:-$$sdk/build-tools/35.0.0}"; \
+	  "$$tools/apksigner" verify "$$apk"; \
+	  meta=$$("$$tools/aapt" dump badging "$$apk"); \
+	  line=$$(printf '%s\\n' "$$meta" | grep '^package:' | head -n 1); \
+	  printf '%s\\n' "$$line" | grep -F "name='net.isaeff.android.asproxy2'" >/dev/null; \
+	  printf '%s\\n' "$$line" | grep -F "versionCode='$$code'" >/dev/null; \
+	  printf '%s\\n' "$$line" | grep -F "versionName='$$version'" >/dev/null || \
+	    { echo 'APK version does not match requested release' >&2; exit 1; }; \
+	  ! printf '%s\\n' "$$meta" | grep -q '^application-debuggable' || \
+	    { echo 'Refusing debuggable APK' >&2; exit 1; }; \
+	  command -v gh >/dev/null || { echo 'Install GitHub CLI (gh)' >&2; exit 1; }; \
+	  gh auth status >/dev/null; \
+	  ! git ls-remote --exit-code --tags origin "refs/tags/v$$version" >/dev/null 2>&1 || \
+	    { echo "Tag v$$version already exists" >&2; exit 1; }; \
+	  tmp=$$(mktemp -d "$(RELEASE_DIR)/.aap2-publish.XXXXXX"); \
+	  trap 'rm -f -- "$$tmp/aap2.apk" "$$tmp/SHA256SUMS"; rmdir -- "$$tmp"' EXIT; \
+	  cp -- "$$apk" "$$tmp/aap2.apk"; \
+	  (cd "$$tmp" && sha256sum aap2.apk > SHA256SUMS); \
+	  gh release create "v$$version" "$$tmp/aap2.apk" "$$tmp/SHA256SUMS" \
+	    --repo burbilog/android-as-proxy-2 --target "$$head" \
+	    --title "AAP2 v$$version" --notes-file "$$notes" --latest; \
+	  echo 'Run make verify-release to check GitHub download'
+
+verify-release:
+	@set -eu; \
+	  code="$(CODE)"; \
+	  case "$$code" in ''|*[!0-9]*) echo 'No numbered APK to verify' >&2; exit 1;; esac; \
+	  apk="$(RELEASE_DIR)/aap2-$$code.apk"; \
+	  [ -s "$$apk" ] || { echo "Missing $$apk" >&2; exit 1; }; \
+	  tmp=$$(mktemp); \
+	  trap 'rm -f -- "$$tmp"' EXIT; \
+	  curl -fsSL --retry 2 --max-time 120 -o "$$tmp" \
+	    https://github.com/burbilog/android-as-proxy-2/releases/latest/download/aap2.apk; \
+	  cmp -- "$$apk" "$$tmp" || { echo 'Published APK differs from local archive' >&2; exit 1; }; \
+	  sha256sum "$$tmp"; \
+	  echo 'RELEASE_OK: latest GitHub APK matches local signed archive'
