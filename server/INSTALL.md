@@ -23,7 +23,7 @@ sh /opt/aap2-s2/server/install.sh
 ```
 
 The script creates the two dedicated groups and root-owned directories,
-installs `/usr/local/sbin/aap2-setup`, the cleanup systemd service/timer,
+installs `/usr/local/sbin/aap2-setup` (the Python implementation), adds the preferred `/usr/local/sbin/aap2ctl` symlink, installs the cleanup systemd service/timer,
 enables the timer, and verifies that it is active. It requires an existing
 valid OpenSSH installation; it deliberately does not run apt, rewrite SSH
 configuration, modify PAM or the firewall, or reload/restart SSH.
@@ -32,7 +32,10 @@ Running it again is supported: it re-installs the CLI and units, preserves
 `/var/lib/aap2/state/`, approved accounts, uploaded keys and registrations,
 and leaves SSH daemon configuration untouched. Suspicious non-root-owned
 directories, unusual target files or symlinks cause refusal. The script
-does not try to repair ambiguous existing AAP2 state.
+does not try to repair ambiguous existing AAP2 state. Existing scripts using
+`aap2-setup` continue to work through the same Python file; `aap2ctl` is
+preferred for new commands. The installer refuses to replace any unrelated
+existing `/usr/local/sbin/aap2ctl` file or symlink.
 
 ## Only manual system step: integrate the SSH Match policy
 
@@ -49,7 +52,7 @@ AllowUsers/AllowGroups/AuthenticationMethods, then validate the result:
 
 ```sh
 /usr/sbin/sshd -t
-/usr/local/sbin/aap2-setup doctor
+/usr/local/sbin/aap2ctl doctor
 ```
 
 `doctor` is read-only. Exit code 2 (PENDING) is expected before real
@@ -65,9 +68,9 @@ SSH configuration and belongs exclusively to ephemeral CI containers.
 ## Enroll a phone (after SSH policy passes)
 
 ```sh
-aap2-setup enroll MyPhone --manual-code --server ssh.example.org:22
-aap2-setup approve ID
-aap2-setup list
+aap2ctl enroll MyPhone --manual-code --server ssh.example.org:22
+aap2ctl approve ID
+aap2ctl list
 ```
 
 Only create the invitation when the phone operator is available:
@@ -89,5 +92,5 @@ sh server/install.sh
 ```
 
 This updates the server CLI and timer units but never touches SSH policies
-or enrollment state. Review changes and run `aap2-setup doctor` after an
+or enrollment state. Review changes and run `aap2ctl doctor` after an
 update; do not merge incompatible development branches on a production VM.
