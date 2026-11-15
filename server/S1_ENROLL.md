@@ -5,7 +5,7 @@ Android SFTP upload, admin \`Approve\`, authorized-key publication and
 permanent \`-R\` activation belong to **S2**. Do not give an S1-B PIN to a
 remote user yet: no approval path is available in this milestone.
 
-One executable \`server/aap2-setup\`: Python >=3.9, standard library only.
+One executable \`server/aap2ctl\`: Python >=3.9, standard library only.
 No network daemon, no \`pip\`, no custom auth protocol, no log parsing.
 
 ## Safety contract
@@ -52,8 +52,7 @@ No network daemon, no \`pip\`, no custom auth protocol, no log parsing.
 ## Files and fixed paths
 
 \`\`\`text
-/usr/local/sbin/aap2-setup                root:root 0755
-/usr/local/sbin/aap2ctl                    symlink -> aap2-setup
+/usr/local/sbin/aap2ctl                root:root 0755
 /var/lib/aap2/                             root:root 0755
 /var/lib/aap2/state/                       root:root 0700
 /var/lib/aap2/state/.lock                  root:root 0600
@@ -104,8 +103,7 @@ groupadd aap2-proxy
 install -d -o root -g root -m 0755 /var/lib/aap2 /var/lib/aap2/enroll
 install -d -o root -g root -m 0700 /var/lib/aap2/state
 install -d -o root -g root -m 0755 /etc/ssh/aap2-authorized-keys
-install -o root -g root -m 0755 server/aap2-setup /usr/local/sbin/aap2-setup
-ln -s /usr/local/sbin/aap2-setup /usr/local/sbin/aap2ctl
+install -o root -g root -m 0755 server/aap2ctl /usr/local/sbin/aap2ctl
 install -o root -g root -m 0644 server/aap2-cleanup.service /etc/systemd/system/
 install -o root -g root -m 0644 server/aap2-cleanup.timer /etc/systemd/system/
 systemctl daemon-reload
@@ -184,7 +182,7 @@ immediately before each destructive operation.
 ## Tests
 
 \`\`\`sh
-python3 -m py_compile server/aap2-setup
+python3 -m py_compile server/aap2ctl
 python3 -m unittest discover -s server -p 'test_*.py' -v
 \`\`\`
 
