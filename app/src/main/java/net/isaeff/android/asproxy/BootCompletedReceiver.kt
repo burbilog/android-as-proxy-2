@@ -7,14 +7,16 @@ import android.os.Build
 import android.util.Log
 
 /**
- * LOCKED_BOOT_COMPLETED may run before CE storage is mounted.
- * Only the explicitly provisioned device-protected P-256 SSH profile may start then.
+ * LOCKED_BOOT_COMPLETED and MY_PACKAGE_REPLACED may arrive without CE storage.
+ * Restore only a previously enabled, independently pinned device-protected
+ * SSH profile. An explicit Disconnect must survive both reboot and APK update.
  */
 class BootCompletedReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action
         if (action != Intent.ACTION_LOCKED_BOOT_COMPLETED &&
-            action != Intent.ACTION_BOOT_COMPLETED) return
+            action != Intent.ACTION_BOOT_COMPLETED &&
+            action != Intent.ACTION_MY_PACKAGE_REPLACED) return
 
         try {
             // There is no legacy password-mode auto-connect fallback in AAP2.
@@ -23,16 +25,18 @@ class BootCompletedReceiver : BroadcastReceiver() {
             if (!DirectBootTunnelProfile.wantsConnection(context)) return
 
             val serviceIntent = Intent(context, SocksForegroundService::class.java).apply {
-                this.action = SocksForegroundService.ACTION_BOOT
+                this.action = if (action == Intent.ACTION_MY_PACKAGE_REPLACED)
+                    SocksForegroundService.ACTION_RESTORE
+                else SocksForegroundService.ACTION_BOOT
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(serviceIntent)
             } else {
                 context.startService(serviceIntent)
             }
-            Log.i("AAP2-P0", "BOOT_RECEIVER_START " + action)
+            Log.i("AAP2-P0", "SYSTEM_RESTORE_START " + action)
         } catch (e: Exception) {
-            Log.e("AAP2-P0", "BOOT_RECEIVER_FAILED " +
+            Log.e("AAP2-P0", "SYSTEM_RESTORE_FAILED " +
                 e.javaClass.simpleName + ": " + e.message)
         }
     }
