@@ -8,5 +8,5 @@ Type=oneshot
 User=root
 Group=root
 UMask=0077
-ExecStart=/usr/local/sbin/aap2-setup cleanup
+ExecStart=/usr/local/sbin/aap2ctl cleanup
 TimeoutStartSec=60
