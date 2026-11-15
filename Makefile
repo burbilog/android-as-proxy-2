@@ -95,7 +95,7 @@ test:
 release:
 	@set -eu; \
 	  version="$(VERSION)"; \
-	  printf '%s\\n' "$$version" | grep -Eq '^[0-9]+\\.[0-9]+\\.[0-9]+$$' || \
+	  printf '%s\n' "$$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || \
 	    { echo 'Use: make release VERSION=2.0.0 [VERSION_CODE=20012]' >&2; exit 1; }; \
 	  [ "$$(git branch --show-current)" = master ] || \
 	    { echo 'Release requires master branch' >&2; exit 1; }; \
@@ -117,14 +117,14 @@ release:
 	  else \
 	    echo 'No previous archived APK: signer continuity cannot be checked'; \
 	  fi; \
-	  printf '%s\\n' "$$head" > "$(RELEASE_DIR)/aap2-$$code.commit"; \
+	  printf '%s\n' "$$head" > "$(RELEASE_DIR)/aap2-$$code.commit"; \
 	  echo "Release candidate ready: $(RELEASE_DIR)/aap2-$$code.apk (commit $$head)"; \
 	  echo "After review: make publish VERSION=$$version"
 
 publish:
 	@set -eu; \
 	  version="$(VERSION)"; code="$(CODE)"; \
-	  printf '%s\\n' "$$version" | grep -Eq '^[0-9]+\\.[0-9]+\\.[0-9]+$$' || \
+	  printf '%s\n' "$$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || \
 	    { echo 'Use: make publish VERSION=2.0.0 [CODE=20012]' >&2; exit 1; }; \
 	  case "$$code" in ''|*[!0-9]*) echo 'No numbered APK to publish' >&2; exit 1;; esac; \
 	  [ "$$(git branch --show-current)" = master ] || \
@@ -146,12 +146,12 @@ publish:
 	  tools="$${AAP2_BUILD_TOOLS:-$$sdk/build-tools/35.0.0}"; \
 	  "$$tools/apksigner" verify "$$apk"; \
 	  meta=$$("$$tools/aapt" dump badging "$$apk"); \
-	  line=$$(printf '%s\\n' "$$meta" | grep '^package:' | head -n 1); \
-	  printf '%s\\n' "$$line" | grep -F "name='net.isaeff.android.asproxy2'" >/dev/null; \
-	  printf '%s\\n' "$$line" | grep -F "versionCode='$$code'" >/dev/null; \
-	  printf '%s\\n' "$$line" | grep -F "versionName='$$version'" >/dev/null || \
+	  line=$$(printf '%s\n' "$$meta" | grep '^package:' | head -n 1); \
+	  printf '%s\n' "$$line" | grep -F "name='net.isaeff.android.asproxy2'" >/dev/null; \
+	  printf '%s\n' "$$line" | grep -F "versionCode='$$code'" >/dev/null; \
+	  printf '%s\n' "$$line" | grep -F "versionName='$$version'" >/dev/null || \
 	    { echo 'APK version does not match requested release' >&2; exit 1; }; \
-	  ! printf '%s\\n' "$$meta" | grep -q '^application-debuggable' || \
+	  ! printf '%s\n' "$$meta" | grep -q '^application-debuggable' || \
 	    { echo 'Refusing debuggable APK' >&2; exit 1; }; \
 	  command -v gh >/dev/null || { echo 'Install GitHub CLI (gh)' >&2; exit 1; }; \
 	  gh auth status >/dev/null; \
