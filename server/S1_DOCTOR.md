@@ -1,21 +1,18 @@
 # S1-A — aap2ctl (read-only server preflight)
 
-The legacy Python source file remains `server/aap2-setup`; the installed
-preferred command is `aap2ctl`.
-
 This is **the first, intentionally non-mutating server CLI stage**.
 It is **not** a functioning enrollment server yet: no PIN, no user creation,
 no password activation, no approval or cleanup timer exists in this stage.
 
-One Python 3.9+ script, stdlib only: \`server/aap2-setup\`.
+One Python 3.9+ script, stdlib only: \`server/aap2ctl\`.
 No daemon, third-party Python packages, shell command strings, log parsing,
 or system SSH changes.
 
 ## Commands
 
 \`\`\`sh
-python3 server/aap2-setup print-config
-python3 server/aap2-setup doctor
+python3 server/aap2ctl print-config
+python3 server/aap2ctl doctor
 \`\`\`
 
 \`print-config\` prints the tested S0 template with a **manual-only** warning.
@@ -44,7 +41,7 @@ For real Match checks, supply both actual AAP2 usernames and accurate
 connection context, e.g.:
 
 \`\`\`sh
-python3 server/aap2-setup doctor \
+python3 server/aap2ctl doctor \
   --enroll-user ACTUAL_TEMP_USER \
   --proxy-user ACTUAL_DEVICE_USER \
   --client-addr 192.0.2.10 \
@@ -89,7 +86,7 @@ metadata; neither username prefix nor UID/group membership suffices.
 
 \`\`\`sh
 python3 -m unittest discover -s server -p 'test_*.py' -v
-python3 -m py_compile server/aap2-setup
+python3 -m py_compile server/aap2ctl
 \`\`\`
 
 S0's \`test-s0.sh\` remains the separate positive/negative real-OpenSSH
