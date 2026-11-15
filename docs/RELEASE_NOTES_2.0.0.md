@@ -10,7 +10,7 @@ First public AAP2 release: a self-hosted Android SOCKS5 exit over a restricted o
 - Per-device loopback-only reverse SOCKS5 TCP port; `aap2ctl list` marks current reverse listeners `(UP)`/`(DOWN)`, distinct from registration and proxy health.
 - Persistent Android foreground service with reconnect, Direct Boot and post-APK-update restore that respects a manual Disconnect.
 - User-initiated **Update** from the latest stable GitHub Release: validates package/version/certificate and uses the Android system installer. Android may require a one-time permission for installs from AAP2.
-- Local release signing and simple maintainer `make build`, `make install`, `make curl` shortcuts.
+- Local release signing and maintainer Makefile shortcuts: `make build`, `make release VERSION=...`, explicit `make publish VERSION=...`, `make verify-release`, `make install` and `make curl`.
 
 ## Install
 
