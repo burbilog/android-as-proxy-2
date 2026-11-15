@@ -511,6 +511,45 @@ class ApprovalTests(unittest.TestCase):
         self.assertTrue(record['temp_removed'])
         self.assertEqual(record['state'], 'approved')
 
+    def test_loopback_listeners_passive_kernel_table_only(self):
+        rows = [
+            ' sl local_address rem_address st',
+            '0: 0100007F:2B02 00000000:0000 0A',
+            '1: 0100007F:2B03 00000000:0000 01',
+            '2: 00000000:2B04 00000000:0000 0A',
+            '3: 0100007F:2B05 00000000:0000 0A',
+        ]
+        with mock.patch('builtins.open', return_value=io.StringIO('\\n'.join(rows))), \
+             mock.patch.object(aap.socket, 'socket',
+                               side_effect=AssertionError('no TCP probes')), \
+             mock.patch.object(aap.subprocess, 'run',
+                               side_effect=AssertionError('no external commands')):
+            self.assertEqual(aap.loopback_listeners(), {11010, 11013})
+        with mock.patch('builtins.open', side_effect=OSError('procfs unavailable')):
+            self.assertIsNone(aap.loopback_listeners())
+
+    def test_list_approved_down_and_unknown(self):
+        record = {'id': '000012', 'state': 'approved',
+                  'device_name': 'Phone', 'remote_port': 11010}
+        for listeners, label, expected in ((set(), '(DOWN)', False),
+                                           (None, '(UNKNOWN)', None)):
+            with self.subTest(label=label), \
+                 mock.patch.object(aap, 'require_root'), \
+                 mock.patch.object(aap, 'state_lock', side_effect=contextlib.nullcontext), \
+                 mock.patch.object(aap, 'all_records', return_value=iter((record,))), \
+                 mock.patch.object(aap, 'loopback_listeners', return_value=listeners), \
+                 contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(aap.list_enrollments(None), 0)
+            self.assertIn('127.0.0.1:11010 ' + label, out.getvalue())
+            with mock.patch.object(aap, 'require_root'), \
+                 mock.patch.object(aap, 'state_lock', side_effect=contextlib.nullcontext), \
+                 mock.patch.object(aap, 'all_records', return_value=iter((record,))), \
+                 mock.patch.object(aap, 'loopback_listeners', return_value=listeners), \
+                 contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(aap.list_enrollments(types.SimpleNamespace(json=True)), 0)
+            self.assertEqual(json.loads(out.getvalue())['devices'][0]['listener_up'],
+                             expected)
+
     def test_list_shows_reserved_port_and_only_active_pin_expiry(self):
         records = [
             {'id': '000012', 'state': 'approved', 'device_name': 'Cruise2',
@@ -521,16 +560,17 @@ class ApprovalTests(unittest.TestCase):
         with mock.patch.object(aap, 'require_root'), \
              mock.patch.object(aap, 'state_lock', side_effect=contextlib.nullcontext), \
              mock.patch.object(aap, 'all_records', return_value=iter(records)), \
+             mock.patch.object(aap, 'loopback_listeners', return_value={11010}), \
              contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(aap.list_enrollments(None), 0)
         text = output.getvalue()
         self.assertIn('AAP2 devices (2):', text)
-        self.assertIn('Cruise2 [000012]  APPROVED  reserved SOCKS5 127.0.0.1:11010',
+        self.assertIn('Cruise2 [000012]  APPROVED  reserved SOCKS5 127.0.0.1:11010 (UP)',
                       text)
         self.assertIn('New device [000013]  ACTIVE  reserved SOCKS5 127.0.0.1:11011',
                       text)
         self.assertEqual(text.count('Temporary PIN expires:'), 1)
-        self.assertIn('APPROVED means the SSH key is authorized, NOT that the phone is online.',
+        self.assertIn('(UP)/(DOWN) = current loopback TCP listener',
                       text)
         self.assertNotIn('1970', text)  # Approved device key does NOT expire with PIN.
 
@@ -557,6 +597,7 @@ class ApprovalTests(unittest.TestCase):
                  mock.patch.object(aap, 'require_root'), \
                  mock.patch.object(aap, 'state_lock', side_effect=contextlib.nullcontext), \
                  mock.patch.object(aap, 'all_records', side_effect=lambda: iter(records)), \
+                 mock.patch.object(aap, 'loopback_listeners', return_value={11010}), \
                  contextlib.redirect_stdout(io.StringIO()) as out:
                 self.assertEqual(aap.main(), 0)
             data = json.loads(out.getvalue())
@@ -565,10 +606,12 @@ class ApprovalTests(unittest.TestCase):
             self.assertTrue(data['ok'])
             self.assertEqual(len(data['devices']), 2)
             self.assertEqual(data['devices'][0]['remote_port'], 11010)
+            self.assertTrue(data['devices'][0]['listener_up'])
             self.assertNotIn('temporary_pin_expires_at', data['devices'][0])
             self.assertNotIn('online', data['devices'][0])
             self.assertEqual(data['devices'][1]['temporary_pin_expires_at'],
                              1794664800)
+            self.assertNotIn('listener_up', data['devices'][1])
             self.assertEqual(out.getvalue().count('\n'), 1)
 
     def test_list_omits_revoked_by_default_and_all_shows_history(self):
@@ -590,6 +633,7 @@ class ApprovalTests(unittest.TestCase):
                  mock.patch.object(aap, 'require_root'), \
                  mock.patch.object(aap, 'state_lock', side_effect=contextlib.nullcontext), \
                  mock.patch.object(aap, 'all_records', side_effect=lambda: iter(records)), \
+                 mock.patch.object(aap, 'loopback_listeners', return_value={11010}), \
                  contextlib.redirect_stdout(io.StringIO()) as out:
                 self.assertEqual(aap.main(), 0)
             text = out.getvalue()
@@ -597,11 +641,14 @@ class ApprovalTests(unittest.TestCase):
                 devices = json.loads(text)['devices']
                 self.assertEqual([x['id'] for x in devices],
                                  ['111111', '222222'] if full else ['222222'])
+                self.assertTrue(devices[-1]['listener_up'])
+                if full:
+                    self.assertNotIn('listener_up', devices[0])
             else:
-                self.assertIn('Current [222222]  APPROVED  reserved SOCKS5', text)
+                self.assertIn('Current [222222]  APPROVED  reserved SOCKS5 127.0.0.1:11010 (UP)', text)
                 self.assertEqual('Old [111111]' in text, full)
                 if full:
-                    self.assertIn('Old [111111]  REVOKED  former SOCKS5', text)
+                    self.assertIn('Old [111111]  REVOKED  former SOCKS5 127.0.0.1:11010\n', text)
 
     def test_list_only_revoked_becomes_empty_until_all(self):
         records = [{'id': '111111', 'state': 'revoked', 'device_name': 'Old',
