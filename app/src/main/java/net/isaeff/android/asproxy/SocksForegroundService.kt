@@ -28,6 +28,7 @@ class SocksForegroundService : Service() {
     companion object {
         const val ACTION_STOP = "net.isaeff.android.asproxy.action.STOP_SERVICE"
         const val ACTION_BOOT = "net.isaeff.android.asproxy.action.AUTO_CONNECT_ON_BOOT"
+        const val ACTION_RESTORE = "net.isaeff.android.asproxy.action.AUTO_RESTORE_AFTER_UPDATE"
         private const val NOTIFICATION_ID = 1
         private const val CHANNEL_ID = "AAP2ProxyChannel"
     }
@@ -69,7 +70,8 @@ class SocksForegroundService : Service() {
         }
 
         if (bootProfile != null) {
-            val bootOrRestart = intent == null || intent.action == ACTION_BOOT
+            val bootOrRestart = intent == null ||
+                intent.action == ACTION_BOOT || intent.action == ACTION_RESTORE
             if (bootOrRestart && !DirectBootTunnelProfile.wantsConnection(this)) {
                 stopSelf()
                 return START_NOT_STICKY
