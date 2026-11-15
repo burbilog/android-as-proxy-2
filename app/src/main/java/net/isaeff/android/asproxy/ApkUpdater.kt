@@ -17,11 +17,13 @@ import javax.net.ssl.HttpsURLConnection
  * User-initiated update only. Never changes the SSH profile, starts a second
  * service, stores credentials, or silently installs an APK.
  *
- * /a is a stable HTTPS redirect to an AAP2 GitHub release asset. The Android
- * package installer ultimately verifies the APK signature again.
+ * Fetch the newest stable release directly from GitHub. No dependency on
+ * the author's personal domain. The Android package installer ultimately
+ * verifies the APK signature again.
  */
 internal object ApkUpdater {
-    private const val SOURCE = "https://isaeff.net/a"
+    private const val SOURCE =
+        "https://github.com/burbilog/android-as-proxy-2/releases/latest/download/aap2.apk"
     private const val MAX_BYTES = 100L * 1024 * 1024
     private const val MAX_REDIRECTS = 5
     private const val APK_MIME = "application/vnd.android.package-archive"
@@ -33,8 +35,7 @@ internal object ApkUpdater {
         return uri.scheme.equals("https", ignoreCase = true) &&
             uri.rawUserInfo == null && uri.rawFragment == null &&
             (uri.port == -1 || uri.port == 443) &&
-            (host == "isaeff.net" || host == "github.com" ||
-                host.endsWith(".githubusercontent.com"))
+            (host == "github.com" || host.endsWith(".githubusercontent.com"))
     }
 
     suspend fun download(context: Context): Ready = withContext(Dispatchers.IO) {
