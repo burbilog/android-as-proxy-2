@@ -1,5 +1,6 @@
 package net.isaeff.android.asproxy
 
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
@@ -103,7 +104,9 @@ class A1EnrollmentUiTest {
         composeRule.onNodeWithTag("a1-cancel-verification").performScrollTo().performClick()
         composeRule.onNodeWithTag("a1-verified-activate").assertDoesNotExist()
         composeRule.onNodeWithTag("a1-probe").assertExists()
-        composeRule.onNodeWithTag("a1-server").assertTextEquals("10.0.2.2:22224")
+        // OutlinedTextField contributes its label to the Text semantics; the
+        // underlying EditableText survived rotation unchanged.
+        composeRule.onNodeWithTag("a1-server").assertTextContains("10.0.2.2:22224")
         assertTrue(EnrollmentPending.load(context) == null)
         assertFalse(DirectBootTunnelProfile.hasProfile(context))
     }
