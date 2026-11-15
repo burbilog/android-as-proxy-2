@@ -98,26 +98,28 @@ internal object ApkUpdater {
     }
 
     /**
-     * Reject wrong package, downgrade/reinstall and a different signing key
-     * before handing any download to the system Package Installer.
-     * Android's installer verifies the actual APK cryptographic signature.
+     * Check package identity and version before invoking the Android installer.
+     * PackageManager.getPackageArchiveInfo() may return null signingInfo for
+     * uninstalled APKs on Android 11 even when they have valid v2/v3 signatures.
+     * The platform Package Installer cryptographically verifies the downloaded
+     * APK and REFUSES to replace an installed app signed by a different key.
+     * Do not mistake an unavailable archive signer for a mismatched signer.
      */
-    @Suppress("DEPRECATION")
     internal fun validatePackage(pm: PackageManager, packageName: String, apk: File): String {
-        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
-            PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
-        val installed = pm.getPackageInfo(packageName, flags)
-        val candidate = pm.getPackageArchiveInfo(apk.absolutePath, flags)
+        val installed = pm.getPackageInfo(packageName, 0)
+        val candidate = pm.getPackageArchiveInfo(apk.absolutePath, 0)
             ?: error("Downloaded file is not an Android APK")
+        return validatePackageMetadata(installed, candidate, packageName)
+    }
+
+    internal fun validatePackageMetadata(
+        installed: PackageInfo, candidate: PackageInfo, packageName: String
+    ): String {
         require(candidate.packageName == packageName) { "APK is not AAP2" }
         val installedVersion = versionCode(installed)
         val candidateVersion = versionCode(candidate)
         require(candidateVersion > installedVersion) {
             "Already up to date (installed $installedVersion, available $candidateVersion)"
-        }
-        require(signatures(installed).isNotEmpty() &&
-            signatures(installed) == signatures(candidate)) {
-            "APK signing certificate differs from installed AAP2"
         }
         return candidate.versionName ?: candidateVersion.toString()
     }
@@ -126,12 +128,6 @@ internal object ApkUpdater {
     private fun versionCode(info: PackageInfo): Long =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode
         else info.versionCode.toLong()
-
-    @Suppress("DEPRECATION")
-    private fun signatures(info: PackageInfo): Set<String> =
-        (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
-            info.signingInfo?.apkContentsSigners
-        else info.signatures)?.map { it.toCharsString() }?.toSet() ?: emptySet()
 
     /** The user must explicitly accept the OS installation confirmation. */
     fun launchSystemInstaller(context: Context, file: File) {
