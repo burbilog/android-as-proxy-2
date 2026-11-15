@@ -190,7 +190,13 @@ class A1EnrollmentUiTest {
         )
         assertEquals(independentlyVerified,
             VerifiedSshHostKey.sha256Fingerprint(profile.verifiedHostKey))
-        assertTrue(EnrollmentPending.load(context) == null)
+        // EnrollmentClient commits the verified profile first, then clears
+        // its resumable pending marker. Both steps run on the UI coroutine;
+        // observing hasProfile() alone does not guarantee cleanup completed.
+        // Wait for the real terminal state instead of racing that coroutine.
+        composeRule.waitUntil(30_000) {
+            EnrollmentPending.load(context) == null
+        }
         assertTrue(DirectBootTunnelProfile.wantsConnection(context))
         composeRule.waitUntil(60_000) {
             ConnectionStateHolder.connectionState.value == ConnectionState.CONNECTED
