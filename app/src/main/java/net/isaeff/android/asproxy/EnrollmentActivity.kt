@@ -43,11 +43,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import net.isaeff.android.asproxy.ui.theme.AAPTheme
 
-private class GroupedActivationTransformation(private val revealed: Boolean) : VisualTransformation {
+internal class GroupedActivationTransformation(private val revealed: Boolean) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
         val digits = text.text
         val visible = if (revealed) digits else "•".repeat(digits.length)
         val formatted = EnrollmentInput.formatActivationCode(visible)
+        // At each complete quartet, the caret moves past the auto-added
+        // separator. Backspace then removes the last digit; the dash
+        // disappears with it because the raw TextField contains no dashes.
         val mapping = object : OffsetMapping {
             override fun originalToTransformed(offset: Int): Int =
                 (offset + (offset / 4).coerceAtMost(4)).coerceIn(0, formatted.length)
