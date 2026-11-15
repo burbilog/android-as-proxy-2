@@ -6,6 +6,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Required to ask Android to install an explicitly requested update. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
@@ -20,6 +23,7 @@
         <!-- https://stackoverflow.com/questions/77520968/why-am-i-encountering-the-error-starting-fgs-without-a-type-when-executing-the -->
         <service
             android:name=".SocksForegroundService"
+            android:directBootAware="true"
             android:exported="false"
             android:foregroundServiceType="specialUse"
             android:enabled="true"
@@ -31,12 +35,26 @@
             </intent-filter>
         </service>
 
-        <!-- Start service automatically at boot if enabled -->
+        <!-- Only the app-private cached release APK is offered to Package Installer. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.updates"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/aap2_update_paths" />
+        </provider>
+
+        <!-- Restore only explicitly enabled connections after boot or APK upgrade. -->
         <receiver
             android:name=".BootCompletedReceiver"
+            android:directBootAware="true"
             android:exported="false">
             <intent-filter>
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 
@@ -49,6 +67,12 @@
                 <action android:name="android.intent.action.SHUTDOWN" />
             </intent-filter>
         </receiver>
+
+        <activity
+            android:name=".EnrollmentActivity"
+            android:exported="false"
+            android:label="Activate AAP2"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <activity
             android:name=".MainActivity"
