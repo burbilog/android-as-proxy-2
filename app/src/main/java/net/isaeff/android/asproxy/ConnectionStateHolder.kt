@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 // Define the possible connection states
-enum class ConnectionState { DISCONNECTED, CONNECTING, CONNECTED, DISCONNECTING }
+enum class ConnectionState { DISCONNECTED, CONNECTING, RETRYING, CONNECTED, DISCONNECTING }
 
 /**
  * Singleton object to hold and manage the global connection state.

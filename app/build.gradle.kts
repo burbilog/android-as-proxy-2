@@ -4,16 +4,27 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// Version overrides are intentionally non-secret; signing is local and separate.
+val aap2VersionCodeOverride = System.getenv("AAP2_VERSION_CODE")
+val aap2VersionCode = aap2VersionCodeOverride?.toIntOrNull() ?: 20000
+require(aap2VersionCodeOverride == null ||
+    (aap2VersionCodeOverride.toIntOrNull() != null && aap2VersionCode > 0)) {
+    "AAP2_VERSION_CODE must be a positive integer"
+}
+val aap2VersionName = System.getenv("AAP2_VERSION_NAME") ?: "2.0.0-dev"
+require(aap2VersionName.isNotBlank()) { "AAP2_VERSION_NAME must not be blank" }
+
+
 android {
     namespace = "net.isaeff.android.asproxy"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "net.isaeff.android.asproxy"
+        applicationId = "net.isaeff.android.asproxy2"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = aap2VersionCode
+        versionName = aap2VersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -54,9 +65,6 @@ dependencies {
  
  
      implementation(libs.jsch)
-     implementation(libs.android.mail)
-     implementation(libs.android.activation)
-    implementation(libs.java.socks.proxy.server)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

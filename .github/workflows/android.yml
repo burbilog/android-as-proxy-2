@@ -1,0 +1,75 @@
+name: Android debug APK
+
+on:
+  pull_request:
+    branches: [master, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: android-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK command line tools
+        uses: android-actions/setup-android@v4
+        with:
+          log-accepted-android-sdk-licenses: 'false'
+
+      - name: Ensure Android 35 is installed
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Check local build and soak scripts shell syntax
+        run: |
+          for s in scripts/soak-monitor.sh scripts/build-signed-apk.sh scripts/aap2-local.sh scripts/aap2-spare-upgrade.sh; do
+            sh -n "$s"
+          done
+
+      - name: Check local maintainer Makefile without signing or ADB
+        run: |
+          make --no-print-directory -n build VERSION_CODE=20011
+          make --no-print-directory -n install Z=ci-device
+          make --no-print-directory -n curl S2=example.net PORT=11011
+          make --no-print-directory -n check
+
+      - name: Build and unit tests
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon --stacktrace :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleRelease :app:testDebugUnitTest
+
+      - name: Upload debug APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aap2-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload P0 Android instrumentation APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aap2-p0-androidTest-apk
+          path: app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          if-no-files-found: error
+          retention-days: 7
