@@ -320,6 +320,18 @@ wait "$TEST_PID"
 # This test explicitly reconnects at the end for the subsequent boot gate.
 run_test a1_3b_packageReplaceNeverOverridesExplicitDisconnect &
 TEST_PID=$!
+# Wait for the test to actually stop and reconnect the service before curl.
+# Without this handshake, the host could curl through the OLD listener
+# before the negative test has even run.
+READY=0
+for i in $(seq 1 45); do
+  if adb shell -T "run-as $PKG test -f files/a1-ci-manual-reconnect-ready" >/dev/null 2>&1; then
+    READY=1
+    break
+  fi
+  sleep 1
+done
+[ "$READY" = 1 ] || { echo 'A1 manual reconnect never reported ready' >&2; exit 1; }
 SUCCESS=0
 for i in $(seq 1 25); do
   BODY=$(curl --noproxy '' --silent --max-time 3 \
