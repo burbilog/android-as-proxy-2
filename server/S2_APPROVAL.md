@@ -1,7 +1,8 @@
 # S2 — SFTP key approval, restricted -R and device revocation
 
-**Development gate:** S2 runs only on a disposable Debian/Ubuntu test SSH
-host until explicit review. Do not copy this configuration into the existing
+**Deployment status:** S2 passed disposable Debian 13/Ubuntu OpenSSH tests
+and is being evaluated on a separate externally reachable Debian 13 pilot VM.
+Use [INSTALL.md](INSTALL.md) for installation; SSH Match remains manual. Do not copy this configuration into the existing
 \`aap2-test\` VM: it carries the working Zebra tunnel on port 10909. The S0
 Match configuration must be installed MANUALLY, independently of this CLI;
 \`aap2-setup\` never edits or reloads sshd.
