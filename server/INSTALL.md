@@ -23,7 +23,7 @@ sh /opt/aap2-s2/server/install.sh
 ```
 
 The script creates the two dedicated groups and root-owned directories,
-installs `/usr/local/sbin/aap2-setup` (the Python implementation), adds the preferred `/usr/local/sbin/aap2ctl` symlink, installs the cleanup systemd service/timer,
+installs `/usr/local/sbin/aap2ctl`, installs the cleanup systemd service/timer,
 enables the timer, and verifies that it is active. It requires an existing
 valid OpenSSH installation; it deliberately does not run apt, rewrite SSH
 configuration, modify PAM or the firewall, or reload/restart SSH.
@@ -32,10 +32,7 @@ Running it again is supported: it re-installs the CLI and units, preserves
 `/var/lib/aap2/state/`, approved accounts, uploaded keys and registrations,
 and leaves SSH daemon configuration untouched. Suspicious non-root-owned
 directories, unusual target files or symlinks cause refusal. The script
-does not try to repair ambiguous existing AAP2 state. Existing scripts using
-`aap2-setup` continue to work through the same Python file; `aap2ctl` is
-preferred for new commands. The installer refuses to replace any unrelated
-existing `/usr/local/sbin/aap2ctl` file or symlink.
+does not try to repair ambiguous existing AAP2 state. The CLI has a single installed name: `aap2ctl`.
 
 ## Only manual system step: integrate the SSH Match policy
 
