@@ -475,6 +475,42 @@ physical Android 11 and in disposable emulator CI. It does not establish
 long-duration resilience on the remote Japanese Zebra; do not touch AAP1
 there until an explicitly approved pilot.
 
+## User-initiated APK update from Main screen (2026-11-15)
+
+The approved operator requested a simple **Update** button immediately beside
+**Details** on the configured AAP2 main screen. No auto-checks, background
+download jobs, GitHub credentials, own installer service or silent install.
+
+**Tap Update → download `https://isaeff.net/a` over HTTPS** (server's stable
+HTTP 302 to a published GitHub Release `aap2.apk`) → require HTTPS on every
+redirect, allow only `isaeff.net`, `github.com` and
+`*.githubusercontent.com`, enforce a 100 MiB cap → inspect the downloaded APK
+with Android PackageManager: same `applicationId`, same current signing
+certificate, and a strictly greater `versionCode` → share the **app-private
+cached APK only** via `FileProvider` → launch the Android system package
+installer. Android independently verifies the actual APK signature and always
+asks for user installation confirmation.
+
+On Android 8+, if AAP2 is not allowed to request installs yet, the button
+opens **Allow from this source** for this application's package. Upon returning
+with permission granted, it proceeds to the standard Android installer prompt.
+A denied permission leaves the running SSH/SOCKS5 service untouched. The update
+button is disabled only while this foreground UI download is active.
+
+On successful install, Android kills the old APK process and sends
+`MY_PACKAGE_REPLACED`; the previously verified, physically tested
+`desired_running` restore gate reconnects only when the user wanted it.
+Neither the updater nor the installer clears the Android Keystore identity,
+host pin, existing S2 approval, or disabled/Disconnect state.
+
+**Release prerequisite:** the `/a` redirect must point to an actual published
+signed AAP2 GitHub Release asset, not a missing tag. The updater deliberately
+refuses nonexistent, same-version, downgraded, wrong-package or
+differently-signed APKs. Android UI/unit CI exercises button presence and
+URI policy without attempting an accidental live app upgrade. Physical test
+of the update UI and Android installer on local Zebra is a separate gate.
+The first APK with this UI must have a fresh versionCode, at least `20010`.
+
 ## Remaining acceptance gates
 
 - [x] Six-digit manual-typing Compose enrollment with disposable S2 `--manual-code` — full [Android 11 E2E run #43581141257](https://github.com/burbilog/android-as-proxy-2/actions/runs/43581141257) **PASS** (2026-11-14), including Compose text entry, PIN/SFTP/approval/SSH `-R`/SOCKS5 HTTP, signed in-place test upgrade, pre-unlock Direct Boot and revoke.
@@ -488,6 +524,7 @@ there until an explicitly approved pilot.
 - [x] Physical reconnect UI on release-signed `20005`: visible Reconnecting state, Disconnect while retrying remains stopped after SSH restoration, manual Connect returns working SOCKS5 (Seuic Cruise2; isolated S2, 2026-11-14).
 - [ ] Physical Zebra TC21 rotation test of the revised pre-auth fingerprint screen (must preserve server address and 18-digit code in RAM); Android CI with real rotation must pass before release.
 - [x] Physical in-place update `20008 → 20009` automatically restored LOCAL Zebra SOCKS5 through public S2 (`a.isaeff.net`, port `11011`) without opening the app. Subsequent manual Disconnect → reinstall same signed `20009` → still Disconnected, and explicit Connect restored the same SOCKS5 (2026-11-15).
+- [ ] Physical AAP2 Update button: download published signed APK via `isaeff.net/a`, Android unknown-source permission and installer confirmation, preserve profile and auto-restore, on LOCAL Zebra (do not touch remote AAP1).
 - [ ] Long-running foreground-service reliability and OEM battery restrictions under extended soak; repeated network-loss/reconnect cycles remain a separate gate.
 - [x] Update from one **release-signed** APK to another using the long-term key kept on `marduk`, preserving identity and verified host key, confirmed with real SSH and SOCKS5 HTTP on Seuic Cruise2, 2026-11-14. See `docs/P0_RELEASE_SIGNING.md`. The guarded local `scripts/aap2-spare-upgrade.sh` verifies both signatures and versions and requires an explicit spare-device ADB serial; it never uninstalls AAP2 or touches the working Zebra by default.
 
