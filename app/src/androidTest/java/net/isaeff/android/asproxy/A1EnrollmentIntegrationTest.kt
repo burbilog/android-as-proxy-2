@@ -302,6 +302,54 @@ class A1EnrollmentIntegrationTest {
     }
 
     @Test
+    fun a1_3b_packageReplaceNeverOverridesExplicitDisconnect() = runBlocking<Unit> {
+        val profile = requireNotNull(DirectBootTunnelProfile.load(context))
+        assertTrue("S2-approved connection must initially be enabled",
+            DirectBootTunnelProfile.wantsConnection(context))
+        val originalIdentity = AndroidKeystoreIdentity.getExisting(context).getPublicKeyBlob()
+
+        // Simulate a real user pressing Disconnect. The foreground service
+        // must persist desired_running=false before stopping, so neither
+        // APK replacement nor device reboot can override that decision.
+        context.startService(Intent(context, SocksForegroundService::class.java).apply {
+            action = SocksForegroundService.ACTION_STOP
+        })
+        withTimeout(20_000) {
+            while (DirectBootTunnelProfile.wantsConnection(context) ||
+                ConnectionStateHolder.connectionState.value != ConnectionState.DISCONNECTED) {
+                delay(200)
+            }
+        }
+        BootCompletedReceiver().onReceive(context, Intent(Intent.ACTION_MY_PACKAGE_REPLACED))
+        delay(2_000)
+        assertFalse("Package update receiver re-enabled a user-stopped connection",
+            DirectBootTunnelProfile.wantsConnection(context))
+        assertEquals("Package update receiver restarted a stopped service",
+            ConnectionState.DISCONNECTED, ConnectionStateHolder.connectionState.value)
+        assertArrayEquals("Package update receiver replaced Keystore SSH identity",
+            originalIdentity, AndroidKeystoreIdentity.getExisting(context).getPublicKeyBlob())
+        assertEquals(profile.remotePort, requireNotNull(DirectBootTunnelProfile.load(context)).remotePort)
+        Log.i("AAP2-A1", "A1_PACKAGE_REPLACE_RESPECTS_MANUAL_DISCONNECT")
+
+        // Test fixture resumes by an explicit UI-equivalent Connect action;
+        // the following cold-boot gate still needs the approved live tunnel.
+        val start = Intent(context, SocksForegroundService::class.java).apply {
+            action = "net.isaeff.android.asproxy.action.START_SERVICE"
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(start)
+        } else {
+            context.startService(start)
+        }
+        withTimeout(45_000) {
+            while (ConnectionStateHolder.connectionState.value != ConnectionState.CONNECTED)
+                delay(250)
+        }
+        assertTrue(DirectBootTunnelProfile.wantsConnection(context))
+        Log.i("AAP2-A1", "A1_MANUAL_RECONNECT_AFTER_DISCONNECT_OK")
+    }
+
+    @Test
     fun a1_3_inPlaceSignedApkUpgradePreservesKeystoreAndPin() = runBlocking<Unit> {
         val baselineFile = File(context.filesDir, "a1-ci-before-update-publickey")
         val baseline = baselineFile.readBytes()
