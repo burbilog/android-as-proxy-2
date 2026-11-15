@@ -75,6 +75,14 @@ SFTP \`config.json\` (schema=1) contains only permanent username and port;
 it is **not** a trusted source of host-key pin. \`status.json\` initially
 contains \`schema=1\`, \`status=pending\`, \`expires_at\` (Unix epoch seconds).
 
+## Installation: use the installer for new pilot servers
+
+For a clean Debian 13 VM, follow [INSTALL.md](INSTALL.md) and run
+`sh server/install.sh` as root. It safely repeats the groups/directories,
+CLI and cleanup timer installation; the administrator still manually
+installs and checks SSH Match policy. The commands below document the
+original disposable test setup and are not the recommended user install path.
+
 ## Installation on a **disposable** Debian test VM (NOT NOW on production)
 
 **IMPORTANT:** the current \`aap2-test\` VM has a working Zebra tunnel
