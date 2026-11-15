@@ -1,0 +1,27 @@
+name: OpenSSH S0 isolated integration
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - 'server/**'
+      - '.github/workflows/server-s0.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  openssh-s0:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test-only OpenSSH/SFTP tools
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-server openssh-client sshpass curl python3
+      - name: Validate POSIX test harness
+        run: sh -n server/test-s0.sh
+      - name: Run isolated OpenSSH integration tests
+        run: sudo sh server/test-s0.sh
