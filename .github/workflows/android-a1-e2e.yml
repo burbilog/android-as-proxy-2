@@ -5,6 +5,7 @@ on:
     branches: [develop, master]
     paths:
       - 'app/**'
+      - 'server/**'
       - 'scripts/ci-a1-*.sh'
       - '.github/workflows/android-a1-e2e.yml'
   workflow_dispatch:
@@ -23,12 +24,6 @@ jobs:
     steps:
       - name: Checkout A1 Android app
         uses: actions/checkout@v4
-      - name: Checkout pinned S2 disposable SSH fixture (separate branch)
-        uses: actions/checkout@v4
-        with:
-          ref: 8a8de467b68e1d885d47d87cd922dd9290d9f89f
-          path: s2-fixture
-          persist-credentials: false
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
