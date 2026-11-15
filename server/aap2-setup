@@ -835,7 +835,7 @@ def enroll(args):
             'expires_at': expiry, 'setup_username': usernames[GROUP_ENROLL],
             'permanent_username': usernames[GROUP_PROXY],
             'remote_port': port, 'host_keys': host_keys,
-            'approve_command': 'aap2-setup approve {}'.format(enrollment_id),
+            'approve_command': 'aap2ctl approve {}'.format(enrollment_id),
             'warnings': (
                 (['sshd Match policy tested with a sample client address; '
                   'review any Match Address/Host rules separately.']
@@ -872,7 +872,7 @@ def enroll(args):
     print('Enrollment ID: {}'.format(enrollment_id))
     if manual_code:
         print('Setup username: {}'.format(usernames[GROUP_ENROLL]))
-    print('Next: aap2-setup approve {}'.format(enrollment_id))
+    print('Next: aap2ctl approve {}'.format(enrollment_id))
     return 0
 
 
@@ -1338,7 +1338,7 @@ def list_enrollments(args):
         return 0
     if not records:
         print('AAP2 devices: none')
-        print('To add one: aap2-setup enroll --help')
+        print('To add one: aap2ctl enroll --help')
         return 0
 
     print('AAP2 devices ({}):'.format(len(records)))
@@ -1361,13 +1361,13 @@ def list_enrollments(args):
     print()
     print('APPROVED = authorized key; (UP)/(DOWN) = current loopback TCP listener,')
     print('not proof of SOCKS5/Internet reachability or phone identity.')
-    print('To approve: aap2-setup approve ID')
-    print('To revoke:  aap2-setup revoke ID')
+    print('To approve: aap2ctl approve ID')
+    print('To revoke:  aap2ctl revoke ID')
     return 0
 
 
 def main():
-    parser = Aap2ArgumentParser(prog='aap2-setup',
+    parser = Aap2ArgumentParser(prog='aap2ctl',
         description='AAP2 OpenSSH server CLI: PIN, SFTP key approval and per-device revoke')
     parser.add_argument('-j', '--json', action='store_true', help='machine-readable JSON on stdout')
     sub = parser.add_subparsers(dest='action', required=True,
