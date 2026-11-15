@@ -126,10 +126,18 @@ be silently hidden. Each row shows the root-owned enrollment state
 and its loopback SOCKS5 port. For `REVOKED` history rows,
 the port is labeled **former**, not reserved: it can be reused.
 `APPROVED` means its public key is authorized; it does **not** mean
-the phone is online. The temporary PIN expiry is shown for `ACTIVE`
-invitations only, never as an expiry date for an approved permanent
-key. No network probing or log parsing is used to guess online status.
-An empty list explains how to display `enroll --help`.
+the phone is online. Only `APPROVED` rows additionally show `(UP)`,
+`(DOWN)` or `(UNKNOWN)` at the end. `UP` means the *server kernel* has
+a TCP LISTEN socket bound to that device's reserved
+`127.0.0.1:remote_port` (**reverse SSH forwarding present**).
+`DOWN` means no such listener; `UNKNOWN` means the kernel socket table
+could not be read. This is a passive `/proc/net/tcp` snapshot, **no logs,
+network probes, SSH process inspection or daemon**. It cannot prove the
+SOCKS5 path to the Internet works; check actual traffic with curl.
+Historical `REVOKED` rows are never marked UP, even if their old port
+was assigned to another device. The temporary PIN expiry is shown for
+`ACTIVE` invitations only, never as an expiry date for an approved
+permanent key. An empty list explains how to display `enroll --help`.
 
 ### JSON output for scripts
 
@@ -150,9 +158,12 @@ a nonzero exit status; doctor retains exit status 2 for pending
 verification gates. The `--help` display remains human-facing.
 
 - `list`: `devices[]` with `id`, `name`, `state`, integer
-  `remote_port` and `listen_address`. Only an `active` invitation
-  has integer Unix `temporary_pin_expires_at`. Never infer `online`
-  from a stored approval, logs or a reserved port.
+  `remote_port` and `listen_address`. For `approved` records only,
+  `listener_up` is a JSON boolean from the live kernel socket table
+  (`true`/ `false`), or `null` if it was unreadable. Do not interpret
+  `listener_up` as end-to-end Internet connectivity or device identity.
+  Only an `active` invitation has integer Unix
+  `temporary_pin_expires_at`.
 - `enroll`: `invitation` with the endpoint, usernames, port, TTL,
   host-key SHA256 fingerprint/type records and `approve_command`.
   With `--manual-code`, the **single 18-digit secret** is supplied
