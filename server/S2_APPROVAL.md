@@ -5,7 +5,7 @@ and is being evaluated on a separate externally reachable Debian 13 pilot VM.
 Use [INSTALL.md](INSTALL.md) for installation; SSH Match remains manual. Do not copy this configuration into the existing
 \`aap2-test\` VM: it carries the working Zebra tunnel on port 10909. The S0
 Match configuration must be installed MANUALLY, independently of this CLI;
-\`aap2-setup\` never edits or reloads sshd.
+\`aap2ctl\` never edits or reloads sshd.
 
 ## Manual typing on a phone (no clipboard, no QR)
 
@@ -24,11 +24,11 @@ The server address and port are still typed separately.
 Example (fill in real addresses):
 
 ```sh
-aap2-setup enroll SpareAndroid --manual-code --server ssh.example.net:22225
+aap2ctl enroll SpareAndroid --manual-code --server ssh.example.net:22225
 
 # For unusual SSH Match rules, the full context is still available:
-aap2-setup enroll --help-all
-aap2-setup enroll SpareAndroid --manual-code \
+aap2ctl enroll --help-all
+aap2ctl enroll SpareAndroid --manual-code \
   --server ssh.example.net:22225 \
   --client-addr 192.0.2.5 --client-host phone.example.net \
   --server-addr 192.0.2.10 --server-port 22
@@ -44,7 +44,7 @@ without colors or terminal dependencies:
   **fingerprint and key type** shown on the phone; never accept an
   unverified server key or suppress this section merely to shorten output.
 - **ADMIN:** the enrollment ID and the exact command
-  `aap2-setup approve ID` to use **after** the phone uploads its public key.
+  `aap2ctl approve ID` to use **after** the phone uploads its public key.
   The admin-only setup username is also shown here for diagnostics.
 
 The stable machine-readable `Server:`, `Phone activation code ...:`,
@@ -88,7 +88,7 @@ After the server setup from [S1_ENROLL.md](S1_ENROLL.md), with a working
 \`aap2-cleanup.timer\` and verified SSH policy:
 
 \`\`\`sh
-aap2-setup enroll TC21 --server ssh.example.net:22222 \
+aap2ctl enroll TC21 --server ssh.example.net:22222 \
   --client-addr 192.0.2.5 --client-host phone.example.net \
   --server-addr 192.0.2.10 --server-port 22
 
@@ -97,13 +97,13 @@ aap2-setup enroll TC21 --server ssh.example.net:22222 \
 # It opens SFTP, downloads config.json, uploads ONLY its P-256 PUBLIC key
 # into inbox/public_key, and saves its permanent identity locally.
 
-aap2-setup approve <enrollment-id>
+aap2ctl approve <enrollment-id>
 # Review the complete server-computed fingerprint of the immutable
 # root-owned candidate.pub snapshot, then type y.
-aap2-setup list
+aap2ctl list
 
 # Explicitly revoke a single AAP2 device, never a generic Unix username:
-aap2-setup revoke <enrollment-id>
+aap2ctl revoke <enrollment-id>
 # Type REVOKE to confirm.
 \`\`\`
 
@@ -117,7 +117,7 @@ activation code is displayed **once**; the PIN is not written into
 persistent state or Android logs. The CLI remains usable over plain
 SSH and in scripts; no TUI or third-party Python dependencies.
 
-`aap2-setup list` is a compact read-only view of current devices,
+`aap2ctl list` is a compact read-only view of current devices,
 hiding `REVOKED` historical entries by default. Use `list --all`
 to include them (the same filter applies to `list -j` and
 `list -j --all`). Other states, including `EXPIRED` and
@@ -144,9 +144,9 @@ permanent key. An empty list explains how to display `enroll --help`.
 Use `-j` or `--json` either before or after a subcommand:
 
 ```sh
-aap2-setup -j list | jq -r '.devices[] | select(.state == "approved") | .id'
-aap2-setup list --all --json | jq '.devices'
-aap2-setup doctor -j | jq '.checks[] | select(.level != "ok")'
+aap2ctl -j list | jq -r '.devices[] | select(.state == "approved") | .id'
+aap2ctl list --all --json | jq '.devices'
+aap2ctl doctor -j | jq '.checks[] | select(.level != "ok")'
 ```
 
 The format is **JSON schema 1**, Python 3.9 standard-library only; no
