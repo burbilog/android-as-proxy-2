@@ -109,6 +109,6 @@ but accessible account state confirmed by actual `-R` login, such as
 a non-hash shadow marker on the tested distribution, and deny password
 authentication through `Match`. Do not assume `passwd -l` is safe.
 
-The server-side `aap2-setup doctor` is a future **strictly read-only**
+The server-side `aap2ctl doctor` is a future **strictly read-only**
 component. It must not edit SSH config, parse auth logs or treat a passed
 `sshd -T` check as complete behavioral proof.
