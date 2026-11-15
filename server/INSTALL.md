@@ -55,8 +55,9 @@ AllowUsers/AllowGroups/AuthenticationMethods, then validate the result:
 `doctor` is read-only. Exit code 2 (PENDING) is expected before real
 AAP2 users exist: it is not a substitute for effective `sshd -T -C`
 checks with actual account and connection context after enrollment.
-Verify administrative access in a **second, new SSH session** before
-manually reloading `ssh.service`; keep the first session open.
+Keep the current session open, check the effective SSH policy, then
+manually reload `ssh.service`. Verify you can open a **new** administrative
+SSH session before closing the original session.
 
 Never run `server/test-s1-live.sh` on a real VM: it destroys and replaces
 SSH configuration and belongs exclusively to ephemeral CI containers.
