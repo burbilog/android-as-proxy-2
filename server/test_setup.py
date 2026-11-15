@@ -13,7 +13,7 @@ import types
 import unittest
 from unittest import mock
 
-path = Path(__file__).with_name('aap2-setup')
+path = Path(__file__).with_name('aap2ctl')
 loader = importlib.machinery.SourceFileLoader('aap2_setup', str(path))
 spec = importlib.util.spec_from_loader(loader.name, loader)
 aap = importlib.util.module_from_spec(spec)
@@ -116,7 +116,7 @@ class CheckTests(unittest.TestCase):
 
 class LifecycleTests(unittest.TestCase):
     def test_enroll_cli_accepts_missing_client_addr_without_guessing_phone_ip(self):
-        argv = ['aap2-setup', 'enroll', 'Cruise2', '--manual-code',
+        argv = ['aap2ctl', 'enroll', 'Cruise2', '--manual-code',
                 '--server', 'ssh.example.net:22225', '--server-addr', '192.0.2.10']
         seen = []
         def fake_enroll(args):
@@ -131,7 +131,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertTrue(seen[0].manual_code)
 
     def test_enroll_simple_cli_defaults_to_loopback_probe(self):
-        argv = ['aap2-setup', 'enroll', 'SpareAndroid', '--manual-code',
+        argv = ['aap2ctl', 'enroll', 'SpareAndroid', '--manual-code',
                 '--server', 'ssh.example.net:22225']
         with mock.patch.object(aap.sys, 'argv', argv), \
              mock.patch.object(aap, 'enroll', return_value=0) as handler:
@@ -145,7 +145,7 @@ class LifecycleTests(unittest.TestCase):
 
     def test_enroll_help_is_short_with_explicit_advanced_help(self):
         def help_text(option):
-            argv = ['aap2-setup', 'enroll', option]
+            argv = ['aap2ctl', 'enroll', option]
             with mock.patch.object(aap.sys, 'argv', argv), \
                  contextlib.redirect_stdout(io.StringIO()) as out:
                 with self.assertRaises(SystemExit) as exc:
@@ -590,8 +590,8 @@ class ApprovalTests(unittest.TestCase):
             {'id': '000013', 'state': 'active', 'device_name': 'Pending',
              'remote_port': 11011, 'expires_at': 1794664800},
         ]
-        for argv in (['aap2-setup', '-j', 'list'],
-                     ['aap2-setup', 'list', '--json']):
+        for argv in (['aap2ctl', '-j', 'list'],
+                     ['aap2ctl', 'list', '--json']):
             with self.subTest(argv=argv), \
                  mock.patch.object(aap.sys, 'argv', argv), \
                  mock.patch.object(aap, 'require_root'), \
@@ -622,10 +622,10 @@ class ApprovalTests(unittest.TestCase):
              'remote_port': 11010, 'expires_at': 1},
         ]
         cases = [
-            (['aap2-setup', 'list'], False, False),
-            (['aap2-setup', 'list', '--all'], False, True),
-            (['aap2-setup', '-j', 'list'], True, False),
-            (['aap2-setup', 'list', '--json', '--all'], True, True),
+            (['aap2ctl', 'list'], False, False),
+            (['aap2ctl', 'list', '--all'], False, True),
+            (['aap2ctl', '-j', 'list'], True, False),
+            (['aap2ctl', 'list', '--json', '--all'], True, True),
         ]
         for argv, machine, full in cases:
             with self.subTest(argv=argv), \
@@ -720,7 +720,7 @@ class ApprovalTests(unittest.TestCase):
             self.assertEqual(data['command'], action.__name__)
 
     def test_json_parse_error_returns_single_object(self):
-        with mock.patch.object(aap.sys, 'argv', ['aap2-setup', '-j', 'list', '--bad']), \
+        with mock.patch.object(aap.sys, 'argv', ['aap2ctl', '-j', 'list', '--bad']), \
              contextlib.redirect_stdout(io.StringIO()) as out, \
              contextlib.redirect_stderr(io.StringIO()):
             with self.assertRaises(SystemExit) as exc:
