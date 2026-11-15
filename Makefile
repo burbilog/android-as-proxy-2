@@ -92,7 +92,7 @@ test:
 
 # Publishing is deliberately separate from building. Only a clean,
 # up-to-date master may produce a public stable version.
-release:
+release: sync
 	@set -eu; \
 	  version="$(VERSION)"; \
 	  printf '%s\n' "$$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || \
