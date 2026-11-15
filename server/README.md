@@ -31,7 +31,7 @@ manual sshd reload, while keeping the original SSH session open. Follow [INSTALL
 - [S1_ENROLL.md](S1_ENROLL.md) — PIN/SFTP lifecycle, timer and safety contract
 - [S2_APPROVAL.md](S2_APPROVAL.md) — approval, restricted forwarding, revoke
 
-Files: `aap2-setup` (single stdlib-only Python implementation, installed as `aap2ctl` with legacy `aap2-setup` retained),
+Files: `aap2ctl` (stdlib-only Python CLI),
 `aap2-cleanup.service`/`.timer`, `sshd-aap2-match.conf` (manual template).
 
 **Never** run `test-s1-live.sh` on a real server: it destructively
