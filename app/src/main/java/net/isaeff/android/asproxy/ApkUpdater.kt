@@ -101,10 +101,10 @@ internal object ApkUpdater {
      * before handing any download to the system Package Installer.
      * Android's installer verifies the actual APK cryptographic signature.
      */
+    @Suppress("DEPRECATION")
     internal fun validatePackage(pm: PackageManager, packageName: String, apk: File): String {
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
-            PackageManager.GET_SIGNING_CERTIFICATES else @Suppress("DEPRECATION")
-            PackageManager.GET_SIGNATURES
+            PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
         val installed = pm.getPackageInfo(packageName, flags)
         val candidate = pm.getPackageArchiveInfo(apk.absolutePath, flags)
             ?: error("Downloaded file is not an Android APK")
@@ -121,9 +121,10 @@ internal object ApkUpdater {
         return candidate.versionName ?: candidateVersion.toString()
     }
 
+    @Suppress("DEPRECATION")
     private fun versionCode(info: PackageInfo): Long =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode
-        else @Suppress("DEPRECATION") info.versionCode.toLong()
+        else info.versionCode.toLong()
 
     @Suppress("DEPRECATION")
     private fun signatures(info: PackageInfo): Set<String> =
