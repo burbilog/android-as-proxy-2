@@ -8,7 +8,7 @@ umask 077
   { echo 'A1 test refuses non-disposable runner' >&2; exit 2; }
 
 ROOT="$PWD"
-SERVER="$ROOT/s2-fixture/server"
+SERVER="$ROOT/server"
 FIXTURE="$ROOT/scripts/ci-a1-server.sh"
 PKG=net.isaeff.android.asproxy2
 RUNNER="${PKG}.test/androidx.test.runner.AndroidJUnitRunner"
