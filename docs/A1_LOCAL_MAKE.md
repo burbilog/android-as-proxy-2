@@ -13,8 +13,8 @@ the public repository:
 ```zsh
 mkdir -p ~/.config/aap2
 cat > ~/.config/aap2/local.mk <<'EOF'
-Z = 20210523020324
-S2 = a.isaeff.net
+Z = YOUR_LOCAL_ADB_SERIAL
+S2 = your-ssh-server.example
 PORT = 11011
 EOF
 chmod 600 ~/.config/aap2/local.mk
@@ -65,8 +65,8 @@ make status
 Overrides work per invocation, e.g.:
 
 ```zsh
-make curl S2=a.isaeff.net PORT=11011
-make install Z=20210523020324
+make curl S2=your-ssh-server.example PORT=11011
+make install Z=YOUR_LOCAL_ADB_SERIAL
 ```
 
 Do not publish CI debug-signed APKs as releases. A signed APK built by this
