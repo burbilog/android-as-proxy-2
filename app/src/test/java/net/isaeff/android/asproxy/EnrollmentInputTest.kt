@@ -1,5 +1,6 @@
 package net.isaeff.android.asproxy
 
+import androidx.compose.ui.text.AnnotatedString
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -64,6 +65,53 @@ class EnrollmentInputTest {
         // Existing P0 profiles have a named account, not an S2 numeric ID.
         // The diagnostics screen must still load and identify them.
         assertEquals("aap2user", ConnectionIdentity.id("aap2user"))
+    }
+
+    @Test fun activationCodeSeparatorsAppearAtGroupBoundaryAndVanishWithBackspace() {
+        val entered = "123456789012345678"
+        assertEquals("", EnrollmentInput.formatActivationCode(""))
+        assertEquals("123", EnrollmentInput.formatActivationCode("123"))
+        assertEquals("1234-", EnrollmentInput.formatActivationCode("1234"))
+        assertEquals("1234-5", EnrollmentInput.formatActivationCode("12345"))
+        assertEquals("1234-5678-", EnrollmentInput.formatActivationCode("12345678"))
+        assertEquals("1234-5678-9012-", EnrollmentInput.formatActivationCode("123456789012"))
+        assertEquals("1234-5678-9012-3456-", EnrollmentInput.formatActivationCode(entered.take(16)))
+        assertEquals("1234-5678-9012-3456-78", EnrollmentInput.formatActivationCode(entered))
+        // Raw editable state is ONLY digits: one backspace deletes a digit
+        // and the automatic dash vanishes in the same transformation pass.
+        for (length in listOf(4, 8, 12, 16)) {
+            assertEquals(
+                EnrollmentInput.formatActivationCode(entered.take(length - 1)),
+                EnrollmentInput.formatActivationCode(entered.take(length).dropLast(1))
+            )
+            assertEquals(length - 1,
+                EnrollmentInput.formatActivationCode(entered.take(length - 1)).count { it.isDigit() })
+        }
+    }
+
+    @Test fun activationCodeCursorSkipsVisualSeparatorBothVisibleAndMasked() {
+        val entered = "123456789012345678"
+        for (reveal in listOf(true, false)) {
+            val transform = GroupedActivationTransformation(reveal)
+            for (length in 0..18) {
+                val digits = entered.take(length)
+                val formatted = transform.filter(AnnotatedString(digits))
+                val visible = if (reveal) digits else "•".repeat(length)
+                assertEquals(EnrollmentInput.formatActivationCode(visible), formatted.text.text)
+                val mapping = formatted.offsetMapping
+                // Raw caret at end must be AFTER the trailing dash (if any).
+                assertEquals(formatted.text.length, mapping.originalToTransformed(length))
+                assertEquals(length, mapping.transformedToOriginal(formatted.text.length))
+                for (offset in 0..length) {
+                    val displayed = mapping.originalToTransformed(offset)
+                    assertEquals(offset, mapping.transformedToOriginal(displayed))
+                }
+                for (offset in 0..formatted.text.length) {
+                    val expected = formatted.text.text.take(offset).count { it != '-' }
+                    assertEquals(expected, mapping.transformedToOriginal(offset))
+                }
+            }
+        }
     }
 
     @Test fun fullFingerprintGroupsWithoutTruncating() {
