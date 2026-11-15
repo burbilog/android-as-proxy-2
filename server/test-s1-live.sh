@@ -30,7 +30,7 @@ groupadd aap2-proxy
 install -d -o root -g root -m 0755 /var/lib/aap2 /var/lib/aap2/enroll
 install -d -o root -g root -m 0700 /var/lib/aap2/state
 install -d -o root -g root -m 0755 /etc/ssh/aap2-authorized-keys
-install -o root -g root -m 0755 "$HERE/aap2-setup" /usr/local/sbin/aap2-setup
+install -o root -g root -m 0755 "$HERE/aap2ctl" /usr/local/sbin/aap2ctl
 install -o root -g root -m 0644 "$HERE/aap2-cleanup.service" /etc/systemd/system/
 install -o root -g root -m 0644 "$HERE/aap2-cleanup.timer" /etc/systemd/system/
 systemctl daemon-reload
@@ -64,7 +64,7 @@ sleep 1
 kill -0 "$DAEMON" || { cat "$TMP/sshd.stderr"; exit 1; }
 
 # AAP2 server-owned username and ephemeral PIN: NEVER echo credentials to CI.
-aap2-setup enroll CI-TEST --server 127.0.0.1:22224 \
+aap2ctl enroll CI-TEST --server 127.0.0.1:22224 \
   --client-addr 127.0.0.1 --client-host localhost \
   --server-addr 127.0.0.1 --server-port 22224 > "$TMP/invite.txt"
 E=$(sed -n 's/^Setup username: //p' "$TMP/invite.txt")
@@ -109,7 +109,7 @@ PY
   # Malicious authorized_keys options must not pass upload validation.
   printf 'command="id" %s\n' "$(cat "$TMP/device.pub")" \
     > "/var/lib/aap2/enroll/$E/inbox/public_key"
-  if printf 'y\n' | aap2-setup approve "$ID" >"$TMP/rejected-approve.out" 2>&1; then
+  if printf 'y\n' | aap2ctl approve "$ID" >"$TMP/rejected-approve.out" 2>&1; then
     echo 'S2 ERROR: injected key options approved' >&2
     exit 1
   fi
@@ -120,7 +120,7 @@ PY
 
   # Real SSH key fingerprint and explicit administrator approval; no PIN
   # used to authenticate the permanent account.
-  printf 'y\n' | aap2-setup approve "$ID" > "$TMP/approve.out"
+  printf 'y\n' | aap2ctl approve "$ID" > "$TMP/approve.out"
   if ! grep -q 'APPROVED:' "$TMP/approve.out"; then
     echo 'S2 ERROR: approval did not report APPROVED:' >&2
     cat "$TMP/approve.out" >&2
@@ -139,7 +139,7 @@ PY
   cp "/etc/ssh/aap2-authorized-keys/$P" "$TMP/original-authorized"
   ssh-keygen -q -t ecdsa -b 256 -N '' -f "$TMP/other"
   cp "$TMP/other.pub" "/var/lib/aap2/enroll/$E/inbox/public_key"
-  aap2-setup approve "$ID" > "$TMP/reapprove.out"
+  aap2ctl approve "$ID" > "$TMP/reapprove.out"
   grep -q 'Already approved:' "$TMP/reapprove.out"
   cmp "$TMP/original-authorized" "/etc/ssh/aap2-authorized-keys/$P"
   echo 'S2 PASS: subsequent SFTP upload cannot replace approved snapshot'
@@ -159,7 +159,7 @@ metadata.write_text(json.dumps(data) + '\n')
 status = Path('/var/lib/aap2/enroll') / username / 'status.json'
 status.write_text('{"schema":1,"status":"pending"}\n')
 PY
-    printf 'y\n' | aap2-setup approve "$ID" > "$TMP/crash-reapprove.out"
+    printf 'y\n' | aap2ctl approve "$ID" > "$TMP/crash-reapprove.out"
     grep -q 'APPROVED:' "$TMP/crash-reapprove.out"
     cmp "$TMP/original-authorized" "/etc/ssh/aap2-authorized-keys/$P"
     grep -q '"state":"approved"' "/var/lib/aap2/state/$ID/metadata.json"
@@ -171,7 +171,7 @@ PY
     # Debian usermod will not change an account with an active SSH
     # session. Test NSS-home mismatch before opening the permanent -R.
     usermod -d /tmp/aap2-foreign-home "$P"
-    if printf 'REVOKE\n' | aap2-setup revoke "$ID" > "$TMP/nss-tamper.out" 2>&1; then
+    if printf 'REVOKE\n' | aap2ctl revoke "$ID" > "$TMP/nss-tamper.out" 2>&1; then
       echo 'S2 ERROR: mismatched NSS home accepted by revoke' >&2
       exit 1
     fi
@@ -209,7 +209,7 @@ data = json.loads(p.read_text())
 data['users']['aap2-proxy']['uid'] = 0
 p.write_text(json.dumps(data) + '\n')
 PY
-    if printf 'REVOKE\n' | aap2-setup revoke "$ID" > "$TMP/uid-tamper.out" 2>&1; then
+    if printf 'REVOKE\n' | aap2ctl revoke "$ID" > "$TMP/uid-tamper.out" 2>&1; then
       echo 'S2 ERROR: UID=0 metadata forgery accepted by revoke' >&2
       exit 1
     fi
@@ -223,7 +223,7 @@ PY
     echo 'S2 Debian 13 PASS: UID=0 metadata refused without changing active -R'
 
     printf 'not-json\n' > "/var/lib/aap2/state/$ID/metadata.json"
-    if aap2-setup cleanup > "$TMP/corrupt.out" 2>&1; then
+    if aap2ctl cleanup > "$TMP/corrupt.out" 2>&1; then
       echo 'S2 ERROR: corrupt metadata silently accepted by cleanup' >&2
       exit 1
     fi
@@ -267,7 +267,7 @@ PY
     systemctl start aap2-cleanup.service
     systemctl is-active --quiet aap2-cleanup.timer
   else
-    aap2-setup cleanup
+    aap2ctl cleanup
   fi
   ! getent passwd "$E" >/dev/null
   grep -q '"state":"approved"' "/var/lib/aap2/state/$ID/metadata.json"
@@ -296,7 +296,7 @@ PY
   fi
 
   # Explicit confirmation and active-session termination.
-  printf 'REVOKE\n' | aap2-setup revoke "$ID"
+  printf 'REVOKE\n' | aap2ctl revoke "$ID"
   ! getent passwd "$P" >/dev/null ||
     { echo 'S2 ERROR: revoked account still exists' >&2; exit 1; }
   [ ! -e "/etc/ssh/aap2-authorized-keys/$P" ] ||
@@ -322,7 +322,7 @@ data['expires_at'] = 0
 p.write_text(json.dumps(data) + '\n')
 PY
 
-aap2-setup cleanup
+aap2ctl cleanup
 if getent passwd "$E" >/dev/null; then
   echo 'Expired temporary user survived cleanup' >&2
   exit 1
@@ -333,5 +333,5 @@ getent passwd "$P" >/dev/null ||
   { echo 'Permanent authorized key file was removed' >&2; exit 1; }
 [ ! -e "/var/lib/aap2/enroll/$E" ] ||
   { echo 'Expired temporary chroot survived cleanup' >&2; exit 1; }
-aap2-setup cleanup
+aap2ctl cleanup
 echo 'S1-B PASS: expired PIN account removed, permanent account preserved, idempotent cleanup'
