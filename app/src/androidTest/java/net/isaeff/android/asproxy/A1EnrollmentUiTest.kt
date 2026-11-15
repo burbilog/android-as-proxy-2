@@ -1,6 +1,8 @@
 package net.isaeff.android.asproxy
 
 import androidx.compose.ui.test.assertTextEquals
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.util.Log
 import java.io.File
 import org.junit.Assert.assertArrayEquals
@@ -56,6 +58,30 @@ class A1EnrollmentUiTest {
                 .fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithTag("a1-fingerprint-full").assertTextEquals(expected)
+
+        // A real Android configuration change must NOT drop the verified host
+        // candidate or the activation code. Neither is written to saved state.
+        val activity = composeRule.activity
+        try {
+            composeRule.runOnUiThread {
+                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            }
+            composeRule.waitUntil(15_000) {
+                activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+            }
+            composeRule.onNodeWithTag("a1-fingerprint-full").assertTextEquals(expected)
+            composeRule.onNodeWithTag("a1-code-confirmation")
+                .assertTextEquals("Activation code: ••••-••••-••••-••••-••")
+            composeRule.onNodeWithTag("a1-verified-activate").assertExists()
+        } finally {
+            composeRule.runOnUiThread {
+                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            }
+            composeRule.waitUntil(15_000) {
+                activity.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+            }
+        }
+        composeRule.onNodeWithTag("a1-fingerprint-full").assertTextEquals(expected)
         composeRule.onNodeWithTag("a1-code-check-ok").assertTextEquals("Activation code checksum: OK")
         composeRule.onNodeWithTag("a1-code-confirmation")
             .assertTextEquals("Activation code: ••••-••••-••••-••••-••")
@@ -77,6 +103,7 @@ class A1EnrollmentUiTest {
         composeRule.onNodeWithTag("a1-cancel-verification").performScrollTo().performClick()
         composeRule.onNodeWithTag("a1-verified-activate").assertDoesNotExist()
         composeRule.onNodeWithTag("a1-probe").assertExists()
+        composeRule.onNodeWithTag("a1-server").assertTextEquals("10.0.2.2:22224")
         assertTrue(EnrollmentPending.load(context) == null)
         assertFalse(DirectBootTunnelProfile.hasProfile(context))
     }
