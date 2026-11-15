@@ -519,7 +519,7 @@ class ApprovalTests(unittest.TestCase):
             '2: 00000000:2B04 00000000:0000 0A',
             '3: 0100007F:2B05 00000000:0000 0A',
         ]
-        with mock.patch('builtins.open', return_value=io.StringIO('\\n'.join(rows))), \
+        with mock.patch('builtins.open', return_value=io.StringIO('\n'.join(rows))), \
              mock.patch.object(aap.socket, 'socket',
                                side_effect=AssertionError('no TCP probes')), \
              mock.patch.object(aap.subprocess, 'run',
