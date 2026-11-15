@@ -391,6 +391,31 @@ establish prolonged OEM background resilience, battery optimization behavior
 or repeated Wi-Fi-loss recovery for the revised build. Preserve the
 operational Zebra and its independent soak.
 
+## Physical rotation bug and A1 fix (2026-11-15)
+
+On the operator-held Zebra TC21, release-signed `20006` lost the server
+address, 18-digit activation entry and pre-auth host-fingerprint step when the
+device was rotated after tapping **Check server fingerprint**. The previous
+Compose `remember` values belonged to a recreated `EnrollmentActivity`.
+This is a real release blocker for manual activation.
+
+A1 now handles only orientation/screen-size/keyboard-hidden configuration
+changes in `EnrollmentActivity` itself, preserving the existing transient
+Compose screen, the candidate SSH host key and any ongoing network coroutine.
+**No PIN, activation code or candidate host key is added to saved-instance
+state, ViewModel SavedStateHandle, preferences, logs or storage.** A process
+death or explicit exit still drops the uncommitted code; the separately
+documented pending enrollment remains non-secret and resumable.
+
+A real Compose instrumentation regression now rotates to landscape and back
+after completing unauthenticated SSH host-key probing, asserting that the
+same fingerprint, masked 18-digit code and explicit approval button survive.
+It then cancels fingerprint verification and asserts the original server
+address remains present. Physical acceptance and latest Android CI are
+separate gates before issuing any new release candidate; use a new
+`versionCode` (at least `20007`), never silently replace the previously
+built `20006` binary with different bytes.
+
 ## Remaining acceptance gates
 
 - [x] Six-digit manual-typing Compose enrollment with disposable S2 `--manual-code` — full [Android 11 E2E run #43581141257](https://github.com/burbilog/android-as-proxy-2/actions/runs/43581141257) **PASS** (2026-11-14), including Compose text entry, PIN/SFTP/approval/SSH `-R`/SOCKS5 HTTP, signed in-place test upgrade, pre-unlock Direct Boot and revoke.
@@ -402,6 +427,7 @@ operational Zebra and its independent soak.
 - [x] Basic physical Wi-Fi off/on recovery: after disabling and re-enabling Wi-Fi on Seuic Cruise2, SOCKS5 HTTPS again succeeded via the same S2 reverse port `11010` (2026-11-14).
 - [x] Physical single 18-digit activation-code enrollment on Seuic Cruise2 with release-signed `20003`, administrative approval, and actual SOCKS5 HTTPS via Cloudflare (2026-11-14).
 - [x] Physical reconnect UI on release-signed `20005`: visible Reconnecting state, Disconnect while retrying remains stopped after SSH restoration, manual Connect returns working SOCKS5 (Seuic Cruise2; isolated S2, 2026-11-14).
+- [ ] Physical Zebra TC21 rotation test of the revised pre-auth fingerprint screen (must preserve server address and 18-digit code in RAM); Android CI with real rotation must pass before release.
 - [ ] Long-running foreground-service reliability and OEM battery restrictions under extended soak; repeated network-loss/reconnect cycles remain a separate gate.
 - [x] Update from one **release-signed** APK to another using the long-term key kept on `marduk`, preserving identity and verified host key, confirmed with real SSH and SOCKS5 HTTP on Seuic Cruise2, 2026-11-14. See `docs/P0_RELEASE_SIGNING.md`. The guarded local `scripts/aap2-spare-upgrade.sh` verifies both signatures and versions and requires an explicit spare-device ADB serial; it never uninstalls AAP2 or touches the working Zebra by default.
 
