@@ -225,7 +225,7 @@ fun MainScreen() {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Button(
+                OutlinedButton(
                     onClick = { context.startActivity(Intent(context, LogViewActivity::class.java)) }
                 ) { Text("Show log") }
                 if (profile != null) {
