@@ -1,4 +1,7 @@
-# S1-A — aap2-setup (read-only server preflight)
+# S1-A — aap2ctl (read-only server preflight)
+
+The legacy Python source file remains `server/aap2-setup`; the installed
+preferred command is `aap2ctl`.
 
 This is **the first, intentionally non-mutating server CLI stage**.
 It is **not** a functioning enrollment server yet: no PIN, no user creation,
