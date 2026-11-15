@@ -3,6 +3,8 @@ package net.isaeff.android.asproxy
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -26,6 +28,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -39,6 +42,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import net.isaeff.android.asproxy.ui.theme.AAPTheme
+import kotlinx.coroutines.launch
+import java.io.File
 
 /**
  * AAP2 has only one supported provisioning path: verified host fingerprint
@@ -76,6 +81,28 @@ fun MainScreen() {
         mutableStateOf(runCatching { DirectBootTunnelProfile.load(context) }.getOrNull())
     }
     var showDetails by remember { mutableStateOf(false) }
+
+    // Updates are explicitly requested by the user, not polled or downloaded
+    // in the background. The existing SSH foreground service keeps running
+    // while an APK is downloaded and validated.
+    val updateScope = rememberCoroutineScope()
+    var updateBusy by remember { mutableStateOf(false) }
+    var updateMessage by remember { mutableStateOf("") }
+    var waitingForInstallPermission by remember { mutableStateOf<File?>(null) }
+    val unknownSourcesSettings = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        val apk = waitingForInstallPermission
+        waitingForInstallPermission = null
+        if (apk != null && (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+                context.packageManager.canRequestPackageInstalls())) {
+            runCatching { ApkUpdater.launchSystemInstaller(context, apk) }
+                .onFailure { updateMessage = "Cannot open Android installer: ${it.javaClass.simpleName}" }
+        } else {
+            updateMessage = "Install permission not granted. Tap Update to try again."
+        }
+    }
+
     DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
@@ -206,7 +233,39 @@ fun MainScreen() {
                         onClick = { showDetails = true },
                         modifier = Modifier.testTag("a1-open-details")
                     ) { Text("Details") }
+                    OutlinedButton(
+                        onClick = {
+                            updateBusy = true
+                            updateMessage = "Downloading update…"
+                            updateScope.launch {
+                                try {
+                                    val ready = ApkUpdater.download(context.applicationContext)
+                                    updateMessage = "Ready to install: ${ready.versionName}"
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                                        !context.packageManager.canRequestPackageInstalls()) {
+                                        waitingForInstallPermission = ready.file
+                                        updateMessage = "Allow installs from AAP2, then return."
+                                        unknownSourcesSettings.launch(
+                                            Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                                Uri.parse("package:${context.packageName}"))
+                                        )
+                                    } else {
+                                        ApkUpdater.launchSystemInstaller(context, ready.file)
+                                    }
+                                } catch (e: Exception) {
+                                    updateMessage = "Update failed: ${e.message ?: e.javaClass.simpleName}"
+                                } finally {
+                                    updateBusy = false
+                                }
+                            }
+                        },
+                        enabled = !updateBusy,
+                        modifier = Modifier.testTag("a1-update")
+                    ) { Text(if (updateBusy) "Loading…" else "Update") }
                 }
+            }
+            if (updateMessage.isNotBlank()) {
+                Text(updateMessage, modifier = Modifier.testTag("a1-update-status"))
             }
         }
     }
