@@ -31,7 +31,7 @@ manual sshd reload, while keeping the original SSH session open. Follow [INSTALL
 - [S1_ENROLL.md](S1_ENROLL.md) — PIN/SFTP lifecycle, timer and safety contract
 - [S2_APPROVAL.md](S2_APPROVAL.md) — approval, restricted forwarding, revoke
 
-Files: `aap2-setup` (stdlib-only Python CLI),
+Files: `aap2-setup` (single stdlib-only Python implementation, installed as `aap2ctl` with legacy `aap2-setup` retained),
 `aap2-cleanup.service`/`.timer`, `sshd-aap2-match.conf` (manual template).
 
 **Never** run `test-s1-live.sh` on a real server: it destructively
@@ -39,6 +39,6 @@ replaces SSH configuration in disposable CI only. Never infer live
 connections from log parsing or an APPROVED registration status.
 
 ```sh
-aap2-setup doctor
+aap2ctl doctor
 python3 -m unittest discover -s server -p 'test_*.py' -v
 ```
