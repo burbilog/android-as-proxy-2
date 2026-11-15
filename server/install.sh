@@ -63,7 +63,21 @@ ensure_dir /var/lib/aap2/enroll 0755
 ensure_dir /var/lib/aap2/state 0700
 ensure_dir /etc/ssh/aap2-authorized-keys 0755
 
+# Keep the single Python implementation in its existing path for
+# backward compatibility, expose aap2ctl as the preferred public command.
+# Never replace an unrelated executable or an untrusted preexisting symlink.
 install_file "$src_dir/aap2-setup" /usr/local/sbin/aap2-setup 0755
+alias_path=/usr/local/sbin/aap2ctl
+if [ -L "$alias_path" ]; then
+    [ "$(readlink "$alias_path")" = /usr/local/sbin/aap2-setup ] ||
+        fail "unexpected aap2ctl symlink target: $alias_path"
+    [ "$(stat -c %u "$alias_path")" -eq 0 ] ||
+        fail "aap2ctl symlink is not root-owned"
+elif [ -e "$alias_path" ]; then
+    fail "aap2ctl already exists and is not our symlink: $alias_path"
+else
+    ln -s /usr/local/sbin/aap2-setup "$alias_path"
+fi
 install_file "$src_dir/aap2-cleanup.service" /etc/systemd/system/aap2-cleanup.service 0644
 install_file "$src_dir/aap2-cleanup.timer" /etc/systemd/system/aap2-cleanup.timer 0644
 
@@ -78,4 +92,4 @@ printf '  %s/sshd-aap2-match.conf\n' "$src_dir"
 printf 'Run /usr/sbin/sshd -t and inspect effective sshd -T -C policy.\n'
 printf 'Keep this SSH session open; manually reload ssh.service, then test\n'
 printf 'a NEW admin SSH login before closing the first session.\n'
-printf 'Then run: /usr/local/sbin/aap2-setup doctor\n'
+printf 'Then run: /usr/local/sbin/aap2ctl doctor\n'
