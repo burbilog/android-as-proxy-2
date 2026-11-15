@@ -53,8 +53,17 @@ internal object EnrollmentInput {
         return Activation("aap2e" + digits.substring(0, 6), digits.substring(6, 16))
     }
 
-    fun formatActivationCode(digits: String): String =
-        digits.chunked(4).joinToString("-")
+    /**
+     * Show a separator as soon as a 4-digit group is complete, so a person
+     * transcribing XXXX-XXXX-XXXX-XXXX-XX never needs to type '-' themselves.
+     * The actual editable value contains digits only; erasing a boundary
+     * digit also makes its visual separator disappear.
+     */
+    fun formatActivationCode(digits: String): String {
+        val grouped = digits.chunked(4).joinToString("-")
+        return if (digits.length in 4..16 && digits.length % 4 == 0) "$grouped-"
+            else grouped
+    }
 
     fun setupUser(value: String): String {
         val code = value.trim()
