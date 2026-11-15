@@ -8,7 +8,7 @@ import java.net.URI
 class ApkUpdaterTest {
     @Test fun onlyHttpsAndKnownUpdateDownloadHosts() {
         for (url in listOf(
-            "https://isaeff.net/a",
+            "https://github.com/burbilog/android-as-proxy-2/releases/latest/download/aap2.apk",
             "https://github.com/burbilog/android-as-proxy-2/releases/download/v2.0.0-rc1/aap2.apk",
             "https://release-assets.githubusercontent.com/example?token=abc",
             "https://objects.githubusercontent.com/example"
@@ -16,8 +16,9 @@ class ApkUpdaterTest {
             assertTrue(url, ApkUpdater.allowedDownloadUri(URI(url)))
         }
         for (url in listOf(
-            "http://isaeff.net/a",
-            "https://isaeff.net:444/a",
+            "http://github.com/burbilog/android-as-proxy-2/releases/latest/download/aap2.apk",
+            "https://isaeff.net/a",
+            "https://github.com:444/a",
             "https://user@github.com/repo",
             "https://github.com.evil.example/download",
             "https://fakegithubusercontent.com/download",
@@ -30,8 +31,8 @@ class ApkUpdaterTest {
     }
 
     @Test fun relativeRedirectNeverOverridesHttpsAndDomainGate() {
-        val start = URI("https://isaeff.net/a")
-        assertTrue(ApkUpdater.allowedDownloadUri(start.resolve("/a/")))
+        val start = URI("https://github.com/burbilog/android-as-proxy-2/releases/latest/download/aap2.apk")
+        assertTrue(ApkUpdater.allowedDownloadUri(start.resolve("/burbilog/android-as-proxy-2/releases/download/v2.0.0/aap2.apk")))
         assertFalse(ApkUpdater.allowedDownloadUri(start.resolve("http://evil.example/apk")))
         assertFalse(ApkUpdater.allowedDownloadUri(start.resolve("//evil.example/apk")))
     }
