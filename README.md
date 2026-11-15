@@ -1,146 +1,112 @@
-# Android As Proxy (AAP)
+# Android as Proxy 2 (AAP2)
 
-Cross-border Internet made simple. **Android As Proxy (AAP)** turns any spare Android phone into an always-on SOCKS 5 gateway reachable from anywhere by using secure SSH *remote* port forwarding. Place the device in the country whose online services you need, give it to a relative, or rent a hosted phone — AAP makes all traffic that arrives to the SSH server emerge from that handset as if you were physically there. Ideal for listening to geo-restricted radio, streaming region-locked video, accessing ChatGPT or other AI providers blocked in your location, or bypassing state censorship.
-Built entirely in Kotlin and running as a resilient foreground service, the tunnel survives doze mode, reboots and poor connectivity.
+AAP2 turns a spare Android handset into a self-hosted SOCKS5 exit. The phone opens an **outbound**, server-host-key-pinned SSH connection to an OpenSSH server you control, requests a **loopback-only reverse port**, and forwards SOCKS5 traffic through the phone's Internet connection.
 
-### Typical use cases
-- Listen to Japan-only radio while living in Europe
-- Watch domestic sports streams when traveling abroad
-- Reach ChatGPT, Claude or other LLMs from within restrictive networks
-- Provide relatives in censored regions with an uncensored connection
+The server does not expose a public SOCKS5 port, and the Android app does not need a long-term SSH password. AAP2 can coexist with the original AAP1 app; its Android application ID is `net.isaeff.android.asproxy2`.
 
-### Why a *physical* handset instead of a VPS?
-Commercial VPS and cloud ranges (Hetzner, Vultr, DigitalOcean, AWS, etc.) are widely fingerprinted and routinely blocked by content owners and services such as Wikipedia, YouTube, ChatGPT, etc. Traffic coming from these ASNs is assumed to be “datacenter” and untrusted.
-By tunnelling through an ordinary Android phone attached to a consumer ISP or mobile carrier you appear as a genuine residential user, bypassing many of these network-wide blocks while still retaining full SSH-grade encryption.
+**Status:** initial v2 release candidate. Real Android 11 and Android 14 devices, disposable Debian 13 OpenSSH integration, and signed in-place updates have been tested. Long-term reliability across OEM battery policies and unattended networks is device-dependent and remains a separate acceptance test.
 
-## ⚠️ Power & Device Suitability
+## Architecture
 
-AAP runs a **persistent foreground service** to keep the SSH session and SOCKS proxy alive.  
-This prevents Android from entering doze mode but **significantly increases power
-consumption**. Deploy the app on a spare handset, TV box, or any always-powered
-device—ideally one that will remain plugged in and unattended.  
-**Do not** install AAP on your daily driver phone unless you fully understand and
-accept the battery and hardware wear implications.
-## Features
-
-- Establishes persistent SOCKS 5 proxy via SSH remote forwarding (`-R`)  
-- Automatic algorithm profile negotiation for maximum compatibility, see [`SSHTunnelManager`](app/src/main/java/net/isaeff/android/asproxy/SSHTunnelManager.kt:14)  
-- Runs as an Android 14-compatible foreground service with special-use flag  
-- Real-time connection state broadcast through [`ConnectionStateHolder`](app/src/main/java/net/isaeff/android/asproxy/ConnectionStateHolder.kt:1)  
-- On-device log viewer (`LogViewActivity`) for troubleshooting  
-- Stores and verifies host keys (StrictHostKeyChecking)  
-- Kotlin Coroutines for non-blocking IO  
-
-## How it works
-
-1. The user provides SSH credentials (username, host, port, password and remote bind port).  
-2. [`SSHTunnelManager`](app/src/main/java/net/isaeff/android/asproxy/SSHTunnelManager.kt:14) tries a series of algorithm profiles (**modern**, **rsa**, **compat**, etc.) to establish the session using JSch.  
-3. Once connected it requests *remote* port forwarding so the **server** listens on `remotePort` and forwards traffic back to the handset’s local SOCKS proxy running on `localhost:1080`.  
-4. The proxy itself is implemented by [`SocksForegroundService`](app/src/main/java/net/isaeff/android/asproxy/SocksForegroundService.kt:1) and remains active as a foreground service, satisfying Android background execution limits.  
-5. Status is reflected in a persistent notification and can be consumed by other components through `ConnectionStateHolder`.  
-
-## Screenshots
-
-*Coming soon – feel free to open a PR with screenshots!*
-
-## Build & Install
-
-1. Clone the repo  
-```bash
-git clone https://github.com/burbilog/android-as-proxy.git
-cd android-as-proxy
-```
-2. Open the project in **Android Studio Hedgehog** (or newer) or build from CLI:  
-```bash
-./gradlew assembleRelease
-```
-3. Sign the generated APK located under `app/build/outputs/apk/release/`.  
-4. Install on your device:  
-```bash
-adb install -r app/build/outputs/apk/release/app-release.apk
+```text
+Your laptop                    Your SSH server                    Android
+    |                                |                              |
+    |--- SSH local -L (optional) --->|<--- outbound pinned SSH ------|
+    |                                |        restricted -R          |
+    |--- SOCKS5 via local SSH ------>|==============================>|
+    |                                |                         Internet exit
 ```
 
-### Minimum Requirements
+Each approved phone gets a distinct server-side SOCKS5 port listening **only on 127.0.0.1**, not on the public interface. The server uses existing OpenSSH; there is no separate AAP2 network daemon or inbound listener on the phone.
 
-- Android 7.0 (API 24)  
-- OpenSSH server you control (or any server that allows remote port forwarding)  
+## Requirements
 
-### Runtime Permissions
+- Android 7.0+ (API 24), preferably a dedicated phone that can remain powered.
+- A Debian 13 SSH server (documented S2 target), Python 3.9+, OpenSSH and systemd.
+- Administrator access to the server and an **independent trusted copy** of its full SSH host-key fingerprint.
 
-The app requests:  
+Android power-saving policies can stop foreground services on some handsets. Validate your particular device before remote unattended use. Keeping a phone plugged in continuously also requires attention to battery health.
 
-- `FOREGROUND_SERVICE` & `FOREGROUND_SERVICE_SPECIAL_USE` to keep the proxy alive.  
-- `POST_NOTIFICATIONS` (Android 13+) for status notifications.  
-- `INTERNET` to establish the tunnel.  
+## 1. Prepare the server
 
-## Usage
+Review [server/INSTALL.md](server/INSTALL.md), then run on your server from a trusted checkout as root:
 
-1. Launch **AAP** on the Android phone that will reside in the target country.
-2. Fill in SSH host, user, authentication method, and choose an unused **Remote port** (e.g. `2222`).
-3. Tap *Start*. When the notification switches to **Connected** the SSH server is now listening on that remote port and forwarding into the phone’s local SOCKS 5 instance.
-4. From your **desktop/laptop** establish the secondary tunnel detailed below ([Accessing the proxy from your computer](#accessing-the-proxy-from-your-computer)) *or*—if your client program runs directly on the SSH server—configure it to use `localhost:<REMOTE_PORT>` as a SOCKS 5 proxy.
-
-Logs can be inspected via *Overflow → View logs*. This screen tail-streams the internal [`AAPLog`](app/src/main/java/net/isaeff/android/asproxy/AAPLog.kt:1) buffer for troubleshooting.
-
-### Accessing the proxy from your computer
-
-After **AAP** reports *Connected*, the SOCKS 5 service is listening on the **SSH server** (at the *remote port* you configured), not directly on the phone.  
-To consume it from your desktop or laptop open a second, **local** SSH tunnel that bridges your machine to that remote bind port.
-
-#### Linux / macOS
-
-```bash
-ssh -N -L 1080:localhost:<REMOTE_PORT> <USER>@<SERVER_IP>;
+```sh
+sh server/install.sh
+aap2ctl doctor
 ```
 
-• **`<REMOTE_PORT>`** – the same remote port configured in AAP  
-• **`1080`** – any free local port (1080 is conventional for SOCKS proxies)
+The installer creates dedicated restricted accounts/groups, installs the Python standard-library CLI `aap2ctl` and enables the PIN cleanup timer. **It does not edit or reload sshd_config, PAM or firewall rules.** Review and apply the provided [SSH Match policy](server/sshd-aap2-match.conf) manually. Keep an existing administrative SSH session open when validating SSH configuration and any later reload.
 
-Keep this shell running. All applications that use the SOCKS 5 proxy `localhost:1080` will now exit through the Android phone in the target country.
+## 2. Enroll the phone
 
-#### Windows (PuTTY)
+On the server, issue a single manual activation code:
 
-1. Launch **PuTTY** and enter the server’s hostname/IP under *Session*.  
-2. Go to *Connection → SSH → Tunnels* and add a new **Local** forwarding:  
-   * **Source port**: `1080`  
-   * **Destination**: `localhost:<REMOTE_PORT>`  
-   * **Type**: leave **Local** (do **not** pick *Dynamic*).  
-3. Click *Add*, return to *Session* and *Open* the connection, then authenticate.  
-4. Keep the PuTTY window open while you browse.
-
-Finally, configure your browser or other tools to use **SOCKS 5 proxy `localhost:1080`**. All traffic will traverse:
-
+```sh
+aap2ctl enroll "MyPhone" --server ssh.example.org --manual-code
 ```
-your PC ──► ssh -L 1080 … ──► SSH server ──► remotePort ──► phone ──► Internet
+
+The command displays an 18-digit activation code, the server endpoint and its SSH host-key fingerprints. The PIN is temporary. Share the code privately; never put it into a log, issue, screenshot or published command output.
+
+Install the **release-signed** AAP2 APK from [GitHub Releases](https://github.com/burbilog/android-as-proxy-2/releases) when one is published. CI debug APKs use a different signing certificate and are **not** suitable for upgrading an existing release installation.
+
+On the phone:
+
+1. Open **Activate AAP2**; enter the server and the 18-digit activation code (visually grouped 4-4-4-4-2).
+2. Tap **Check server fingerprint**, verify its complete SHA256 fingerprint **through an independent channel**, then confirm the match.
+3. The phone generates its private identity in Android Keystore and uploads only the public SSH key using the verified SFTP connection.
+4. Wait for the administrator's approval. On the server:
+
+```sh
+aap2ctl list
+aap2ctl approve ID
+aap2ctl list
 ```
-## Contributing
 
-Pull requests are welcome. For major changes please open an issue first to discuss what you would like to change. Make sure to run `./gradlew lint ktlintFormat detekt` before submitting.
+The approved key is restricted to that device's allocated reverse port. No new PIN is required for reconnects or in-place APK updates. `aap2ctl list` marks an approved device as `(UP)` when its reverse TCP listener exists, or `(DOWN)` if absent; this is **not** an end-to-end connectivity test. Use `aap2ctl revoke ID` to revoke a device.
 
-## Roadmap
+## 3. Use the SOCKS5 proxy
 
-- [ ] SSH keys auth in addition to password auth
-- [ ] Settings screen for multiple profiles  
-- [ ] Public build on F-Droid  
-- [ ] Localization (RU, etc)  
+For example, if S2 allocated the server's loopback port `11010`, use a trusted SSH connection to forward it to your computer:
 
-## License
+```sh
+ssh -N -L 11010:127.0.0.1:11010 ssh.example.org
+```
 
-Android As Proxy is free software: you can redistribute it and/or modify  
-it under the terms of the **GNU General Public License v3.0** as published by  
-the Free Software Foundation.
+In another terminal:
 
-This program is distributed in the hope that it will be useful,  
-but **WITHOUT ANY WARRANTY**; without even the implied warranty of  
-**MERCHANTABILITY** or **FITNESS FOR A PARTICULAR PURPOSE**.  See the  
-GNU General Public License for more details.
+```sh
+curl --proxy socks5h://127.0.0.1:11010 https://www.cloudflare.com/cdn-cgi/trace
+```
 
-You should have received a copy of the GNU General Public License  
-along with this program. If not, see <https://www.gnu.org/licenses/>.
+The reported Internet egress address should be the **phone's** network IP, not the SSH server's. `socks5h` also resolves destination names through the phone-side proxy.
 
-## Author
+## Updating Android
 
-Roman V. Isaev <rm@isaeff.net>
+An enrolled phone offers **Update** on its main screen. This downloads `aap2.apk` directly from the latest **stable** GitHub Release, checks the Android package name, increasing `versionCode` and existing app signer, then opens Android's standard package installer. Android will ask for installation confirmation and may first ask you to allow installations from AAP2.
 
----
-*Happy tunneling!*
+There is **no automatic polling, background download or silent installation**. If the user wanted the connection running before the update, AAP2 attempts to restore it after `MY_PACKAGE_REPLACED`. An explicit **Disconnect** remains off after updating.
+
+GitHub's `releases/latest` endpoint intentionally does not include pre-releases; release-candidate builds should be installed and tested separately.
+
+## Building and testing
+
+For developers:
+
+```sh
+./gradlew --no-daemon :app:assembleDebug :app:testDebugUnitTest
+python3 -m unittest discover -s server -p 'test_*.py'
+```
+
+The Android project uses JDK 17 and Android SDK 35. A distributable APK **must** be signed with one long-term local key, never a CI debug key. See [release-signing guidance](docs/P0_RELEASE_SIGNING.md).
+
+On the maintainer's own workstation the [Makefile](docs/A1_LOCAL_MAKE.md) provides short commands: `make build`, `make install`, `make status`, `make curl` and `make check`. Signing keys, device serials and private server configuration remain outside Git.
+
+## Security notes
+
+- A one-time code is **not** a substitute for independently verifying the SSH host key. All permanent keys require explicit administrator approval.
+- The permanent Android private key stays in Android Keystore; the server permits only loopback reverse forwarding on the device's assigned port.
+- Server account cleanup and explicit device revocation are separate. The cleanup timer never revokes approved keys.
+- The app is intended for authorized use on networks and services you are permitted to access. Do not treat an active reverse listener as proof that phone-side Internet connectivity is healthy.
+
+See [server/README.md](server/README.md), [S2 approval](server/S2_APPROVAL.md) and [A1 Android enrollment](docs/A1_ANDROID_ENROLLMENT.md) for the detailed security and test contracts.
