@@ -1,5 +1,7 @@
 package net.isaeff.android.asproxy
 
+import androidx.core.content.FileProvider
+import java.io.File
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onNodeWithTag
@@ -33,6 +35,35 @@ class A1ConnectionDetailsUiTest {
         val phoneFingerprint = VerifiedSshHostKey.sha256Fingerprint(
             AndroidKeystoreIdentity.getExisting(context).getPublicKeyBlob()
         )
+
+        // The package manager must recognize an installed APK as the SAME
+        // AAP2 package and reject it as a non-upgrade. No HTTP or install UI.
+        val alreadyInstalled = File(context.applicationInfo.sourceDir)
+        val sameVersion = runCatching {
+            ApkUpdater.validatePackage(context.packageManager, context.packageName,
+                alreadyInstalled)
+        }
+        assertTrue("Updater did not reject same-version installed APK",
+            sameVersion.exceptionOrNull()?.message?.contains("Already up to date") == true)
+
+        // Only a scoped cached APK is readable through the FileProvider. The
+        // system installer receives this content URI with a one-time read grant.
+        val tempDir = File(context.cacheDir, "updates")
+        assertTrue(tempDir.isDirectory || tempDir.mkdirs())
+        val cacheApk = File(tempDir, "aap2.apk")
+        try {
+            cacheApk.writeText("file-provider-test")
+            val uri = FileProvider.getUriForFile(context,
+                "${context.packageName}.updates", cacheApk)
+            assertEquals("content", uri.scheme)
+            assertEquals("${context.packageName}.updates", uri.authority)
+            assertEquals("file-provider-test",
+                context.contentResolver.openInputStream(uri)!!.bufferedReader().use {
+                    it.readText()
+                })
+        } finally {
+            cacheApk.delete()
+        }
 
         composeRule.onNodeWithTag("a1-connection-id")
             .assertTextEquals("Connection ID: $id")
