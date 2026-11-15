@@ -416,6 +416,38 @@ separate gates before issuing any new release candidate; use a new
 `versionCode` (at least `20007`), never silently replace the previously
 built `20006` binary with different bytes.
 
+## APK replacement: preserve desired tunnel state (2026-11-15)
+
+**Physical observation on LOCAL Zebra TC21, not the remote Japanese AAP1
+phone:** in-place release-signed `20007 → 20008` with `adb install -r`
+preserved Android Keystore, host pin and S2 registration ID `552310`, but
+killed the foreground service. Public Debian 13 S2 SOCKS5 on loopback
+`11011` went away until the administrator manually opened AAP2 and tapped
+Connect. After manual reconnect, SOCKS5 HTTPS worked through the same
+account and port, without PIN or re-enrollment. This was a missing
+post-upgrade trigger, **not** loss of identity.
+
+New `BootCompletedReceiver` manifest registration handles the system-only
+`android.intent.action.MY_PACKAGE_REPLACED` in addition to both existing
+boot broadcasts. It reuses the existing privileged foreground service and
+device-protected `DirectBootTunnelProfile.wantsConnection` gate. Update
+restart has its own service action, treated like boot/restart: **never**
+switch `desired_running` to true when a user has disconnected; **never**
+enroll or create credentials. No polling, new daemon, permissions or
+periodic alarms.
+
+CI acceptance now includes:
+- Real debug-cert **in-place APK update** on Android 11; before starting ANY
+  Activity or instrumentation, public SSH reverse SOCKS5 HTTP must
+  automatically work again, proving `MY_PACKAGE_REPLACED` recovery.
+- After explicit Disconnect, directly invoking the update receiver must
+  leave the tunnel stopped and leave the persisted `desired_running` false;
+  an explicit Connect restores the original Keystore account and tunnel.
+- Existing pre-first-unlock Direct Boot and restricted OpenSSH E2E tests
+  still run. These gates also need physical confirmation on the LOCAL
+  Zebra with the next release-signed `20009` build. **Do not use the old
+  `20008` binary as if it included this fix.**
+
 ## Remaining acceptance gates
 
 - [x] Six-digit manual-typing Compose enrollment with disposable S2 `--manual-code` — full [Android 11 E2E run #43581141257](https://github.com/burbilog/android-as-proxy-2/actions/runs/43581141257) **PASS** (2026-11-14), including Compose text entry, PIN/SFTP/approval/SSH `-R`/SOCKS5 HTTP, signed in-place test upgrade, pre-unlock Direct Boot and revoke.
@@ -428,6 +460,7 @@ built `20006` binary with different bytes.
 - [x] Physical single 18-digit activation-code enrollment on Seuic Cruise2 with release-signed `20003`, administrative approval, and actual SOCKS5 HTTPS via Cloudflare (2026-11-14).
 - [x] Physical reconnect UI on release-signed `20005`: visible Reconnecting state, Disconnect while retrying remains stopped after SSH restoration, manual Connect returns working SOCKS5 (Seuic Cruise2; isolated S2, 2026-11-14).
 - [ ] Physical Zebra TC21 rotation test of the revised pre-auth fingerprint screen (must preserve server address and 18-digit code in RAM); Android CI with real rotation must pass before release.
+- [ ] Physical in-place update `20008 → 20009` must automatically restore LOCAL Zebra SOCKS5 without opening the app; explicit Disconnect must prevent auto-restart on subsequent update.
 - [ ] Long-running foreground-service reliability and OEM battery restrictions under extended soak; repeated network-loss/reconnect cycles remain a separate gate.
 - [x] Update from one **release-signed** APK to another using the long-term key kept on `marduk`, preserving identity and verified host key, confirmed with real SSH and SOCKS5 HTTP on Seuic Cruise2, 2026-11-14. See `docs/P0_RELEASE_SIGNING.md`. The guarded local `scripts/aap2-spare-upgrade.sh` verifies both signatures and versions and requires an explicit spare-device ADB serial; it never uninstalls AAP2 or touches the working Zebra by default.
 
