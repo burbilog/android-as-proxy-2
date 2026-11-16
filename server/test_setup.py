@@ -20,6 +20,26 @@ aap = importlib.util.module_from_spec(spec)
 loader.exec_module(aap)
 
 
+class AtomicFileTests(unittest.TestCase):
+    def test_atomic_file_persists_content_and_syncs_directory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary, 'metadata.json')
+            calls = []
+            real_fsync = os.fsync
+
+            def counting_fsync(fd):
+                calls.append(fd)
+                return real_fsync(fd)
+
+            with mock.patch.object(aap.os, 'fsync', side_effect=counting_fsync):
+                aap.atomic_json(target, {'state': 'active'})
+                self.assertEqual(json.loads(target.read_text()), {'state': 'active'})
+                self.assertEqual(len(calls), 2, 'file and containing directory must be fsynced')
+                aap.atomic_json(target, {'state': 'approved'})
+                self.assertEqual(json.loads(target.read_text()), {'state': 'approved'})
+                self.assertEqual(len(calls), 4)
+
+
 class CheckTests(unittest.TestCase):
     def test_policy_matches_expected_exactly(self):
         for role in (aap.GROUP_ENROLL, aap.GROUP_PROXY):
