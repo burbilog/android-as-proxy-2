@@ -31,9 +31,11 @@ holding the Android device may have **no technical skills and little time**.
 - **Protect SSH identity:** pin the negotiated SSH host-key algorithm
   to the already verified key; a newly added server key must not
   disconnect existing phones. Mismatch must **not** silently re-pin.
-- **Recover safely:** persisted non-secret errors and understandable
-  status/notification on fatal problems; hourly throttling for
-  authentication rejection; normal retry on transport failure.
+- **Recover safely:** persist non-secret errors and understandable
+  status/notifications. Retry pinned-host-key rejection, authentication
+  rejection and temporary local/Keystore failures at most hourly, without
+  ever authenticating to a rejected host, re-pinning or replacing the phone
+  identity. Ordinary network failures use bounded backoff.
 - **Avoid stale Android profiles:** exclude device-protected and
   credential-protected app state from Android 12+ device transfer
   and cloud backup. Keystore identities are not transferable.
