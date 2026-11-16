@@ -201,7 +201,7 @@ class P0SshIntegrationTest {
      * Stop the running AAP2 service through its notification first.
      */
     @Test
-    fun rejectedPublickeyAuthenticationStopsRetryLoop() {
+    fun rejectedPublickeyAuthenticationSchedulesHourlyRetry() {
         val host = requireNotNull(arguments.getString("host")) { "Missing host" }
         val trustedBase64 = requireNotNull(arguments.getString("host_key_base64")) {
             "Missing independently trusted SSH server host-key blob"
@@ -222,19 +222,21 @@ class P0SshIntegrationTest {
         val config = DirectBootTunnelProfile.Config(
             host, sshPort, nonexistentUser, remotePort, trusted
         )
-        val errors = LinkedBlockingQueue<String>()
+        val problems = LinkedBlockingQueue<ConnectionIssueStore.Reason>()
+        val fatalErrors = LinkedBlockingQueue<ConnectionIssueStore.Reason>()
         val manager = KeystoreSshTunnelManager(context, config, localPort = 0)
-        manager.onFatalError = { errors.offer(it) }
+        manager.onProblem = { problems.offer(it) }
+        manager.onFatalError = { fatalErrors.offer(it) }
         try {
             manager.start()
-            val error = errors.poll(25, TimeUnit.SECONDS)
-            assertNotNull("Unknown SSH user must produce a fatal auth error", error)
-            assertTrue("Authentication rejection must be fatal, got: " + error,
-                error!!.startsWith("SSH rejected:"))
-            // A fatal auth error must terminate the loop, not trigger repeated
-            // login attempts which would cause a fail2ban problem.
+            val issue = problems.poll(25, TimeUnit.SECONDS)
+            assertEquals("Unknown SSH user must surface a recoverable auth issue",
+                ConnectionIssueStore.Reason.AUTH, issue)
+            // An auth failure must never cause repeated rapid login attempts
+            // (fail2ban), and must not permanently stop the manager either.
             Thread.sleep(6_000)
-            assertTrue("Fatal authentication must not be retried", errors.isEmpty())
+            assertTrue("Authentication must retry no more than hourly", problems.isEmpty())
+            assertTrue("Authentication rejection must not terminate the service", fatalErrors.isEmpty())
         } finally {
             manager.destroy()
         }
