@@ -16,8 +16,8 @@ TEST=net.isaeff.android.asproxy.A1EnrollmentIntegrationTest
 STATE=/tmp/aap2-a1-ci
 
 sudo env GITHUB_ACTIONS=true AAP2_A1_DISPOSABLE=YES sh "$FIXTURE" "$SERVER" init
-adb install -r app/build/outputs/apk/debug/app-debug.apk >/dev/null
-adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk >/dev/null
+adb install -r app/build/outputs/apk/github/debug/app-github-debug.apk >/dev/null
+adb install -r app/build/outputs/apk/androidTest/github/debug/app-github-debug-androidTest.apk >/dev/null
 # Android emulator 10.0.2.2 reaches runner host loopback across cold boots.
 [ "$(adb shell getprop ro.crypto.type | tr -d '\r')" = file ] ||
   { echo 'A1 Direct Boot requires an FBE emulator' >&2; exit 1; }
@@ -273,10 +273,10 @@ echo "A1 PASS: emulator PIN→SFTP→approve→Keystore→-R→SOCKS5→HTTP"
 # Test signed APK update WITHOUT ever uninstalling AAP2.
 adb shell -T "run-as $PKG sh -c 'touch files/a1-ci-release-test'"
 wait "$TEST_PID"
-cp app/build/outputs/apk/debug/app-debug.apk /tmp/aap2-a1-v20000.apk
+cp app/build/outputs/apk/github/debug/app-github-debug.apk /tmp/aap2-a1-v20000.apk
 AAP2_VERSION_CODE=20001 AAP2_VERSION_NAME=2.0.1-ci-upgrade \
-  ./gradlew --no-daemon :app:assembleDebug
-V2_APK=app/build/outputs/apk/debug/app-debug.apk
+  ./gradlew --no-daemon :app:assembleGithubDebug
+V2_APK=app/build/outputs/apk/github/debug/app-github-debug.apk
 SIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
 [ -x "$SIGNER" ] || { echo 'Android apksigner missing' >&2; exit 1; }
 CERT1=$("$SIGNER" verify --print-certs /tmp/aap2-a1-v20000.apk |
