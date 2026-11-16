@@ -93,8 +93,9 @@ GitHub's `releases/latest` endpoint intentionally does not include pre-releases;
 
 On an already-enrolled phone, tap **Reset enrollment / Change server** in its
 own bottom footer, away from the everyday Connect/Details/Update controls.
-A prominent destructive warning names the
-currently trusted server and connection ID. To unlock **ERASE AAP2 ENROLLMENT**,
+A compact red warning identifies the current server and connection ID.
+The four-digit challenge and numeric input are at the **top of the dialog**,
+visible without scrolling. To unlock **ERASE AAP2 ENROLLMENT**,
 the user must enter the **random four-digit code shown in the dialog** using the numeric keypad. A new code is generated each time the dialog is opened; an incorrect or incomplete code cannot unlock the destructive button. Cancel makes **no changes**.
 
 After confirmation, AAP2 disables boot/update auto-reconnect, closes the

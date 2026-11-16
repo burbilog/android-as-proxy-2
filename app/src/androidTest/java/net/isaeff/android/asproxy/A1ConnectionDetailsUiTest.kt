@@ -57,12 +57,20 @@ class A1ConnectionDetailsUiTest {
         composeRule.onNodeWithTag("a1-reset-open").assertIsDisplayed().performClick()
         composeRule.onNodeWithTag("a1-reset-dialog").assertIsDisplayed()
         composeRule.onNodeWithTag("a1-reset-confirm").assertIsNotEnabled()
-        composeRule.onNodeWithTag("a1-reset-code").performScrollTo().assertIsDisplayed()
+        // No scrolling: the user must see the code AND the input immediately.
+        composeRule.onNodeWithTag("a1-reset-code").assertIsDisplayed()
+        composeRule.onNodeWithTag("a1-reset-input").assertIsDisplayed()
+        val inputBottom = composeRule.onNodeWithTag("a1-reset-input")
+            .fetchSemanticsNode().boundsInRoot.bottom
+        val warningTop = composeRule.onNodeWithTag("a1-reset-warning")
+            .fetchSemanticsNode().boundsInRoot.top
+        assertTrue("Reset input must be above long warnings", inputBottom < warningTop)
         val firstCode = composeRule.onNodeWithTag("a1-reset-code")
             .fetchSemanticsNode().config[SemanticsProperties.Text].single().text
         assertTrue("Reset challenge must be exactly four ASCII digits",
             firstCode.matches(Regex("[0-9]{4}")))
-        composeRule.onNodeWithTag("a1-reset-input").performScrollTo().performTextInput("123")
+        composeRule.onNodeWithTag("a1-reset-input").performTextInput("123")
+        composeRule.onNodeWithTag("a1-reset-input").assertIsDisplayed()
         composeRule.onNodeWithTag("a1-reset-confirm").assertIsNotEnabled()
         composeRule.onNodeWithTag("a1-reset-cancel").performClick()
         composeRule.onNodeWithTag("a1-reset-dialog").assertDoesNotExist()
@@ -74,12 +82,13 @@ class A1ConnectionDetailsUiTest {
         // unlock the destructive button; the exact displayed code does.
         composeRule.onNodeWithTag("a1-reset-open").assertIsDisplayed().performClick()
         composeRule.onNodeWithTag("a1-reset-confirm").assertIsNotEnabled()
-        composeRule.onNodeWithTag("a1-reset-code").performScrollTo()
+        composeRule.onNodeWithTag("a1-reset-code").assertIsDisplayed()
+        composeRule.onNodeWithTag("a1-reset-input").assertIsDisplayed()
         val code = composeRule.onNodeWithTag("a1-reset-code")
             .fetchSemanticsNode().config[SemanticsProperties.Text].single().text
         assertTrue(code.matches(Regex("[0-9]{4}")))
         val wrong = if (code == "0000") "0001" else "0000"
-        composeRule.onNodeWithTag("a1-reset-input").performScrollTo().performTextInput(wrong)
+        composeRule.onNodeWithTag("a1-reset-input").performTextInput(wrong)
         composeRule.onNodeWithTag("a1-reset-confirm").assertIsNotEnabled()
         composeRule.onNodeWithTag("a1-reset-input").performTextClearance()
         composeRule.onNodeWithTag("a1-reset-input").performTextInput(code)
