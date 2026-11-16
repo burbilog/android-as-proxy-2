@@ -55,6 +55,7 @@ internal class EnrollmentClient(private val context: Context) {
             // Verified button. HostKeyRepository checks the exact pinned blob
             // before JSch attempts any password authentication.
             session.setPassword(pin)
+            VerifiedSshHostKey.configurePinnedHostKey(session, verifiedBlob)
             session.setConfig("StrictHostKeyChecking", "yes")
             session.setConfig("PreferredAuthentications", "password")
             session.setConfig("NumberOfPasswordPrompts", "1")
