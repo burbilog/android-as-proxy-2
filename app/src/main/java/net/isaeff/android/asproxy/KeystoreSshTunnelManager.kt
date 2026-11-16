@@ -74,6 +74,7 @@ internal class KeystoreSshTunnelManager(
                     jsch.addIdentity(identity, null)
                     next = jsch.getSession(profile.username, profile.host, profile.sshPort)
                     session = next
+                    VerifiedSshHostKey.configurePinnedHostKey(next, profile.verifiedHostKey)
                     next.setConfig("StrictHostKeyChecking", "yes")
                     next.setConfig("PreferredAuthentications", "publickey")
                     next.setConfig("NumberOfPasswordPrompts", "0")
