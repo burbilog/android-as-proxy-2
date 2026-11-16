@@ -120,8 +120,8 @@ release: sync
 	  [ ! -e "$$fdapk" ] || { echo "Already exists: $$fdapk" >&2; exit 1; }; \
 	  AAP2_VERSION_CODE="$$code" AAP2_VERSION_NAME="$$version" sh scripts/build-signed-apk.sh fdroid; \
 	  cp app/build/outputs/apk/local-release/aap2-fdroid.apk "$$fdapk"; \
-	  sdk="$${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$(HOME)/Android/Sdk}}"; \
-	  tools="${AAP2_BUILD_TOOLS:-$$sdk/build-tools/35.0.0}"; \
+	  sdk="$${ANDROID_HOME:-$${ANDROID_SDK_ROOT:-$(HOME)/Android/Sdk}}"; \
+	  tools="$${AAP2_BUILD_TOOLS:-$$sdk/build-tools/35.0.0}"; \
 	  github_cert=$$("$$tools/apksigner" verify --print-certs "$(RELEASE_DIR)/aap2-$$code.apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p'); \
 	  fdroid_cert=$$("$$tools/apksigner" verify --print-certs "$$fdapk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p'); \
 	  [ -n "$$github_cert" ] && [ "$$github_cert" = "$$fdroid_cert" ] || \
@@ -204,11 +204,19 @@ verify-release:
 	  code="$(CODE)"; \
 	  case "$$code" in ''|*[!0-9]*) echo 'No numbered APK to verify' >&2; exit 1;; esac; \
 	  apk="$(RELEASE_DIR)/aap2-$$code.apk"; \
+	  fdapk="$(RELEASE_DIR)/aap2-$$code-fdroid.apk"; \
 	  [ -s "$$apk" ] || { echo "Missing $$apk" >&2; exit 1; }; \
-	  tmp=$$(mktemp); \
-	  trap 'rm -f -- "$$tmp"' EXIT; \
-	  curl -fsSL --retry 2 --max-time 120 -o "$$tmp" \
+	  tmp=$$(mktemp -d "$(RELEASE_DIR)/.aap2-verify.XXXXXX"); \
+	  trap 'rm -f -- "$$tmp/aap2.apk" "$$tmp/aap2-fdroid.apk"; rmdir -- "$$tmp"' EXIT; \
+	  curl -fsSL --retry 2 --max-time 120 -o "$$tmp/aap2.apk" \
 	    https://github.com/burbilog/android-as-proxy-2/releases/latest/download/aap2.apk; \
-	  cmp -- "$$apk" "$$tmp" || { echo 'Published APK differs from local archive' >&2; exit 1; }; \
-	  sha256sum "$$tmp"; \
-	  echo 'RELEASE_OK: latest GitHub APK matches local signed archive'
+	  cmp -- "$$apk" "$$tmp/aap2.apk" || { echo 'Published GitHub APK differs from archive' >&2; exit 1; }; \
+	  if [ -s "$$fdapk" ]; then \
+	    curl -fsSL --retry 2 --max-time 120 -o "$$tmp/aap2-fdroid.apk" \
+	      https://github.com/burbilog/android-as-proxy-2/releases/latest/download/aap2-fdroid.apk; \
+	    cmp -- "$$fdapk" "$$tmp/aap2-fdroid.apk" || \
+	      { echo 'Published F-Droid APK differs from archive' >&2; exit 1; }; \
+	    sha256sum "$$tmp/aap2-fdroid.apk"; \
+	  fi; \
+	  sha256sum "$$tmp/aap2.apk"; \
+	  echo 'RELEASE_OK: published signed channel APKs match local archives'
