@@ -13,11 +13,11 @@ Clone a reviewed release of this repository and, **as root**, run:
 sh server/install.sh
 ```
 
-During development, checkout `feature/s2-debian13-gate`; do not assume the
-default branch already contains the installer. For example:
+The installer is included in the published stable AAP2 release. Use the
+current `master` branch (or an explicitly reviewed release tag):
 
 ```sh
-git clone --branch feature/s2-debian13-gate --single-branch \
+git clone --branch master --single-branch \
   https://github.com/burbilog/android-as-proxy-2.git /opt/aap2-s2
 sh /opt/aap2-s2/server/install.sh
 ```
@@ -78,6 +78,17 @@ allocated SOCKS5 listening port remains bound to server loopback.
 Do not publish the activation code or capture its output in shared logs.
 See [S2_APPROVAL.md](S2_APPROVAL.md) for the full operator workflow,
 restricted forwarding checks and revocation.
+
+## Expired invitations and port reservations
+
+The cleanup timer removes expired temporary PIN/SFTP access but **does not**
+automatically release an enrollment's reserved SOCKS5 port. Even unapproved
+`expired` records hold their port until explicit administrator
+`aap2ctl revoke ID` (interactive confirmation). Inspect
+`aap2ctl list --all` before reclaiming abandoned registrations.
+If you automate via `-j`/`--json`, treat all states other than
+`revoked` as reserved; do not infer availability from expired PINs or
+absent listeners. See [S2_APPROVAL.md](S2_APPROVAL.md#reserved-socks5-ports-manual-reclamation-policy).
 
 ## Update server files
 
