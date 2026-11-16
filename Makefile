@@ -136,8 +136,8 @@ fdroid-candidate:
 	@python3 scripts/aap2-release.py prepare-fdroid
 
 release-both:
-	@$(MAKE) --no-print-directory release TYPE="$(TYPE)"
-	@$(MAKE) --no-print-directory fdroid-candidate TYPE="$(TYPE)"
+	@python3 scripts/aap2-release.py prepare
+	@python3 scripts/aap2-release.py prepare-fdroid
 
 publish:
 	@python3 scripts/aap2-release.py publish
