@@ -68,7 +68,7 @@ EOF
   invite)
     [ -d "$STATE" ] || { echo 'Fixture not initialized' >&2; exit 2; }
     # The PIN is retained ONLY in a root-only fixture file, never CI log.
-    aap2ctl enroll A1-CI --manual-code --server 127.0.0.1:22224 \
+    aap2ctl enroll A1-CI --server 127.0.0.1:22224 \
       --client-addr 127.0.0.1 --client-host localhost \
       --server-addr 127.0.0.1 --server-port 22224 > "$INVITE"
     sed -n 's/^Enrollment ID: //p' "$INVITE" > "$IDENTIFIER"
@@ -77,7 +77,7 @@ EOF
     printf 'A1 ephemeral invitation created (PIN redacted)\n'
     ;;
   expire)
-    # Disposable fixture only: simulate passage of 10-minute PIN TTL by
+    # Disposable fixture only: simulate passage of the 20-minute PIN TTL by
     # backdating root-owned metadata, then use the REAL S2 cleanup command.
     ID=$(cat "$IDENTIFIER")
     python3 - "$ID" <<'PY'
