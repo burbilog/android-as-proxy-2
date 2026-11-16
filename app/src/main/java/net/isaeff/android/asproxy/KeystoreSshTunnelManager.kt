@@ -28,7 +28,6 @@ internal class KeystoreSshTunnelManager(
     private val profile: DirectBootTunnelProfile.Config,
     private val localPort: Int
 ) {
-    var onFatalError: ((ConnectionIssueStore.Reason) -> Unit)? = null
     var onProblem: ((ConnectionIssueStore.Reason) -> Unit)? = null
     var onHealthy: (() -> Unit)? = null
 
@@ -76,23 +75,24 @@ internal class KeystoreSshTunnelManager(
             Log.w("AAP2-P0", "BOOT_NETWORK_CALLBACK_UNAVAILABLE " + e.javaClass.simpleName)
         }
         job = scope.launch {
-            val identity = try {
-                AndroidKeystoreIdentity.getExisting(context)
-            } catch (e: Exception) {
-                fatal(ConnectionIssueStore.Reason.KEYSTORE)
-                return@launch
-            }
             var retryMs = 5_000L
             while (isActive) {
                 // Discard old availability notifications from previous successful attempts.
                 // Keep events arriving during connect(): they should wake the next retry.
                 networkAvailable.tryReceive()
                 var next: Session? = null
+                var pinned: VerifiedSshHostKey.PinnedClient? = null
+                var loadingIdentity = true
                 try {
                     ConnectionStateHolder.setState(ConnectionState.CONNECTING)
-                    val jsch = VerifiedSshHostKey.pinnedJsch(
+                    // Reload on each attempt: a temporary Keystore failure must not
+                    // strand an unattended phone. getExisting NEVER generates a key.
+                    val identity = AndroidKeystoreIdentity.getExisting(context)
+                    loadingIdentity = false
+                    pinned = VerifiedSshHostKey.pinnedJschWithCheck(
                         profile.host, profile.sshPort, profile.verifiedHostKey
                     )
+                    val jsch = pinned.jsch
                     jsch.addIdentity(identity, null)
                     next = jsch.getSession(profile.username, profile.host, profile.sshPort)
                     session = next
@@ -120,25 +120,29 @@ internal class KeystoreSshTunnelManager(
                 } catch (_: CancellationException) {
                     break
                 } catch (e: Exception) {
-                    // Refuse host-key changes without TOFU. Auth rejection is not
-                    // necessarily permanent (remote sshd/PAM may be transient);
-                    // retry it only once per hour to avoid fail2ban loops.
+                    // A rejected pinned key can NEVER authenticate or be replaced.
+                    // Retry infrequently so a temporary wrong server or Keystore
+                    // failure cannot permanently strand an unattended device.
                     val action = SshFailurePolicy.classify(
-                        e.javaClass.simpleName, e.message, e is JSchException)
+                        e.javaClass.simpleName, e.message, e is JSchException,
+                        pinned?.hostKeyRejected == true
+                    )
                     when (action) {
-                        SshFailurePolicy.Action.FATAL_HOST_IDENTITY -> {
-                            fatal(ConnectionIssueStore.Reason.HOST_KEY)
-                            break
-                        }
-                        SshFailurePolicy.Action.FATAL_LOCAL -> {
-                            fatal(ConnectionIssueStore.Reason.SERVICE)
-                            break
-                        }
+                        SshFailurePolicy.Action.RETRY_HOST_IDENTITY_HOURLY,
+                        SshFailurePolicy.Action.RETRY_LOCAL_HOURLY,
                         SshFailurePolicy.Action.RETRY_AUTH_HOURLY -> {
-                            onProblem?.invoke(ConnectionIssueStore.Reason.AUTH)
+                            val reason = when (action) {
+                                SshFailurePolicy.Action.RETRY_HOST_IDENTITY_HOURLY ->
+                                    ConnectionIssueStore.Reason.HOST_KEY
+                                SshFailurePolicy.Action.RETRY_LOCAL_HOURLY ->
+                                    if (loadingIdentity) ConnectionIssueStore.Reason.KEYSTORE
+                                    else ConnectionIssueStore.Reason.SERVICE
+                                else -> ConnectionIssueStore.Reason.AUTH
+                            }
+                            onProblem?.invoke(reason)
                             ConnectionStateHolder.setState(ConnectionState.RETRYING)
-                            Log.w("AAP2-SSH", "Authentication rejected; retrying hourly")
-                            delay(SshFailurePolicy.AUTH_RETRY_MS)
+                            Log.w("AAP2-SSH", "SSH problem " + reason.name + "; retrying hourly")
+                            delay(SshFailurePolicy.HOURLY_RETRY_MS)
                             continue
                         }
                         SshFailurePolicy.Action.RETRY_NETWORK ->
@@ -166,12 +170,6 @@ internal class KeystoreSshTunnelManager(
                 }
             }
         }
-    }
-
-    private fun fatal(reason: ConnectionIssueStore.Reason) {
-        Log.e("AAP2-SSH", "Fatal SSH failure: " + reason.name)
-        AAPLog.append("SSH requires administrator: " + reason.name)
-        onFatalError?.invoke(reason)
     }
 
     fun destroy() {
