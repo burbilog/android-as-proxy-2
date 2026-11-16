@@ -51,6 +51,19 @@ jobs:
           make --no-print-directory -n curl S2=example.net PORT=11011
           make --no-print-directory -n check
 
+      - name: Release-tool safety tests (no signing or GitHub changes)
+        run: |
+          python3 -m py_compile scripts/aap2-release.py scripts/test_aap2_release.py
+          python3 -m unittest discover -s scripts -p 'test_aap2_release.py' -v
+          make --no-print-directory help
+          make --no-print-directory -n release TYPE=rc1
+          make --no-print-directory -n publish TYPE=release
+          if make --no-print-directory publish >/tmp/aap2-missing-type.log 2>&1; then
+            echo 'publish without TYPE must fail' >&2
+            exit 1
+          fi
+          grep -F 'TYPE is required' /tmp/aap2-missing-type.log
+
       - name: Build and unit tests
         run: |
           chmod +x ./gradlew
