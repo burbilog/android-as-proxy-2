@@ -2,7 +2,7 @@
 
 AAP2 turns a spare Android handset into a self-hosted SOCKS5 exit. The phone opens an **outbound**, server-host-key-pinned SSH connection to an OpenSSH server you control, requests a **loopback-only reverse port**, and forwards SOCKS5 traffic through the phone's Internet connection.
 
-The server does not expose a public SOCKS5 port, and the Android app does not need a long-term SSH password. AAP2 can coexist with the original AAP1 app; its Android application ID is `net.isaeff.android.asproxy2`.
+The server does not expose a public SOCKS5 port, and the Android app does not need a long-term SSH password. **Authorized SOCKS5 clients can reach both the Internet and the Android phone's loopback/LAN TCP services** (for example a phone-side VNC server); no additional SOCKS password or private-address filter is imposed. Keep the relay listener loopback-only and do not share SSH/Hysteria credentials with untrusted users. See the [access and unattended-device model](docs/ACCESS_MODEL.md). AAP2 can coexist with the original AAP1 app; its Android application ID is `net.isaeff.android.asproxy2`.
 
 **Maintainers and future coding agents:** follow the durable [release policy](docs/RELEASE_POLICY.md) before preparing any APK, release candidate, GitHub Latest release or F-Droid submission. See also [AGENTS.md](AGENTS.md) for a short handoff entry point.
 
