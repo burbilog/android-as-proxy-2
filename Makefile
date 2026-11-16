@@ -22,14 +22,16 @@ VERSION_NAME ?= $(PUBLISHED_VERSION)-local-$(VERSION_CODE)
 CODE ?= $(PUBLISHED_CODE)
 APK = $(RELEASE_DIR)/aap2-$(LATEST_CODE).apk
 
-.PHONY: help sync build install curl status test check release publish verify-release
+.PHONY: help sync build install curl status test check release fdroid-candidate release-both publish verify-release
 
 help:
 	@printf '%s\n' \
 	  'make build    Pull current branch, sign next APK and archive it' \
-	  'make release   Sign both channels from one version.properties' \
-	  'make publish   Publish both APKs + SHA256 to GitHub Releases' \
-	  'make verify-release         Compare GitHub latest APK with local archive' \
+	  'make release   Prepare signed GitHub APK from version.properties' \
+	  'make fdroid-candidate   Separately sign F-Droid verification APK' \
+	  'make release-both   Convenience: release + fdroid-candidate' \
+	  'make publish   Publish GitHub (with optional F-Droid asset)' \
+	  'make verify-release  Check published APKs against local archive' \
 	  'make install  adb install -r newest archived APK (no data wipe)' \
 	  'make curl     Test S2 reverse SOCKS5 via Cloudflare trace' \
 	  'make status   Show S2 reverse SOCKS5 listener' \
@@ -93,39 +95,25 @@ check:
 test:
 	@./gradlew --no-daemon :app:testGithubDebugUnitTest :app:testFdroidDebugUnitTest
 
-# Publishing is deliberately separate from building. Only a clean,
-# up-to-date master may produce a public stable version.
+# GitHub publication must never depend on F-Droid availability or acceptance.
+# The F-Droid candidate can be built and attached independently.
 release: sync
 	@set -eu; \
-	  version="$(VERSION)"; \
-	  [ "$$version" = "$(PUBLISHED_VERSION)" ] || \
-	    { echo 'VERSION must match version.properties' >&2; exit 1; }; \
+	  version="$(PUBLISHED_VERSION)"; code="$(PUBLISHED_CODE)"; prev="$(LATEST_CODE)"; \
 	  printf '%s\n' "$$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || \
-	    { echo 'Invalid version in version.properties' >&2; exit 1; }; \
-	  [ "$$(git branch --show-current)" = master ] || \
-	    { echo 'Release requires master branch' >&2; exit 1; }; \
+	    { echo 'Invalid version.properties versionName' >&2; exit 1; }; \
+	  case "$$code" in ''|*[!0-9]*) echo 'Invalid versionCode' >&2; exit 1;; esac; \
+	  [ "$$(git branch --show-current)" = master ] && \
 	  [ -z "$$(git status --porcelain --untracked-files=no)" ] || \
-	    { echo 'Commit tracked changes before release' >&2; exit 1; }; \
+	    { echo 'Release requires a clean master' >&2; exit 1; }; \
 	  git fetch origin master; \
 	  head=$$(git rev-parse HEAD); \
 	  [ "$$head" = "$$(git rev-parse origin/master)" ] || \
 	    { echo 'Local master differs from origin/master' >&2; exit 1; }; \
-	  code="$(PUBLISHED_CODE)"; prev="$(LATEST_CODE)"; \
-	  case "$$code" in ''|*[!0-9]*) echo 'Invalid VERSION_CODE' >&2; exit 1;; esac; \
 	  if [ -n "$$prev" ] && [ "$$code" -le "$$prev" ]; then \
-	    echo "VERSION_CODE must exceed archived $$prev" >&2; exit 1; \
+	    echo "Release versionCode $$code must exceed archived $$prev" >&2; exit 1; \
 	  fi; \
 	  $(MAKE) --no-print-directory build VERSION_CODE="$$code" VERSION_NAME="$$version"; \
-	  fdapk="$(RELEASE_DIR)/aap2-$$code-fdroid.apk"; \
-	  [ ! -e "$$fdapk" ] || { echo "Already exists: $$fdapk" >&2; exit 1; }; \
-	  AAP2_VERSION_CODE="$$code" AAP2_VERSION_NAME="$$version" sh scripts/build-signed-apk.sh fdroid; \
-	  cp app/build/outputs/apk/local-release/aap2-fdroid.apk "$$fdapk"; \
-	  sdk="$${ANDROID_HOME:-$${ANDROID_SDK_ROOT:-$(HOME)/Android/Sdk}}"; \
-	  tools="$${AAP2_BUILD_TOOLS:-$$sdk/build-tools/35.0.0}"; \
-	  github_cert=$$("$$tools/apksigner" verify --print-certs "$(RELEASE_DIR)/aap2-$$code.apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p'); \
-	  fdroid_cert=$$("$$tools/apksigner" verify --print-certs "$$fdapk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p'); \
-	  [ -n "$$github_cert" ] && [ "$$github_cert" = "$$fdroid_cert" ] || \
-	    { echo 'Signing certificate differs between distribution APKs' >&2; exit 1; }; \
 	  if [ -n "$$prev" ]; then \
 	    sh scripts/aap2-spare-upgrade.sh check \
 	      "$(RELEASE_DIR)/aap2-$$prev.apk" "$(RELEASE_DIR)/aap2-$$code.apk"; \
@@ -133,68 +121,98 @@ release: sync
 	    echo 'No previous archived APK: signer continuity cannot be checked'; \
 	  fi; \
 	  printf '%s\n' "$$head" > "$(RELEASE_DIR)/aap2-$$code.commit"; \
-	  echo "Both signed candidates ready: $(RELEASE_DIR)/aap2-$$code*.apk (commit $$head)"; \
-	  echo "After review: make publish VERSION=$$version"
+	  echo "GitHub candidate ready: $(RELEASE_DIR)/aap2-$$code.apk (commit $$head)"
+
+fdroid-candidate: sync
+	@set -eu; \
+	  version="$(PUBLISHED_VERSION)"; code="$(PUBLISHED_CODE)"; \
+	  printf '%s\n' "$$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || exit 1; \
+	  case "$$code" in ''|*[!0-9]*) exit 1;; esac; \
+	  [ "$$(git branch --show-current)" = master ] && \
+	  [ -z "$$(git status --porcelain --untracked-files=no)" ] || \
+	    { echo 'F-Droid candidate requires a clean master' >&2; exit 1; }; \
+	  git fetch origin master; \
+	  head=$$(git rev-parse HEAD); \
+	  [ "$$head" = "$$(git rev-parse origin/master)" ] || \
+	    { echo 'Local master differs from origin/master' >&2; exit 1; }; \
+	  fdapk="$(RELEASE_DIR)/aap2-$$code-fdroid.apk"; \
+	  mkdir -p "$(RELEASE_DIR)"; \
+	  [ ! -e "$$fdapk" ] || { echo "Already exists: $$fdapk" >&2; exit 1; }; \
+	  AAP2_VERSION_CODE="$$code" AAP2_VERSION_NAME="$$version" \
+	    sh scripts/build-signed-apk.sh fdroid; \
+	  cp app/build/outputs/apk/local-release/aap2-fdroid.apk "$$fdapk"; \
+	  printf '%s\n' "$$head" > "$(RELEASE_DIR)/aap2-$$code-fdroid.commit"; \
+	  echo "F-Droid verification candidate ready: $$fdapk (commit $$head)"
+
+# Convenient combined preparation, but GitHub release/publish remains independent.
+release-both:
+	@$(MAKE) --no-print-directory release
+	@$(MAKE) --no-print-directory fdroid-candidate
 
 publish:
 	@set -eu; \
-	  version="$(VERSION)"; code="$(CODE)"; \
-	  [ "$$version" = "$(PUBLISHED_VERSION)" ] && [ "$$code" = "$(PUBLISHED_CODE)" ] || \
-	    { echo 'VERSION/CODE must match version.properties' >&2; exit 1; }; \
-	  printf '%s\n' "$$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || \
-	    { echo 'Invalid version in version.properties' >&2; exit 1; }; \
-	  case "$$code" in ''|*[!0-9]*) echo 'No numbered APK to publish' >&2; exit 1;; esac; \
-	  [ "$$(git branch --show-current)" = master ] || \
-	    { echo 'Publish requires master branch' >&2; exit 1; }; \
+	  version="$(PUBLISHED_VERSION)"; code="$(PUBLISHED_CODE)"; \
+	  printf '%s\n' "$$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || exit 1; \
+	  case "$$code" in ''|*[!0-9]*) exit 1;; esac; \
+	  [ "$$(git branch --show-current)" = master ] && \
 	  [ -z "$$(git status --porcelain --untracked-files=no)" ] || \
-	    { echo 'Commit tracked changes before publication' >&2; exit 1; }; \
+	    { echo 'Publish requires a clean master' >&2; exit 1; }; \
 	  git fetch origin master; \
 	  head=$$(git rev-parse HEAD); \
 	  [ "$$head" = "$$(git rev-parse origin/master)" ] || \
 	    { echo 'Local master differs from origin/master' >&2; exit 1; }; \
 	  apk="$(RELEASE_DIR)/aap2-$$code.apk"; \
 	  fdapk="$(RELEASE_DIR)/aap2-$$code-fdroid.apk"; \
-	  [ -s "$$apk" ] && [ -s "$$fdapk" ] || \
-	    { echo 'Both signed channel APKs are required' >&2; exit 1; }; \
-	  [ -f "$(RELEASE_DIR)/aap2-$$code.commit" ] && \
+	  [ -s "$$apk" ] && [ -f "$(RELEASE_DIR)/aap2-$$code.commit" ] && \
 	  [ "$$(cat "$(RELEASE_DIR)/aap2-$$code.commit")" = "$$head" ] || \
-	    { echo 'APK was not prepared from this master: run make release' >&2; exit 1; }; \
+	    { echo 'Missing GitHub APK or wrong source commit: run make release' >&2; exit 1; }; \
 	  notes="docs/RELEASE_NOTES_$$version.md"; \
 	  [ -s "$$notes" ] || { echo "Missing $$notes" >&2; exit 1; }; \
-	  sdk="$${ANDROID_HOME:-$${ANDROID_SDK_ROOT:-$(HOME)/Android/Sdk}}"; \
-	  tools="$${AAP2_BUILD_TOOLS:-$$sdk/build-tools/35.0.0}"; \
+	  sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$(HOME)/Android/Sdk}}"; \
+	  tools="${AAP2_BUILD_TOOLS:-$$sdk/build-tools/35.0.0}"; \
 	  "$$tools/apksigner" verify "$$apk"; \
-	  "$$tools/apksigner" verify "$$fdapk"; \
-	  a=$$("$$tools/apksigner" verify --print-certs "$$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p'); \
-	  b=$$("$$tools/apksigner" verify --print-certs "$$fdapk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p'); \
-	  [ -n "$$a" ] && [ "$$a" = "$$b" ] || { echo 'Signer mismatch between channels' >&2; exit 1; }; \
-	  for candidate in "$$apk" "$$fdapk"; do \
-	    meta=$$("$$tools/aapt" dump badging "$$candidate"); \
-	    line=$$(printf '%s\n' "$$meta" | grep '^package:' | head -n 1); \
-	    printf '%s\n' "$$line" | grep -F "name='net.isaeff.android.asproxy2'" >/dev/null; \
-	    printf '%s\n' "$$line" | grep -F "versionCode='$$code'" >/dev/null; \
-	    printf '%s\n' "$$line" | grep -F "versionName='$$version'" >/dev/null; \
-	    ! printf '%s\n' "$$meta" | grep -q '^application-debuggable' || \
-	      { echo 'Refusing debuggable APK' >&2; exit 1; }; \
-	  done; \
 	  meta=$$("$$tools/aapt" dump badging "$$apk"); \
 	  line=$$(printf '%s\n' "$$meta" | grep '^package:' | head -n 1); \
 	  printf '%s\n' "$$line" | grep -F "name='net.isaeff.android.asproxy2'" >/dev/null; \
 	  printf '%s\n' "$$line" | grep -F "versionCode='$$code'" >/dev/null; \
-	  printf '%s\n' "$$line" | grep -F "versionName='$$version'" >/dev/null || \
-	    { echo 'APK version does not match requested release' >&2; exit 1; }; \
-	  ! printf '%s\n' "$$meta" | grep -q '^application-debuggable' || \
-	    { echo 'Refusing debuggable APK' >&2; exit 1; }; \
-	  command -v gh >/dev/null || { echo 'Install GitHub CLI (gh)' >&2; exit 1; }; \
-	  gh auth status >/dev/null; \
+	  printf '%s\n' "$$line" | grep -F "versionName='$$version'" >/dev/null; \
+	  ! printf '%s\n' "$$meta" | grep -q '^application-debuggable' || exit 1; \
+	  with_fdroid=NO; \
+	  if [ -s "$$fdapk" ]; then \
+	    [ -f "$(RELEASE_DIR)/aap2-$$code-fdroid.commit" ] && \
+	    [ "$$(cat "$(RELEASE_DIR)/aap2-$$code-fdroid.commit")" = "$$head" ] || \
+	      { echo 'F-Droid candidate has a different source commit' >&2; exit 1; }; \
+	    "$$tools/apksigner" verify "$$fdapk"; \
+	    fdmeta=$$("$$tools/aapt" dump badging "$$fdapk"); \
+	    fdline=$$(printf '%s\n' "$$fdmeta" | grep '^package:' | head -n 1); \
+	    [ "$$line" = "$$fdline" ] || \
+	      { echo 'Channel package/version mismatch' >&2; exit 1; }; \
+	    ! printf '%s\n' "$$fdmeta" | grep -q '^application-debuggable' || exit 1; \
+	    ! "$$tools/aapt" dump permissions "$$fdapk" | \
+	      grep -q 'android.permission.REQUEST_INSTALL_PACKAGES' || \
+	      { echo 'F-Droid candidate requests APK installer permission' >&2; exit 1; }; \
+	    a=$$("$$tools/apksigner" verify --print-certs "$$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p'); \
+	    b=$$("$$tools/apksigner" verify --print-certs "$$fdapk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p'); \
+	    [ -n "$$a" ] && [ "$$a" = "$$b" ] || \
+	      { echo 'Channel signing certificates differ' >&2; exit 1; }; \
+	    with_fdroid=YES; \
+	  fi; \
+	  command -v gh >/dev/null && gh auth status >/dev/null || \
+	    { echo 'GitHub CLI authentication required' >&2; exit 1; }; \
 	  ! git ls-remote --exit-code --tags origin "refs/tags/v$$version" >/dev/null 2>&1 || \
 	    { echo "Tag v$$version already exists" >&2; exit 1; }; \
 	  tmp=$$(mktemp -d "$(RELEASE_DIR)/.aap2-publish.XXXXXX"); \
 	  trap 'rm -f -- "$$tmp/aap2.apk" "$$tmp/aap2-fdroid.apk" "$$tmp/SHA256SUMS"; rmdir -- "$$tmp"' EXIT; \
 	  cp -- "$$apk" "$$tmp/aap2.apk"; \
-	  cp -- "$$fdapk" "$$tmp/aap2-fdroid.apk"; \
-	  (cd "$$tmp" && sha256sum aap2.apk aap2-fdroid.apk > SHA256SUMS); \
-	  gh release create "v$$version" "$$tmp/aap2.apk" "$$tmp/aap2-fdroid.apk" "$$tmp/SHA256SUMS" \
+	  set -- "$$tmp/aap2.apk"; \
+	  if [ "$$with_fdroid" = YES ]; then \
+	    cp -- "$$fdapk" "$$tmp/aap2-fdroid.apk"; \
+	    set -- "$$@" "$$tmp/aap2-fdroid.apk"; \
+	    (cd "$$tmp" && sha256sum aap2.apk aap2-fdroid.apk > SHA256SUMS); \
+	  else \
+	    (cd "$$tmp" && sha256sum aap2.apk > SHA256SUMS); \
+	  fi; \
+	  gh release create "v$$version" "$$@" "$$tmp/SHA256SUMS" \
 	    --repo burbilog/android-as-proxy-2 --target "$$head" \
 	    --title "AAP2 v$$version" --notes-file "$$notes" --latest; \
 	  echo 'Run make verify-release to check GitHub download'
