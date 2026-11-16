@@ -1,0 +1,23 @@
+Android as Proxy 2 (AAP2) turns a spare Android phone into a self-hosted SOCKS5 Internet exit. The phone initiates an outbound SSH connection to an OpenSSH server you control. It needs no public listener on the phone and keeps the server-side SOCKS5 endpoint bound to loopback.
+
+HOW IT WORKS
+- Set up the documented AAP2 server on Debian 13 with OpenSSH.
+- Ask the administrator for a one-time, 18-digit activation code.
+- Independently verify the server's complete SSH host-key fingerprint before activating.
+- The phone creates a permanent SSH identity in Android Keystore; the administrator approves its public key.
+- Reach the allocated SOCKS5 port via your own authenticated SSH connection to the server.
+
+FEATURES
+- No third-party cloud account, advertising or analytics.
+- Per-device public-key authentication, restricted SSH reverse forwarding and explicit server-side revocation.
+- Foreground service with reconnect, Direct Boot support and user-controlled Disconnect.
+- Connection details and local diagnostic logs.
+- Open source under the GNU GPL version 3.
+
+IMPORTANT
+AAP2 is not an instant VPN service. You must control a compatible SSH server or have an administrator set one up. The application does not automatically share your phone's Internet connection with strangers. Network and power-saving behavior vary by Android manufacturer. Check unattended reliability on your own device, and consider battery health if keeping it plugged in for long periods.
+
+The GitHub and F-Droid distribution channels share a common version and source code; updates are managed by the channel where you installed the app. F-Droid builds do not download or install GitHub APKs.
+
+Source, documentation and bug tracker:
+https://github.com/burbilog/android-as-proxy-2
