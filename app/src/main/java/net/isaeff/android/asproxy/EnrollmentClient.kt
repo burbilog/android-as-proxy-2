@@ -163,7 +163,7 @@ internal class EnrollmentClient(private val context: Context) {
             session.connect(20_000)
             // The actual OpenSSH permitlisten policy is tested, not inferred
             // from status.json. The local target needs no listener until use.
-            session.setPortForwardingR("127.0.0.1", info.remotePort, "127.0.0.1", 11080)
+            session.setPortForwardingR("127.0.0.1", info.remotePort, "127.0.0.1", Aap2Ports.LOCAL_SOCKS5)
         } finally {
             session.disconnect()
         }

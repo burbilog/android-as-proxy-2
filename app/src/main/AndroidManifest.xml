@@ -30,9 +30,6 @@
             android:stopWithTask="false">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="This app maintains persistent SOCKS proxy connections that must remain active while in background. Android requires foreground service for long-running network operations that exceed background execution limits."/>
-            <intent-filter>
-                <action android:name="net.isaeff.android.asproxy.SocksForegroundService" />
-            </intent-filter>
         </service>
 
         <!-- Restore only explicitly enabled connections after boot or APK upgrade. -->
@@ -44,16 +41,6 @@
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-            </intent-filter>
-        </receiver>
-
-        <!-- Stop service gracefully on shutdown/reboot -->
-        <receiver
-            android:name=".ShutdownReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.ACTION_SHUTDOWN" />
-                <action android:name="android.intent.action.SHUTDOWN" />
             </intent-filter>
         </receiver>
 

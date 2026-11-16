@@ -3,6 +3,7 @@ package net.isaeff.android.asproxy
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
@@ -50,6 +51,7 @@ internal object ProjectLinks {
 internal fun AboutScreen(onClose: () -> Unit) {
     val context = LocalContext.current
     var openError by remember { mutableStateOf(false) }
+    var settingsError by remember { mutableStateOf(false) }
     val version = remember(context) {
         runCatching {
             @Suppress("DEPRECATION")
@@ -88,6 +90,25 @@ internal fun AboutScreen(onClose: () -> Unit) {
             Text(stringResource(R.string.about_license))
             Text(stringResource(R.string.about_privacy))
             Text(stringResource(R.string.about_battery))
+            OutlinedButton(
+                onClick = {
+                    settingsError = !runCatching {
+                        context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                    }.isSuccess
+                },
+                modifier = Modifier.fillMaxWidth().testTag("aap2-battery-settings")
+            ) {
+                Text("Battery settings (optional)")
+            }
+            Text(
+                "Only if AAP2 stops unexpectedly: review battery restrictions for AAP2. " +
+                    "No setting is changed automatically.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            if (settingsError) {
+                Text("Battery settings are unavailable on this device. Ask your administrator.",
+                     color = MaterialTheme.colorScheme.error)
+            }
             Text(stringResource(if (isGithub) R.string.about_github_updates
                                 else R.string.about_fdroid_updates))
 

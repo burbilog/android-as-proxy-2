@@ -21,6 +21,8 @@ class A1AboutUiTest {
         composeRule.onNodeWithTag("aap2-open-about").assertIsDisplayed().performClick()
         composeRule.onNodeWithTag("aap2-about-screen").assertExists()
         composeRule.onNodeWithTag("aap2-about-source").assertExists()
+        // Optional help must exist without opening OEM settings during the test.
+        composeRule.onNodeWithTag("aap2-battery-settings").assertExists()
         composeRule.onNodeWithTag("aap2-about-issues").assertExists()
         composeRule.onNodeWithTag("aap2-about-close").assertIsDisplayed().performClick()
         composeRule.onNodeWithTag("aap2-open-about").assertIsDisplayed()
