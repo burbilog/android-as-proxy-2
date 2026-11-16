@@ -58,7 +58,7 @@ jobs:
 
       - name: Verify F-Droid package excludes in-app updater permission
         run: |
-          aapt dump permissions app/build/outputs/apk/fdroid/release/app-fdroid-release-unsigned.apk > /tmp/fdroid-permissions
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions app/build/outputs/apk/fdroid/release/app-fdroid-release-unsigned.apk > /tmp/fdroid-permissions
           if grep -F 'android.permission.REQUEST_INSTALL_PACKAGES' /tmp/fdroid-permissions; then
             echo 'F-Droid APK must not request package installation' >&2
             exit 1
