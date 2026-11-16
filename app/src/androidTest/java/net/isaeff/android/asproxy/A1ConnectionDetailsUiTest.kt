@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertDoesNotExist
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import java.security.KeyStore
 import androidx.compose.ui.test.assertTextEquals
@@ -42,7 +43,7 @@ class A1ConnectionDetailsUiTest {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         assertTrue(store.containsAlias(AndroidKeystoreIdentity.ALIAS))
 
-        composeRule.onNodeWithTag("a1-reset-open").assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag("a1-reset-open").performScrollTo().assertIsDisplayed().performClick()
         composeRule.onNodeWithTag("a1-reset-dialog").assertIsDisplayed()
         composeRule.onNodeWithTag("a1-reset-confirm").assertIsNotEnabled()
         composeRule.onNodeWithTag("a1-reset-phrase").performTextInput("RESE")
@@ -53,7 +54,7 @@ class A1ConnectionDetailsUiTest {
             DirectBootTunnelProfile.load(context)).username)
         assertTrue(store.containsAlias(AndroidKeystoreIdentity.ALIAS))
 
-        composeRule.onNodeWithTag("a1-reset-open").performClick()
+        composeRule.onNodeWithTag("a1-reset-open").performScrollTo().performClick()
         composeRule.onNodeWithTag("a1-reset-confirm").assertIsNotEnabled()
         composeRule.onNodeWithTag("a1-reset-phrase").performTextInput("RESET")
         composeRule.onNodeWithTag("a1-reset-confirm").assertIsEnabled()
