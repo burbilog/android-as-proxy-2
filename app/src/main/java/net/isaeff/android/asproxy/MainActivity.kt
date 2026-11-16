@@ -20,10 +20,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -45,9 +43,6 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -190,114 +185,49 @@ fun MainScreen() {
         }
     }
 
-    // Explicit destructive confirmation. No one-tap reset, including when
-    // a connection is running. This affects only AAP2's own local identity.
+    // Explicit destructive confirmation, with its own numeric keypad: no
+    // Android IME and no AlertDialog/keyboard/back dismissal interaction.
     val resetProfile = profile
-    if (showResetDialog && resetProfile != null) {
-        val resetting = resetStatus == EnrollmentReset.Status.RUNNING
-        AlertDialog(
-            onDismissRequest = {
-                if (!resetting) {
-                    showResetDialog = false
-                    resetInput = ""
-                    resetCode = ""
-                }
-            },
-            modifier = Modifier.testTag("a1-reset-dialog"),
-            containerColor = MaterialTheme.colorScheme.errorContainer,
-            title = {
-                Text(
-                    "DANGER: ERASE ENROLLMENT",
-                    color = MaterialTheme.colorScheme.error,
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                // Never put the challenge or its input inside a scrollable
-                // warning. Both must be immediately visible on a small phone.
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Enter these 4 digits to erase this enrollment:")
-                    Text(
-                        resetCode,
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.testTag("a1-reset-code")
-                    )
-                    OutlinedTextField(
-                        value = resetInput,
-                        onValueChange = { value ->
-                            if (value.length <= 4 && value.all { it in '0'..'9' }) {
-                                resetInput = value
-                            }
-                        },
-                        label = { Text("Enter code") },
-                        singleLine = true,
-                        enabled = !resetting,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth().testTag("a1-reset-input")
-                    )
-                    Text(
-                        "Disconnects AAP2 and deletes its SSH key. " +
-                            "A new activation is required.",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.testTag("a1-reset-warning")
-                    )
-                    Text(
-                        "Server: ${resetProfile.host} · ID: " +
-                            ConnectionIdentity.id(resetProfile.username),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Text(
-                        "Old server access is NOT revoked. Ask its admin to revoke this ID.",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    if (resetStatus == EnrollmentReset.Status.FAILED) {
-                        Text("Reset failed; try again.", color = MaterialTheme.colorScheme.error)
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        EnrollmentReset.begin()
-                        try {
-                            context.startService(
-                                Intent(context, SocksForegroundService::class.java).apply {
-                                    action = SocksForegroundService.ACTION_RESET
-                                }
-                            )
-                        } catch (e: Exception) {
-                            EnrollmentReset.failed()
-                            AAPLog.append("Local reset request failed: ${e.javaClass.simpleName}")
-                        }
-                    },
-                    enabled = resetCode.length == 4 && resetInput == resetCode && !resetting,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError
-                    ),
-                    modifier = Modifier.testTag("a1-reset-confirm")
-                ) { Text(if (resetting) "Erasing…" else "ERASE AAP2 ENROLLMENT") }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showResetDialog = false
-                        resetInput = ""
-                        resetCode = ""
-                    },
-                    enabled = !resetting,
-                    modifier = Modifier.testTag("a1-reset-cancel")
-                ) { Text("Keep current connection") }
-            }
-        )
+    val onCancelReset = {
+        showResetDialog = false
+        resetInput = ""
+        resetCode = ""
     }
 
-    BackHandler(enabled = showDetails) { showDetails = false }
+    BackHandler(enabled = showDetails && !showResetDialog) { showDetails = false }
     val detailsProfile = profile
-    if (showDetails && detailsProfile != null) {
+    if (showResetDialog && resetProfile != null) {
+        EnrollmentResetScreen(
+            profile = resetProfile,
+            challenge = resetCode,
+            entered = resetInput,
+            resetting = resetStatus == EnrollmentReset.Status.RUNNING,
+            failed = resetStatus == EnrollmentReset.Status.FAILED,
+            onDigit = { digit ->
+                if (resetInput.length < 4 && digit in '0'..'9') {
+                    resetInput += digit
+                }
+            },
+            onBackspace = { resetInput = resetInput.dropLast(1) },
+            onCancel = onCancelReset,
+            onConfirm = {
+                if (resetCode.length == 4 && resetInput == resetCode &&
+                    resetStatus != EnrollmentReset.Status.RUNNING) {
+                    EnrollmentReset.begin()
+                    try {
+                        context.startService(
+                            Intent(context, SocksForegroundService::class.java).apply {
+                                action = SocksForegroundService.ACTION_RESET
+                            }
+                        )
+                    } catch (e: Exception) {
+                        EnrollmentReset.failed()
+                        AAPLog.append("Local reset request failed: ${e.javaClass.simpleName}")
+                    }
+                }
+            }
+        )
+    } else if (showDetails && detailsProfile != null) {
         ConnectionDetailsScreen(
             profile = detailsProfile,
             state = connectionState,
