@@ -81,8 +81,9 @@ it has not.
   Do not maintain separate GitHub/F-Droid version branches or numbers.
 - The Android `versionCode` must **increase** for each installable
   update, including same-signature upgrades between channels.
-  Never reuse a published versionCode for different application code.
-  Any pre-release test build must have a code lower than its eventual
+  Never recycle a versionCode for a *later release*; the two flavors
+  of the **same** release intentionally share it despite different
+  contents. Any pre-release test build must have a code lower than its eventual
   stable version **and** higher than the previous publicly installable
   version it must upgrade. Reserve codes and verify the whole chain
   before publishing; do not rely on lexical sorting of version names.
