@@ -17,6 +17,11 @@ object ConnectionStateHolder {
     // Expose the state as an immutable StateFlow for observation
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
+    // Status text is non-sensitive and persisted by ConnectionIssueStore, not here.
+    private val _problem = MutableStateFlow<String?>(null)
+    val problem: StateFlow<String?> = _problem.asStateFlow()
+    fun setProblem(value: String?) { _problem.value = value }
+
     // Traffic counters (bytes in, bytes out) since the current session started
     private val _trafficBytes = MutableStateFlow(0L to 0L)
     val trafficBytes: StateFlow<Pair<Long, Long>> = _trafficBytes.asStateFlow()
