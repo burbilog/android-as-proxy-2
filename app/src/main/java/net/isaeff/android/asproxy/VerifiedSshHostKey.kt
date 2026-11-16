@@ -5,6 +5,7 @@ import com.jcraft.jsch.HostKey
 import com.jcraft.jsch.HostKeyRepository
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.JSchException
+import com.jcraft.jsch.Session
 import com.jcraft.jsch.UserInfo
 import java.security.MessageDigest
 
@@ -54,6 +55,24 @@ object VerifiedSshHostKey {
         return JSch().apply {
             setHostKeyRepository(PinnedRepository(hostId(host, port), verifiedBlob.copyOf()))
         }
+    }
+
+    /**
+     * The pinned blob must also determine KEX host-key algorithm negotiation.
+     * Without this, installing a *different* host key on the server can make
+     * JSch select it instead, even while the originally pinned key is valid.
+     * RSA's wire blob is ssh-rsa for modern rsa-sha2-* signatures as well.
+     */
+    internal fun hostKeyNegotiationAlgorithms(verifiedBlob: ByteArray): String =
+        when (SshEcWire.hostKeyAlgorithm(verifiedBlob)) {
+            "ssh-ed25519" -> "ssh-ed25519"
+            "ecdsa-sha2-nistp256" -> "ecdsa-sha2-nistp256"
+            "ssh-rsa", "rsa-sha2-256", "rsa-sha2-512" -> "rsa-sha2-512,rsa-sha2-256"
+            else -> throw IllegalArgumentException("Unsupported pinned host key type")
+        }
+
+    fun configurePinnedHostKey(session: Session, verifiedBlob: ByteArray) {
+        session.setConfig("server_host_key", hostKeyNegotiationAlgorithms(verifiedBlob))
     }
 
     fun sha256Fingerprint(keyBlob: ByteArray): String {
