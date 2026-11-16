@@ -46,6 +46,29 @@ class A1ConnectionDetailsUiTest {
         assertTrue("Updater did not reject same-version installed APK",
             sameVersion.exceptionOrNull()?.message?.contains("Already up to date") == true)
 
+        // Regression: Android 11 may provide a valid archive's package
+        // metadata but null signingInfo. That is NOT a signer mismatch.
+        // The real system installer verifies the APK signature at install time.
+        val installedMetadata = context.packageManager.getPackageInfo(context.packageName, 0)
+        @Suppress("DEPRECATION")
+        val newerMetadata = android.content.pm.PackageInfo().apply {
+            packageName = context.packageName
+            versionCode = installedMetadata.longVersionCode.toInt() + 1
+            versionName = "next-release"
+        }
+        assertTrue("Test candidate must not have signer metadata",
+            newerMetadata.signingInfo == null)
+        assertEquals("next-release", ApkUpdater.validatePackageMetadata(
+            installedMetadata, newerMetadata, context.packageName
+        ))
+        newerMetadata.packageName = "wrong.package"
+        assertTrue("Updater must reject an unrelated package",
+            runCatching {
+                ApkUpdater.validatePackageMetadata(
+                    installedMetadata, newerMetadata, context.packageName
+                )
+            }.isFailure)
+
         // Only a scoped cached APK is readable through the FileProvider. The
         // system installer receives this content URI with a one-time read grant.
         val tempDir = File(context.cacheDir, "updates")
