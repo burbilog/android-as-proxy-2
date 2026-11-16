@@ -35,6 +35,13 @@ run_test() {
     return 1
   }
 }
+ABOUT_OUTPUT=$(timeout 150 adb shell am instrument -w \
+  -e class "net.isaeff.android.asproxy.A1AboutUiTest#aboutIsReachableAndCloseReturnsToMainScreen" \
+  "$RUNNER")
+printf '%s\n' "$ABOUT_OUTPUT"
+grep -q 'OK (1 test)' <<<"$ABOUT_OUTPUT" ||
+  { echo 'A1 beginner About navigation FAILED' >&2; exit 1; }
+echo 'A1 PASS: About, source, support and back navigation before enrollment'
 TRUSTED_SHA256=$(sudo ssh-keygen -lf /etc/ssh/ssh_host_ecdsa_key.pub -E sha256 | awk '{print $2}')
 UI_TEST=net.isaeff.android.asproxy.A1EnrollmentUiTest
 UI_OUTPUT=$(timeout 150 adb shell am instrument -w \
