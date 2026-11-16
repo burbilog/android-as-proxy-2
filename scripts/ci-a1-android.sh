@@ -201,7 +201,7 @@ RESET_OUTPUT=$(timeout 120 adb shell am instrument -w \
 printf '%s\n' "$RESET_OUTPUT"
 grep -q 'OK (1 test)' <<<"$RESET_OUTPUT" ||
   { echo 'A1 UI reset confirmation / Keystore teardown FAILED' >&2; exit 1; }
-echo 'A1 PASS: typed RESET stopped service, erased enrollment and private SSH key'
+echo 'A1 PASS: 4-digit reset confirmation stopped service, erased enrollment and private SSH key'
 
 # Keep the original interrupted-SFTP/Resume, signed-update and Direct Boot
 # regression suite, using another independent disposable S2 invitation.
