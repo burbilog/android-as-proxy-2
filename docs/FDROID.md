@@ -1,5 +1,9 @@
 # F-Droid preparation and independent distribution channels
 
+The shared stable versioning, release-candidate and publication decisions are
+governed by [RELEASE_POLICY.md](RELEASE_POLICY.md); this page documents the
+F-Droid-specific implementation and signing/reproducibility constraints.
+
 **Status: preparation only.** As of this change, GitHub v2.0.6 is the most
 recent public stable APK; no F-Droid inclusion or reproducibility verification
 is claimed. Never replace a proven GitHub installation with an unverified APK.
