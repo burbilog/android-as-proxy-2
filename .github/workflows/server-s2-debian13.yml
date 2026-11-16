@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 18
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build a disposable Debian 13 systemd environment
         run: |
           cat >/tmp/aap2-s2.Dockerfile <<'EOF'
