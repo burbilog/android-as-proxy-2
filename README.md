@@ -87,7 +87,10 @@ The **GitHub build** offers **Update** on its main screen, even before activatio
 
 There is **no automatic polling, background download or silent installation**. If the user wanted the connection running before the update, AAP2 attempts to restore it after `MY_PACKAGE_REPLACED`. An explicit **Disconnect** remains off after updating.
 
-GitHub's `releases/latest` endpoint intentionally does not include pre-releases; release-candidate builds should be installed and tested separately. The **F-Droid build** does not download or install APKs; updates are handled by the F-Droid client. See [distribution channels](docs/FDROID.md).
+GitHub's `releases/latest` endpoint intentionally does not include pre-releases; release-candidate builds should be installed and tested separately. The **F-Droid build** does not download or install APKs; updates are handled by the F-Droid client. See [distribution channels](docs/FDROID.md). A future release can also provide an
+`aap2-fdroid.apk` signed with the same developer key for F-Droid
+reproducibility verification; this is **not an F-Droid listing** and
+cross-channel updates remain subject to certificate compatibility.
 
 ## Switching servers / resetting enrollment
 
