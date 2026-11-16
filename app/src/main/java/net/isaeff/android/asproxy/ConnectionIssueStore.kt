@@ -19,10 +19,10 @@ internal object ConnectionIssueStore {
     private const val NOTIFICATION_ID = 2
     private const val CHANNEL = "AAP2ConnectionProblem"
     enum class Reason(val message: String) {
-        HOST_KEY("Server identity changed. Contact the administrator."),
+        HOST_KEY("Server identity differs. Connection blocked; checking again hourly. Contact the administrator."),
         AUTH("Server rejected the connection. AAP2 retries hourly; contact the administrator."),
-        KEYSTORE("Phone identity unavailable. Contact the administrator; do not reset enrollment."),
-        SERVICE("Connection cannot start. Contact the administrator.")
+        KEYSTORE("Phone identity unavailable. AAP2 retries hourly; contact the administrator. Do not reset enrollment."),
+        SERVICE("Connection error. AAP2 retries hourly when possible; contact the administrator if it persists.")
     }
 
     private fun prefs(context: Context) = context.createDeviceProtectedStorageContext()

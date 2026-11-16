@@ -26,6 +26,7 @@ import kotlinx.coroutines.launch
  */
 class SocksForegroundService : Service() {
     companion object {
+        const val ACTION_START = "net.isaeff.android.asproxy.action.START_SERVICE"
         const val ACTION_STOP = "net.isaeff.android.asproxy.action.STOP_SERVICE"
         const val ACTION_RESET = "net.isaeff.android.asproxy.action.RESET_ENROLLMENT"
         const val ACTION_BOOT = "net.isaeff.android.asproxy.action.AUTO_CONNECT_ON_BOOT"
@@ -84,6 +85,18 @@ class SocksForegroundService : Service() {
 
         if (running) return START_STICKY
 
+        // A startForegroundService() request must be promoted promptly even
+        // when the stored profile is absent/corrupt or desired_running is false.
+        // STOP/RESET are handled above and do not request a new foreground start.
+        try {
+            startForeground(NOTIFICATION_ID, createNotification())
+        } catch (e: Exception) {
+            Log.e("AAP2", "BOOT_FOREGROUND_FAILED " + e.javaClass.simpleName)
+            ConnectionIssueStore.report(this, ConnectionIssueStore.Reason.SERVICE)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         // Read only device-protected data until the user has unlocked once.
         val bootProfile = try {
             DirectBootTunnelProfile.load(this)
@@ -115,17 +128,12 @@ class SocksForegroundService : Service() {
 
     private fun startKeystoreTunnel(profile: DirectBootTunnelProfile.Config): Int {
         try {
-            startForeground(NOTIFICATION_ID, createNotification())
             val proxy = Socks5ProxyServer(Aap2Ports.LOCAL_SOCKS5, onConnectionLimit = { rejected ->
                 AAPLog.append("SOCKS connection limit reached: rejected " + rejected)
             })
             proxy.start()
             socksServer = proxy
             keystoreTunnelManager = KeystoreSshTunnelManager(this, profile, proxy.boundPort).apply {
-                onFatalError = { reason ->
-                    ConnectionIssueStore.report(this@SocksForegroundService, reason)
-                    stopSelf()
-                }
                 onProblem = { reason ->
                     ConnectionIssueStore.report(this@SocksForegroundService, reason)
                 }
