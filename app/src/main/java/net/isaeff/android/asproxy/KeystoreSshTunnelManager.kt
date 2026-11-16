@@ -81,6 +81,7 @@ internal class KeystoreSshTunnelManager(
                 // Keep events arriving during connect(): they should wake the next retry.
                 networkAvailable.tryReceive()
                 var next: Session? = null
+                var hourlyRetry = false
                 var pinned: VerifiedSshHostKey.PinnedClient? = null
                 var loadingIdentity = true
                 try {
@@ -142,8 +143,7 @@ internal class KeystoreSshTunnelManager(
                             onProblem?.invoke(reason)
                             ConnectionStateHolder.setState(ConnectionState.RETRYING)
                             Log.w("AAP2-SSH", "SSH problem " + reason.name + "; retrying hourly")
-                            delay(SshFailurePolicy.HOURLY_RETRY_MS)
-                            continue
+                            hourlyRetry = true
                         }
                         SshFailurePolicy.Action.RETRY_NETWORK ->
                             Log.w("AAP2-SSH", "SSH reconnect after " + e.javaClass.simpleName)
@@ -154,6 +154,11 @@ internal class KeystoreSshTunnelManager(
                     session = null
                 }
                 if (!isActive) break
+                if (hourlyRetry) {
+                    // Always close JSch sockets in finally BEFORE the long delay.
+                    delay(SshFailurePolicy.HOURLY_RETRY_MS)
+                    continue
+                }
                 // The foreground service is still running and will try again.
                 // DISCONNECTED is reserved for an actually stopped service.
                 ConnectionStateHolder.setState(ConnectionState.RETRYING)
