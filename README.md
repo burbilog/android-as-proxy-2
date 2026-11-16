@@ -54,6 +54,25 @@ and [A1_LOCAL_MAKE.md](docs/A1_LOCAL_MAKE.md). The current source
 version is not necessarily the latest **published** APK; verify
 [GitHub Releases](https://github.com/burbilog/android-as-proxy-2/releases).
 
+## Architecture and maintenance decisions
+
+AAP2 deliberately offers an authenticated operator TCP access to the
+**Android-side localhost and LAN**, not only a public Internet exit.
+This permits remote support tools such as droidVNC-NG. The AAP2 reverse
+SOCKS5 listener is loopback-only on the SSH relay; protect local relay
+accounts and any upstream Hysteria 2 access. No SOCKS5 password or
+private-address filter is enabled by default.
+
+The Android app is designed for users with little time or technical
+experience: no required extra setup prompts, no manual SSH recovery,
+and no forced battery-optimization exemption. An optional **Battery
+settings** link is available on the scrollable **About** page if the
+device vendor restricts background connections.
+
+[Code-review decisions and deferred work](docs/CODE_REVIEW_DECISIONS_2026-11.md)
+document these deliberate tradeoffs; [release policy](docs/RELEASE_POLICY.md)
+requires physical acceptance before publishing a stable APK.
+
 ## Architecture
 
 ```text
