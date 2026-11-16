@@ -116,7 +116,7 @@ class CheckTests(unittest.TestCase):
 
 class LifecycleTests(unittest.TestCase):
     def test_enroll_cli_accepts_missing_client_addr_without_guessing_phone_ip(self):
-        argv = ['aap2ctl', 'enroll', 'Cruise2', '--manual-code',
+        argv = ['aap2ctl', 'enroll', 'Cruise2',
                 '--server', 'ssh.example.net:22225', '--server-addr', '192.0.2.10']
         seen = []
         def fake_enroll(args):
@@ -128,10 +128,9 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(len(seen), 1)
         self.assertEqual(seen[0].client_addr, '198.51.100.1')
         self.assertEqual(seen[0].server_addr, '192.0.2.10')
-        self.assertTrue(seen[0].manual_code)
 
     def test_enroll_simple_cli_defaults_to_loopback_probe(self):
-        argv = ['aap2ctl', 'enroll', 'SpareAndroid', '--manual-code',
+        argv = ['aap2ctl', 'enroll', 'SpareAndroid',
                 '--server', 'ssh.example.net:22225']
         with mock.patch.object(aap.sys, 'argv', argv), \
              mock.patch.object(aap, 'enroll', return_value=0) as handler:
@@ -141,7 +140,6 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(args.server_port, '22')
         self.assertEqual(args.client_addr, '198.51.100.1')
         self.assertEqual(args.client_host, 'unknown')
-        self.assertTrue(args.manual_code)
 
     def test_enroll_help_is_short_with_explicit_advanced_help(self):
         def help_text(option):
@@ -156,8 +154,15 @@ class LifecycleTests(unittest.TestCase):
         short = help_text('--help')
         extended = help_text('--help-all')
         self.assertIn('--server SERVER', short)
-        self.assertIn('--manual-code', short)
+        self.assertNotIn('--manual-code', short)
         self.assertIn('--help-all', short)
+        # The old two-field PIN mode is intentionally unavailable.
+        argv = ['aap2ctl', 'enroll', 'Phone', '--server', 'example.net', '--manual-code']
+        with mock.patch.object(aap.sys, 'argv', argv), \
+             contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as exc:
+                aap.main()
+        self.assertEqual(exc.exception.code, 2)
         self.assertNotIn('--client-addr', short)
         self.assertNotIn('--server-addr', short)
         self.assertIn('--client-addr', extended)
@@ -219,13 +224,13 @@ class LifecycleTests(unittest.TestCase):
             with self.assertRaisesRegex(aap.SetupError, 'MANUAL repair'):
                 aap.check_real_identity(record, role)
 
-    def make_enroll_fixture(self, directory, *, crash=None, manual_code=False):
+    def make_enroll_fixture(self, directory, *, crash=None):
         """Mock only external root-system mutations; use real JSON writes."""
         state = Path(directory, 'state')
         state.mkdir()
         created = {}
         events = []
-        enrollment_id = '000012' if manual_code else '123456abcdef'
+        enrollment_id = '000012'
 
         def getpwnam(name):
             if name not in created:
@@ -267,8 +272,7 @@ class LifecycleTests(unittest.TestCase):
 
         args = types.SimpleNamespace(device_name='TC21', server='example.net:22222',
              client_addr='192.0.2.17', server_addr='192.0.2.20',
-             server_port='22', client_host='test-client.invalid',
-             manual_code=manual_code)
+             server_port='22', client_host='test-client.invalid')
         stack = contextlib.ExitStack()
         stack.enter_context(mock.patch.object(aap, 'STATE', state))
         stack.enter_context(mock.patch.object(aap, 'require_preflight', return_value='/usr/sbin/sshd'))
@@ -279,7 +283,6 @@ class LifecycleTests(unittest.TestCase):
         stack.enter_context(mock.patch.object(aap.grp, 'getgrnam', side_effect=getgroup))
         stack.enter_context(mock.patch.object(aap.os, 'getgrouplist',
                                               side_effect=lambda name, gid: [gid]))
-        stack.enter_context(mock.patch.object(aap.secrets, 'token_hex', return_value=enrollment_id))
         stack.enter_context(mock.patch.object(aap.secrets, 'randbelow', return_value=12))
         stack.enter_context(mock.patch.object(aap, 'unused_uid', side_effect=[1001, 1002]))
         stack.enter_context(mock.patch.object(aap, 'unused_port', return_value=11010))
@@ -307,17 +310,17 @@ class LifecycleTests(unittest.TestCase):
             state = json.loads(meta_path.read_text())
             self.assertEqual(state['state'], 'active')
             self.assertNotIn('0000000012', meta_path.read_text())
-            self.assertIn('One-time PIN (type all 10 digits): 0000000012', out.getvalue())
+            self.assertIn('Phone activation code (type digits only): ' +
+                              aap.activation_code('000012', '0000000012'), out.getvalue())
             text = out.getvalue()
             self.assertLess(text.index('PHONE -'), text.index('VERIFY SERVER -'))
             self.assertLess(text.index('VERIFY SERVER -'), text.index('ADMIN -'))
-            self.assertEqual(text.count('0000000012'), 1)
-            self.assertIn('Next: aap2ctl approve 123456abcdef', text)
+            self.assertEqual(text.count(aap.activation_code('000012', '0000000012')), 1)
+            self.assertIn('Next: aap2ctl approve 000012', text)
 
-    def test_manual_setup_code_is_six_decimal_digits_and_keeps_ten_digit_pin(self):
+    def test_default_enroll_uses_six_decimal_digits_and_single_code(self):
         with tempfile.TemporaryDirectory() as d:
-            stack, meta_path, args, events = self.make_enroll_fixture(
-                d, manual_code=True)
+            stack, meta_path, args, events = self.make_enroll_fixture(d)
             with stack, contextlib.redirect_stdout(io.StringIO()) as out:
                 self.assertEqual(aap.enroll(args), 0)
             state = json.loads(meta_path.read_text())
@@ -346,10 +349,9 @@ class LifecycleTests(unittest.TestCase):
             self.assertFalse(aap.ID_RE.fullmatch('12345'))
             self.assertFalse(aap.ID_RE.fullmatch('ab12cd'))
 
-    def test_json_enroll_manual_code_once_no_separate_pin(self):
+    def test_json_enroll_always_emits_activation_code_once(self):
         with tempfile.TemporaryDirectory() as d:
-            stack, meta_path, args, events = self.make_enroll_fixture(
-                d, manual_code=True)
+            stack, meta_path, args, events = self.make_enroll_fixture(d)
             args.json = True
             with stack, contextlib.redirect_stdout(io.StringIO()) as out:
                 self.assertEqual(aap.enroll(args), 0)
@@ -367,20 +369,10 @@ class LifecycleTests(unittest.TestCase):
             self.assertEqual(out.getvalue().count(invite['activation_code']), 1)
             self.assertEqual(out.getvalue().count('\n'), 1)
 
-    def test_json_enroll_legacy_one_time_pin(self):
-        with tempfile.TemporaryDirectory() as d:
-            stack, _, args, _ = self.make_enroll_fixture(d)
-            args.json = True
-            with stack, contextlib.redirect_stdout(io.StringIO()) as out:
-                self.assertEqual(aap.enroll(args), 0)
-            invite = json.loads(out.getvalue())['invitation']
-            self.assertEqual(invite['one_time_pin'], '0000000012')
-            self.assertNotIn('activation_code', invite)
-
     def test_crash_before_useradd_never_activates_pin(self):
         with tempfile.TemporaryDirectory() as d:
             stack, meta_path, args, events = self.make_enroll_fixture(
-                d, crash='aap2e123456abcdef')
+                d, crash='aap2e000012')
             with stack, self.assertRaises(aap.SetupError):
                 aap.enroll(args)
             state = json.loads(meta_path.read_text())

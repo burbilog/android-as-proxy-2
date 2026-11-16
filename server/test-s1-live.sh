@@ -68,10 +68,14 @@ aap2ctl enroll CI-TEST --server 127.0.0.1:22224 \
   --client-addr 127.0.0.1 --client-host localhost \
   --server-addr 127.0.0.1 --server-port 22224 > "$TMP/invite.txt"
 E=$(sed -n 's/^Setup username: //p' "$TMP/invite.txt")
-PIN=$(sed -n 's/^One-time PIN (type all 10 digits): //p' "$TMP/invite.txt")
+CODE=$(sed -n 's/^Phone activation code (type digits only): //p' "$TMP/invite.txt" | tr -d '-')
 ID=$(sed -n 's/^Enrollment ID: //p' "$TMP/invite.txt")
-[ "${#PIN}" -eq 10 ] && [ -n "$E" ] && [ -n "$ID" ]
-case "$PIN" in *[!0-9]*) echo 'PIN not decimal' >&2; exit 1;; esac
+[ "${#CODE}" -eq 18 ] && [ "${#ID}" -eq 6 ] && [ -n "$E" ] || exit 1
+case "$CODE" in *[!0-9]*) echo 'Activation code not decimal' >&2; exit 1;; esac
+[ "$(printf '%s' "$CODE" | cut -c 1-6)" = "$ID" ] || exit 1
+PIN=$(printf '%s' "$CODE" | cut -c 7-16)
+[ "${#PIN}" -eq 10 ] || exit 1
+unset CODE
 P="aap2p$ID"
 getent passwd "$E" >/dev/null
 getent passwd "$P" >/dev/null
@@ -310,7 +314,7 @@ PY
 fi
 
 
-# Force expiry in the fixture instead of waiting 10 minutes.
+# Force expiry in the fixture instead of waiting 20 minutes.
 # This edit is TEST-ONLY on a disposable runner, not an AAP2 CLI feature.
 python3 - "$ID" <<'PY'
 import json

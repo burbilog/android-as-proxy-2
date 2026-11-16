@@ -9,26 +9,26 @@ Match configuration must be installed MANUALLY, independently of this CLI;
 
 ## Manual typing on a phone (no clipboard, no QR)
 
-For **new** S2 invitations, use `--manual-code` with ordinary `enroll`
-arguments. CLI displays **one Phone activation code**, formatted in 4-4-4-4-2
-blocks. Android has one entry field and inserts separators automatically;
+Every `aap2ctl enroll` invitation now displays **one Phone activation code**,
+formatted in 4-4-4-4-2 blocks. Android has one entry field and inserts
+separators automatically;
 users type **only 18 decimal digits**. The code consists of a six-digit
 temporary account selector, ten random PIN digits and two MOD97 check
 digits, all invisible as separate parts to the user. Leading zeros matter.
 A failed local checksum is a typing mistake and MUST NOT open SSH or send PIN.
 Checksum digits do **not** increase authentication entropy; only the ten
-random PIN digits are secret. Existing 12-hex invitations still use the
-legacy setup username + ten-digit PIN for older clients.
+random PIN digits are secret. Existing 12-hex device records can still
+be listed and revoked; the server no longer creates that invitation format.
 The server address and port are still typed separately.
 
 Example (fill in real addresses):
 
 ```sh
-aap2ctl enroll SpareAndroid --manual-code --server ssh.example.net:22225
+aap2ctl enroll SpareAndroid --server ssh.example.net:22225
 
 # For unusual SSH Match rules, the full context is still available:
 aap2ctl enroll --help-all
-aap2ctl enroll SpareAndroid --manual-code \
+aap2ctl enroll SpareAndroid \
   --server ssh.example.net:22225 \
   --client-addr 192.0.2.5 --client-host phone.example.net \
   --server-addr 192.0.2.10 --server-port 22
@@ -38,7 +38,6 @@ The human-facing `enroll` result is organized into three short sections,
 without colors or terminal dependencies:
 
 - **PHONE:** the public server address and **one** bearer activation code.
-  For legacy invitations it instead shows setup username + ten-digit PIN.
 - **VERIFY SERVER:** complete SHA256 fingerprints returned by the local
   `ssh-keygen`, for every installed SSH host-key algorithm. Compare the
   **fingerprint and key type** shown on the phone; never accept an
@@ -74,13 +73,12 @@ any temporary PIN is activated.
 The first six digits are **not authentication secrets**: they select a
 short-lived Unix account. The ten-digit PIN, verified SSH host-key
 fingerprint and explicit administrator approval remain unchanged. The
-manual-entry PIN lasts **20 minutes** (10 minutes in the legacy mode).
+manual-entry PIN lasts **20 minutes**.
 The temporary password still expires automatically via the cleanup timer;
 do not treat the public six-digit code as an authentication secret. Issue
 invitations only when the user is ready. Existing 12-hex enrollment IDs,
-approved accounts and stored
-Android profiles remain valid. The new option does **not** migrate or
-alter existing accounts, or silently change the default enroll format.
+approved accounts and stored Android profiles remain valid. The default
+format is now always 18 digits; no extra option or legacy client mode.
 
 ## Administrator workflow
 
@@ -166,9 +164,8 @@ verification gates. The `--help` display remains human-facing.
   `temporary_pin_expires_at`.
 - `enroll`: `invitation` with the endpoint, usernames, port, TTL,
   host-key SHA256 fingerprint/type records and `approve_command`.
-  With `--manual-code`, the **single 18-digit secret** is supplied
-  once as `invitation.activation_code`; legacy mode instead has
-  `invitation.one_time_pin`. Neither is written to server state,
+  The **single 18-digit secret** is supplied once as
+  `invitation.activation_code`. It is not written to server state,
   but **stdout contains a bearer secret**: do not archive, log or
   publish the JSON response.
 - `doctor`: `checks[]` (`level`, `message`), `failures`,
@@ -218,8 +215,7 @@ and a nonzero exit code. If invoking non-interactively, do not mistake
   status publication, retrying \`approve\` with the same snapshot is
   safe. Android can attempt the permanent key even when its SFTP
   connection was interrupted; no need to delete/regenerate that key.
-- The temporary PIN stays active until its 10-minute legacy / 20-minute
-  manual-code TTL. On expiry the
+- The temporary PIN stays active until its 20-minute TTL. On expiry the
   systemd cleanup removes only temporary access and its chroot; the
   permanent key stays approved, including across a cleanup run.
 
