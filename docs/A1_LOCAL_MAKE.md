@@ -1,7 +1,9 @@
 # AAP2 local Makefile (marduk)
 
-The root `Makefile` is a small maintainer shortcut for local **release-signed**
-APK builds and physical testing. It calls existing Gradle and
+The root `Makefile` is a small maintainer shortcut for local **release-signed
+GitHub-channel** APK builds and physical testing. Both GitHub and F-Droid
+use a single checked-in `version.properties` for official versionCode and
+versionName. The GitHub shortcut calls existing Gradle and
 `scripts/build-signed-apk.sh`, preserving its interactive signing password
 and local-only PKCS#12 keystore. It never generates or uploads a signing key.
 
@@ -70,58 +72,55 @@ make curl S2=your-ssh-server.example PORT=11011
 make install Z=YOUR_LOCAL_ADB_SERIAL
 ```
 
-## Stable public releases
+## Stable public releases (single shared version)
 
-A stable release is deliberately a two-step operation; an ordinary `make
-build` **never** publishes anything. First switch to `master` (once) and
-prepare the signed APK with a numeric version (requires the same interactive
-private keystore password as `make build`):
+The current GitHub and F-Droid source variants use the **same**
+`versionCode`/`versionName` from `version.properties`. Increase these
+exactly once for a new public version. Both variants keep the existing
+Android application ID. A local throwaway `make build` uses a higher
+version code and a `-local-` version name; this is **not** suitable for
+F-Droid or a stable GitHub release.
+
+To make the official signed GitHub APK for the version in the file:
 
 ```zsh
 git switch master
-make release VERSION=2.0.0
+make release
 ```
 
-The `release` target fast-forwards the current branch, insists on a clean
-`master` matching `origin/master`, builds with the next archived
-`versionCode` and exact `versionName=2.0.0`, then uses
-`scripts/aap2-spare-upgrade.sh check` to compare the old and new **signed**
-APKs (package, increasing version and signing certificate). It also writes
-`aap2-VERSION_CODE.commit` next to the archive so the eventual publication
-is pinned to the exact source commit. To specify a version code instead of
-automatic increment:
+This target first checks that local `master` matches `origin/master`,
+then reads `version.properties`, builds the GitHub variant with exactly
+those version values, compares signer continuity against the last
+archived signed APK, and records the source commit. It refuses a public
+versionCode that does not exceed the most recent local archived code.
+No `VERSION_CODE` command-line override can change the official version.
+
+Review and test the candidate, then publish via:
 
 ```zsh
-make release VERSION=2.0.0 VERSION_CODE=20012
-```
-
-Inspect and test the candidate as appropriate. **Do not** `make install` on
-the locally enrolled Zebra if the aim is to test its in-app Update button
-against the older installed release.
-
-Publish only after acceptance, using a locally authenticated GitHub CLI
-(`gh auth status`) and a committed release-notes document named
-`docs/RELEASE_NOTES_2.0.0.md`:
-
-```zsh
-make publish VERSION=2.0.0
+make publish
 make verify-release
 ```
 
-`publish` re-verifies that the APK's package name, exact Android
-`versionCode`/`versionName`, signature, and recorded source commit match
-the current clean/up-to-date `master`. It refuses an existing release tag,
-then uploads the APK under the **fixed asset name `aap2.apk`** and a
-`SHA256SUMS` to the stable GitHub Release `v2.0.0`. No signing material
-is uploaded; temporary staging files are deleted afterward. No Android
-installation or SSH server mutation is triggered.
+`publish` also requires the source version and matching
+`docs/RELEASE_NOTES_<versionName>.md`; it verifies APK identity,
+versionCode/versionName, signature and saved source commit, then
+uploads `aap2.apk` and `SHA256SUMS` to GitHub. The signer remains
+local. If an APK is not ready, this workflow **never** uploads one.
 
-`verify-release` downloads
-`https://github.com/burbilog/android-as-proxy-2/releases/latest/download/aap2.apk`
-and compares every byte with the archived signed APK. The next stable
-version, e.g. `2.0.1`, repeats the same sequence with its own release notes.
-If the latest numbered archive is not the candidate, pass `CODE=20012`
-to `make publish` and `make verify-release`.
+The other channel builds independently without the maintainer's signing
+secret:
+
+```zsh
+./gradlew --no-daemon :app:assembleFdroidRelease
+```
+
+It is unsigned until F-Droid signs it. The source/versions remain the
+same, but the F-Droid build has no GitHub APK updater or install-packages
+permission. See [F-Droid distribution](FDROID.md) for the signing
+compatibility warning: a default F-Droid-signed APK cannot update a
+GitHub-signed installation with the same application ID unless the
+upstream signature is verified and adopted reproducibly.
 
 The repo never auto-creates a public release just by running Gradle, and
 never publishes debug-signed Android CI artifacts.
