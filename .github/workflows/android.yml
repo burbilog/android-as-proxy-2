@@ -63,6 +63,11 @@ jobs:
             exit 1
           fi
           grep -F 'TYPE is required' /tmp/aap2-missing-type.log
+          if TYPE=release make --no-print-directory publish >/tmp/aap2-ambient-type.log 2>&1; then
+            echo 'ambient TYPE must not authorize publication' >&2
+            exit 1
+          fi
+          grep -F 'TYPE is required' /tmp/aap2-ambient-type.log
 
       - name: Build and unit tests
         run: |
