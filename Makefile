@@ -168,8 +168,8 @@ publish:
 	    { echo 'Missing GitHub APK or wrong source commit: run make release' >&2; exit 1; }; \
 	  notes="docs/RELEASE_NOTES_$$version.md"; \
 	  [ -s "$$notes" ] || { echo "Missing $$notes" >&2; exit 1; }; \
-	  sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$(HOME)/Android/Sdk}}"; \
-	  tools="${AAP2_BUILD_TOOLS:-$$sdk/build-tools/35.0.0}"; \
+	  sdk="$${ANDROID_HOME:-$${ANDROID_SDK_ROOT:-$(HOME)/Android/Sdk}}"; \
+	  tools="$${AAP2_BUILD_TOOLS:-$$sdk/build-tools/35.0.0}"; \
 	  "$$tools/apksigner" verify "$$apk"; \
 	  meta=$$("$$tools/aapt" dump badging "$$apk"); \
 	  line=$$(printf '%s\n' "$$meta" | grep '^package:' | head -n 1); \
