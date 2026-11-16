@@ -49,13 +49,29 @@ object VerifiedSshHostKey {
     }
 
     /** Can only be used after separate, explicit fingerprint verification. */
-    fun pinnedJsch(host: String, port: Int, verifiedBlob: ByteArray): JSch {
+    /**
+     * Keep the host-key repository's explicit verdict alongside JSch. JSch
+     * otherwise reduces a rejected key to an exception message whose wording
+     * can change between library versions.
+     */
+    internal class PinnedClient internal constructor(
+        val jsch: JSch,
+        private val rejected: () -> Boolean
+    ) {
+        val hostKeyRejected: Boolean get() = rejected()
+    }
+
+    internal fun pinnedJschWithCheck(host: String, port: Int, verifiedBlob: ByteArray): PinnedClient {
         require(verifiedBlob.isNotEmpty() && port in 1..65535)
         SshEcWire.hostKeyAlgorithm(verifiedBlob)
-        return JSch().apply {
-            setHostKeyRepository(PinnedRepository(hostId(host, port), verifiedBlob.copyOf()))
+        val repository = PinnedRepository(hostId(host, port), verifiedBlob.copyOf())
+        return PinnedClient(JSch().apply { setHostKeyRepository(repository) }) {
+            repository.rejectedHostKey
         }
     }
+
+    fun pinnedJsch(host: String, port: Int, verifiedBlob: ByteArray): JSch =
+        pinnedJschWithCheck(host, port, verifiedBlob).jsch
 
     /**
      * The pinned blob must also determine KEX host-key algorithm negotiation.
@@ -114,9 +130,14 @@ object VerifiedSshHostKey {
         private val expectedHostId: String,
         private val verifiedBlob: ByteArray
     ) : ReadOnlyRepository() {
-        override fun check(host: String?, key: ByteArray?): Int =
+        @Volatile var rejectedHostKey: Boolean = false
+            private set
+
+        override fun check(host: String?, key: ByteArray?): Int {
             if (host == expectedHostId && key != null &&
-                MessageDigest.isEqual(verifiedBlob, key)
-            ) HostKeyRepository.OK else HostKeyRepository.CHANGED
+                MessageDigest.isEqual(verifiedBlob, key)) return HostKeyRepository.OK
+            rejectedHostKey = true
+            return HostKeyRepository.CHANGED
+        }
     }
 }
