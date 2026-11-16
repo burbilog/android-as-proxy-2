@@ -4,7 +4,7 @@ AAP2 turns a spare Android handset into a self-hosted SOCKS5 exit. The phone ope
 
 The server does not expose a public SOCKS5 port, and the Android app does not need a long-term SSH password. AAP2 can coexist with the original AAP1 app; its Android application ID is `net.isaeff.android.asproxy2`.
 
-**Status:** v2.0.6 stable release. Real Android 11 and Android 14 devices, disposable Debian 13 OpenSSH integration, and signed in-place updates have been tested. Long-term reliability across OEM battery policies and unattended networks is device-dependent and remains a separate acceptance test.
+**Latest published stable APK:** v2.0.6. The source in `master` also contains preparations for v2.1.0 (About screen, F-Droid build variant and shared version metadata). Real Android 11 and Android 14 devices, disposable Debian 13 OpenSSH integration, and signed in-place updates have been tested for earlier releases. Long-term reliability across OEM battery policies and unattended networks is device-dependent and remains a separate acceptance test.
 
 ## Architecture
 
@@ -48,7 +48,7 @@ aap2ctl enroll "MyPhone" --server ssh.example.org
 
 The command displays an 18-digit activation code, the server endpoint and its SSH host-key fingerprints. The PIN is temporary. Share the code privately; never put it into a log, issue, screenshot or published command output.
 
-Install the **release-signed** AAP2 APK from [GitHub Releases](https://github.com/burbilog/android-as-proxy-2/releases) when one is published. CI debug APKs use a different signing certificate and are **not** suitable for upgrading an existing release installation.
+Install the latest **release-signed** APK from [GitHub Releases](https://github.com/burbilog/android-as-proxy-2/releases). CI debug APKs use a different signing certificate and are **not** suitable for upgrading an existing release installation.
 
 On the phone:
 
@@ -83,11 +83,11 @@ The reported Internet egress address should be the **phone's** network IP, not t
 
 ## Updating Android
 
-An enrolled phone offers **Update** on its main screen. This downloads `aap2.apk` directly from the latest **stable** GitHub Release, checks the Android package name and increasing `versionCode`, then opens Android's standard package installer, which cryptographically verifies the APK signature and signer compatibility. Android will ask for installation confirmation and may first ask you to allow installations from AAP2.
+The **GitHub build** offers **Update** on its main screen, even before activation. This downloads `aap2.apk` directly from the latest **stable** GitHub Release, checks the Android package name and increasing `versionCode`, then opens Android's standard package installer, which cryptographically verifies the APK signature and signer compatibility. Android will ask for installation confirmation and may first ask you to allow installations from AAP2.
 
 There is **no automatic polling, background download or silent installation**. If the user wanted the connection running before the update, AAP2 attempts to restore it after `MY_PACKAGE_REPLACED`. An explicit **Disconnect** remains off after updating.
 
-GitHub's `releases/latest` endpoint intentionally does not include pre-releases; release-candidate builds should be installed and tested separately.
+GitHub's `releases/latest` endpoint intentionally does not include pre-releases; release-candidate builds should be installed and tested separately. The **F-Droid build** does not download or install APKs; updates are handled by the F-Droid client. See [distribution channels](docs/FDROID.md).
 
 ## Switching servers / resetting enrollment
 
@@ -117,13 +117,23 @@ when retiring a phone/server connection.
 For developers:
 
 ```sh
-./gradlew --no-daemon :app:assembleDebug :app:testDebugUnitTest
+./gradlew --no-daemon :app:assembleGithubDebug :app:testGithubDebugUnitTest
+./gradlew --no-daemon :app:assembleFdroidRelease :app:testFdroidDebugUnitTest
 python3 -m unittest discover -s server -p 'test_*.py'
 ```
 
-The Android project uses JDK 17 and Android SDK 35. A distributable APK **must** be signed with one long-term local key, never a CI debug key. See [release-signing guidance](docs/P0_RELEASE_SIGNING.md).
+The Android project uses JDK 17 and Android SDK 35. Both channels read the same `version.properties` versionCode/versionName, and retain the existing Android package ID. The F-Droid variant excludes the in-app APK installer and its permission. See [F-Droid preparation](docs/FDROID.md). A distributable APK **must** be signed with one long-term local key, never a CI debug key. See [release-signing guidance](docs/P0_RELEASE_SIGNING.md).
 
 On the maintainer's own workstation the [Makefile](docs/A1_LOCAL_MAKE.md) provides short commands: `make build`, `make install`, `make status`, `make curl` and `make check`. Signing keys, device serials and private server configuration remain outside Git.
+
+## About and support
+
+The app's **About** screen is available before activation and links to the
+[source repository](https://github.com/burbilog/android-as-proxy-2),
+[GNU GPLv3 license](LICENSE.md), [setup guide](README.md), and
+[issue tracker](https://github.com/burbilog/android-as-proxy-2/issues).
+It identifies the installed version and GitHub/F-Droid channel, and
+explains why an OpenSSH server and administrator are required.
 
 ## Security notes
 
