@@ -153,7 +153,7 @@ immediately before each destructive operation.
 
 ## TTL and operational limitations
 
-- PIN expires after **600 seconds** in metadata; actual disabling occurs
+- Current \`aap2ctl enroll\` uses an 18-digit Android activation code with a **1200-second (20-minute)** PIN lifetime (the historical S1-B prototype used 600 seconds). Actual disabling occurs
   at the next timer sweep, normally within about one minute of expiry.
   Metadata alone cannot revoke a password in \`sshd\`.
 - \`OnBootSec=1min\` makes cleanup run after reboot.
@@ -163,7 +163,7 @@ immediately before each destructive operation.
   operational safeguards if a real pilot demonstrates the need.
 - \`creating\` records whose user UID wasn't independently verified stay
   for **manual** repair; this is intentional fail-closed behavior.
-- S1-B does **not** implement \`approve\` or \`revoke\`. An empty
+- At the historical S1-B milestone, \`approve\` and \`revoke\` were not yet implemented; both are available in the current S2 \`aap2ctl\`. An empty
   permanent account/key file remains after temporary PIN expiry;
   don't use this phase for a real rollout. Permanent key cleanup will
   require explicit \`revoke\` in S2, never the automatic timer.
