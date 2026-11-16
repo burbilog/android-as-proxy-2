@@ -1,3 +1,13 @@
+> **Historical P0 networking snapshot (superseded by AAP2 v2.0.6).**
+> This page records an early development build, **not the currently
+> supported security model or installation procedure**. References below
+> to plaintext SSH passwords, TOFU, the missing activation wizard and
+> untested physical devices are obsolete. Current AAP2 requires verified
+> SSH host fingerprints, Android Keystore identity and S2 approval.
+> For new installations use the [current README](../README.md) and
+> [server installer](../server/INSTALL.md). Do not deploy the prototype
+> described below.
+
 # AAP 2 – networking milestone (development build)
 
 This document describes the current **test-only** development state. Do **not** deploy this build to the unattended phone in Japan.
