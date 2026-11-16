@@ -192,7 +192,8 @@ fun MainScreen() {
 
     // Explicit destructive confirmation. No one-tap reset, including when
     // a connection is running. This affects only AAP2's own local identity.
-    if (showResetDialog && profile != null) {
+    val resetProfile = profile
+    if (showResetDialog && resetProfile != null) {
         val resetting = resetStatus == EnrollmentReset.Status.RUNNING
         AlertDialog(
             onDismissRequest = {
@@ -242,8 +243,8 @@ fun MainScreen() {
                         modifier = Modifier.testTag("a1-reset-warning")
                     )
                     Text(
-                        "Server: ${profile.host} · ID: " +
-                            ConnectionIdentity.id(profile.username),
+                        "Server: ${resetProfile.host} · ID: " +
+                            ConnectionIdentity.id(resetProfile.username),
                         style = MaterialTheme.typography.bodySmall
                     )
                     Text(
