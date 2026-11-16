@@ -44,15 +44,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- Stop service gracefully on shutdown/reboot -->
-        <receiver
-            android:name=".ShutdownReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.SHUTDOWN" />
-            </intent-filter>
-        </receiver>
-
         <activity
             android:name=".EnrollmentActivity"
             android:exported="false"
