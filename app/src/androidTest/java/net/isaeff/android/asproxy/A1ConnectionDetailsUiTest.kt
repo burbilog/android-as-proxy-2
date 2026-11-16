@@ -5,7 +5,6 @@ import java.io.File
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import java.security.KeyStore
