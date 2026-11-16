@@ -181,7 +181,7 @@ fun MainScreen() {
             this.action = action
         }
         try {
-            if (action == "net.isaeff.android.asproxy.action.START_SERVICE" &&
+            if (action == SocksForegroundService.ACTION_START &&
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
             ) {
                 context.startForegroundService(intent)
@@ -316,22 +316,14 @@ fun MainScreen() {
             } else {
                 Text("Server identity verified. SSH private key is held by Android Keystore.")
                 when (connectionState) {
-                    ConnectionState.DISCONNECTED -> Button(
-                        onClick = {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                                context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
-                                PackageManager.PERMISSION_GRANTED
-                            ) {
-                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            } else {
-                                control("net.isaeff.android.asproxy.action.START_SERVICE")
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth().testTag("a1-connect")
-                    ) { Text("Connect") }
+                    ConnectionState.DISCONNECTED -> ConnectButton {
+                        // Notification permission is optional on Android 13+.
+                        // Its denial must never block an unattended proxy.
+                        control(SocksForegroundService.ACTION_START)
+                    }
                     ConnectionState.CONNECTED, ConnectionState.CONNECTING,
                     ConnectionState.RETRYING -> Button(
-                        onClick = { control("net.isaeff.android.asproxy.action.STOP_SERVICE") },
+                        onClick = { control(SocksForegroundService.ACTION_STOP) },
                         modifier = Modifier.fillMaxWidth().testTag("a1-disconnect")
                     ) { Text("Disconnect") }
                     else -> {}
@@ -417,4 +409,16 @@ fun MainScreen() {
         }
     }
     }
+}
+
+/**
+ * No notification permission gate: the button always requests a connection.
+ * Kept separate to allow a safe UI test without starting the real SSH service.
+ */
+@Composable
+internal fun ConnectButton(onConnect: () -> Unit) {
+    Button(
+        onClick = onConnect,
+        modifier = Modifier.fillMaxWidth().testTag("a1-connect")
+    ) { Text("Connect") }
 }
