@@ -38,11 +38,31 @@ internal class KeystoreSshTunnelManager(
     private val connectivityManager = context.getSystemService(ConnectivityManager::class.java)
     private val networkAvailable = Channel<Unit>(Channel.CONFLATED)
     private var callbackRegistered = false
+    @Volatile private var defaultNetwork: Network? = null
+    @Volatile private var forwardReady = false
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
-            // Wake the existing retry loop; never start a new service/SSH session here.
+            val previous = defaultNetwork
+            defaultNetwork = network
             networkAvailable.trySend(Unit)
-            Log.i("AAP2-P0", "BOOT_NETWORK_AVAILABLE")
+            // Same-network updates must not repeatedly tear down the tunnel.
+            // On a real default-network switch, the existing socket is bound
+            // to the old network. Disconnect once and let the normal SSH loop
+            // reestablish the pinned, approved reverse forward.
+            if (previous != null && previous != network && forwardReady) {
+                Log.i("AAP2-SSH", "Default network changed; reconnecting SSH")
+                session?.disconnect()
+            }
+        }
+
+        override fun onLost(network: Network) {
+            if (defaultNetwork == network) {
+                defaultNetwork = null
+                if (forwardReady) {
+                    Log.i("AAP2-SSH", "Default network lost; reconnecting SSH")
+                    session?.disconnect()
+                }
+            }
         }
     }
 
@@ -87,6 +107,7 @@ internal class KeystoreSshTunnelManager(
 
                     next.setPortForwardingR("127.0.0.1", profile.remotePort, "127.0.0.1", localPort)
                     coroutineContext.ensureActive()
+                    forwardReady = true
                     ConnectionStateHolder.setState(ConnectionState.CONNECTED)
                     onHealthy?.invoke()
                     Log.i("AAP2-P0", "BOOT_FORWARD_READY 127.0.0.1:" + profile.remotePort)
@@ -124,6 +145,7 @@ internal class KeystoreSshTunnelManager(
                             Log.w("AAP2-SSH", "SSH reconnect after " + e.javaClass.simpleName)
                     }
                 } finally {
+                    forwardReady = false
                     next?.disconnect()
                     session = null
                 }
@@ -162,6 +184,7 @@ internal class KeystoreSshTunnelManager(
             callbackRegistered = false
         }
         job?.cancel()
+        forwardReady = false
         session?.disconnect()
         session = null
         scope.cancel()

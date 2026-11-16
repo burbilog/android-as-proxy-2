@@ -109,6 +109,52 @@ class Socks5ProxyServerTest {
         }
     }
 
+    @Test fun stalledResponseAfterRequestEofReleasesConnectionSlot() {
+        val server = ServerSocket(0, 16, InetAddress.getByName("127.0.0.1"))
+        val peerThread = Thread {
+            server.use { listener ->
+                listener.accept().use { peer ->
+                    // Read the client's clean half-close, then deliberately
+                    // stall the reply without any bytes until proxy times out.
+                    while (peer.getInputStream().read() >= 0) { }
+                    Thread.sleep(2_000)
+                }
+            }
+        }.apply { isDaemon = true; start() }
+        val proxy = Socks5ProxyServer(port = 0, maxConnections = 1,
+            halfCloseIdleMs = 300L, readPollMs = 100).also {
+                it.start(); proxies.add(it)
+            }
+        connect(proxy, "127.0.0.1", server.localPort, domain = false).use { client ->
+            client.shutdownOutput()
+            val limit = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+            while (System.nanoTime() < limit && proxy.activeConnections > 0) Thread.sleep(25)
+            assertEquals("Stalled half-closed stream must free SOCKS slot", 0, proxy.activeConnections)
+        }
+        peerThread.join(4_000)
+        assertFalse(peerThread.isAlive)
+    }
+
+    @Test fun overCapacityConnectionsAreCountedAndDoNotCrashAcceptLoop() {
+        val warnings = mutableListOf<Long>()
+        val proxy = Socks5ProxyServer(port = 0, maxConnections = 1,
+            onConnectionLimit = { synchronized(warnings) { warnings.add(it) } })
+            .also { it.start(); proxies.add(it) }
+        Socket("127.0.0.1", proxy.boundPort).use { first ->
+            // Hold the only semaphore slot in the 15-second SOCKS handshake.
+            first.soTimeout = 2_000
+            val limit = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+            while (System.nanoTime() < limit && proxy.activeConnections != 0) Thread.sleep(10)
+            Socket("127.0.0.1", proxy.boundPort).use { second ->
+                second.soTimeout = 2_000
+                val byte = second.getInputStream().read()
+                assertEquals("Over-capacity connection must be closed", -1, byte)
+            }
+            assertEquals(1L, proxy.rejectedConnections)
+            assertEquals(listOf(1L), synchronized(warnings) { warnings.toList() })
+        }
+    }
+
     @Test fun multipleConnectionsDoNotShareAThroughputCap() {
         val echoServer = ServerSocket(0, 16, InetAddress.getByName("127.0.0.1"))
         val executor = Executors.newFixedThreadPool(8)

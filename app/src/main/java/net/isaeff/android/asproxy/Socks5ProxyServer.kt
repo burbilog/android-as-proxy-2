@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.Semaphore
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
@@ -30,9 +31,14 @@ import java.util.concurrent.atomic.AtomicLong
 class Socks5ProxyServer(
     private val port: Int = 1080,
     private val maxConnections: Int = 64,
-    private val connectTimeoutMs: Int = 15_000
+    private val connectTimeoutMs: Int = 15_000,
+    private val onConnectionLimit: ((Long) -> Unit)? = null,
+    private val halfCloseIdleMs: Long = 180_000L,
+    private val readPollMs: Int = 30_000
 ) : AutoCloseable {
     private val limit = Semaphore(maxConnections)
+    private val rejectedCounter = AtomicLong()
+    val rejectedConnections: Long get() = rejectedCounter.get()
 
     /** Actual payload bytes sent towards the destination and back to the SOCKS client. */
     private val uplinkCounter = AtomicLong()
@@ -78,6 +84,13 @@ class Socks5ProxyServer(
             try {
                 val client = server.accept()
                 if (!running || !limit.tryAcquire()) {
+                    if (running) {
+                        val rejected = rejectedCounter.incrementAndGet()
+                        if (rejected == 1L || rejected % 32L == 0L) {
+                            try { onConnectionLimit?.invoke(rejected) }
+                            catch (_: RuntimeException) { /* logging cannot break accept */ }
+                        }
+                    }
                     client.close()
                     continue
                 }
@@ -108,6 +121,7 @@ class Socks5ProxyServer(
         var upstream: Socket? = null
         try {
             client.tcpNoDelay = true
+            client.keepAlive = true
             client.soTimeout = 15_000 // Handshake only; established tunnels have no idle timeout.
             val input = DataInputStream(client.getInputStream())
             val output = client.getOutputStream()
@@ -155,12 +169,8 @@ class Socks5ProxyServer(
                 return
             }
 
-            val peer = Socket()
-            upstream = peer
-            openSockets.add(peer)
-            try {
-                peer.tcpNoDelay = true
-                peer.connect(InetSocketAddress(host, targetPort), connectTimeoutMs)
+            val peer = try {
+                connectToTarget(host, targetPort)
             } catch (e: IOException) {
                 sendFailure(output, when (e) {
                     is ConnectException -> 0x05
@@ -170,6 +180,7 @@ class Socks5ProxyServer(
                 })
                 return
             }
+            upstream = peer
 
             val address = peer.localAddress.address
             val type = if (address.size == 4) 0x01 else 0x04
@@ -179,30 +190,35 @@ class Socks5ProxyServer(
             output.write(peer.localPort and 255)
             output.flush()
 
-            client.soTimeout = 0
+            // Timeouts only check for a *stalled direction after the other
+            // direction reached EOF*. Idle but fully open TCP stays alive.
+            client.soTimeout = readPollMs
+            peer.soTimeout = readPollMs
             activeCounter.incrementAndGet()
             try {
-            // One side may be idle for hours; never poll it before reading the other direction.
-            // Shutdown only the corresponding output after EOF to preserve TCP half-close.
-            val responsePump = workers.submit {
-                try {
-                    copy(peer, client, downlinkCounter)
-                } finally {
-                    try { client.shutdownOutput() } catch (_: IOException) { }
+                val uplinkDoneAt = AtomicLong(0L)
+                val downlinkDoneAt = AtomicLong(0L)
+                val responsePump = workers.submit {
+                    try {
+                        copy(peer, client, downlinkCounter, uplinkDoneAt)
+                    } finally {
+                        downlinkDoneAt.set(System.nanoTime())
+                        try { client.shutdownOutput() } catch (_: IOException) { }
+                    }
                 }
-            }
-            try {
-                copy(client, peer, uplinkCounter)
-            } finally {
-                try { peer.shutdownOutput() } catch (_: IOException) { }
-            }
-            try {
-                responsePump.get()
-            } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
-            } catch (_: java.util.concurrent.ExecutionException) {
-                // Peer closed during shutdown/transfer; socket cleanup below is sufficient.
-            }
+                try {
+                    copy(client, peer, uplinkCounter, downlinkDoneAt)
+                } finally {
+                    uplinkDoneAt.set(System.nanoTime())
+                    try { peer.shutdownOutput() } catch (_: IOException) { }
+                }
+                try {
+                    responsePump.get()
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                } catch (_: java.util.concurrent.ExecutionException) {
+                    // Peer closed during shutdown/transfer.
+                }
             } finally {
                 activeCounter.decrementAndGet()
             }
@@ -213,15 +229,56 @@ class Socks5ProxyServer(
         }
     }
 
-    private fun copy(source: Socket, destination: Socket, byteCount: AtomicLong) {
+    /** DNS is resolved on Android; try all returned IPs (IPv6/IPv4 fallback).
+     *  DNS lookup itself uses Android's resolver and is not covered by TCP timeout.
+     */
+    private fun connectToTarget(host: String, port: Int): Socket {
+        val addresses = InetAddress.getAllByName(host)
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(connectTimeoutMs.toLong())
+        var last: IOException? = null
+        for (address in addresses) {
+            val remainingMs = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())
+            if (remainingMs <= 0L) break
+            val peer = Socket()
+            openSockets.add(peer)
+            try {
+                peer.tcpNoDelay = true
+                peer.keepAlive = true
+                // Limit an unusable first IPv6 address to 5 seconds.
+                peer.connect(InetSocketAddress(address, port),
+                    minOf(5000L, remainingMs).coerceAtLeast(1L).toInt())
+                return peer
+            } catch (e: IOException) {
+                last = e
+                closeTracked(peer)
+            }
+        }
+        throw last ?: SocketTimeoutException("No usable address before TCP deadline")
+    }
+
+    private fun copy(
+        source: Socket, destination: Socket, byteCount: AtomicLong,
+        oppositeDoneAtNs: AtomicLong
+    ) {
         val buffer = ByteArray(64 * 1024)
+        var lastProgressNs = System.nanoTime()
         try {
             val input = source.getInputStream()
             val output = destination.getOutputStream()
             while (running) {
-                val count = input.read(buffer)
+                val count = try {
+                    input.read(buffer)
+                } catch (_: SocketTimeoutException) {
+                    val otherFinished = oppositeDoneAtNs.get()
+                    if (otherFinished != 0L &&
+                        TimeUnit.NANOSECONDS.toMillis(
+                            System.nanoTime() - maxOf(lastProgressNs, otherFinished)
+                        ) >= halfCloseIdleMs) break
+                    continue
+                }
                 if (count == -1) break
                 output.write(buffer, 0, count)
+                lastProgressNs = System.nanoTime()
                 byteCount.addAndGet(count.toLong())
             }
             output.flush()
