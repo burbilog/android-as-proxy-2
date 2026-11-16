@@ -13,7 +13,7 @@ val releaseVersion = Properties().apply {
 }
 val publishedCode = releaseVersion.getProperty("versionCode").toInt()
 val publishedName = releaseVersion.getProperty("versionName").trim()
-require(publishedCode > 0 && publishedName.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+"))) {
+require(publishedCode > 0 && publishedName.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+(?:-rc[1-9][0-9]?)?"))) {
     "Invalid version.properties"
 }
 val aap2VersionCodeOverride = System.getenv("AAP2_VERSION_CODE")

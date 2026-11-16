@@ -20,8 +20,10 @@ and [docs/FDROID.md](docs/FDROID.md) before release-related work.
 - Current `master` and `version.properties` do not prove an APK was
   published; check GitHub Releases and actual tags each time.
 - GitHub `Latest` is for field-tested stable APKs, not RC or debug
-  builds. Do not invoke the stable `make publish` target for a
-  prerelease; RC publication tooling must be implemented separately.
+  builds. Use `make` for the side-effect-free release guide.
+  Public operations require `TYPE=release` or `TYPE=rcN`; an RC
+  must remain a GitHub Pre-release with `--latest=false`, and stable
+  alone may become Latest. Check actual signed APKs and GitHub tags.
 - GitHub and F-Droid flavors share stable versions and application ID,
   but F-Droid availability and signing verification are independent.
 - Preserve the long-term local APK signing key and Android Keystore
