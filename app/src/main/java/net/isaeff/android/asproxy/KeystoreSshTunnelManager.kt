@@ -75,6 +75,9 @@ internal class KeystoreSshTunnelManager(
             Log.w("AAP2-P0", "BOOT_NETWORK_CALLBACK_UNAVAILABLE " + e.javaClass.simpleName)
         }
         job = scope.launch {
+            // Keep a successfully loaded Keystore handle across ordinary network
+            // retries; getExisting() also synchronously persists its marker.
+            var identity: AndroidKeystoreIdentity? = null
             var retryMs = 5_000L
             while (isActive) {
                 // Discard old availability notifications from previous successful attempts.
@@ -83,18 +86,19 @@ internal class KeystoreSshTunnelManager(
                 var next: Session? = null
                 var hourlyRetry = false
                 var pinned: VerifiedSshHostKey.PinnedClient? = null
-                var loadingIdentity = true
+                var loadingIdentity = identity == null
                 try {
                     ConnectionStateHolder.setState(ConnectionState.CONNECTING)
-                    // Reload on each attempt: a temporary Keystore failure must not
-                    // strand an unattended phone. getExisting NEVER generates a key.
-                    val identity = AndroidKeystoreIdentity.getExisting(context)
+                    // Retry failed Keystore loads hourly. A successfully loaded
+                    // key is reused until a local error; no key is ever generated.
+                    val sshIdentity = identity ?: AndroidKeystoreIdentity.getExisting(context)
+                        .also { identity = it }
                     loadingIdentity = false
                     pinned = VerifiedSshHostKey.pinnedJschWithCheck(
                         profile.host, profile.sshPort, profile.verifiedHostKey
                     )
                     val jsch = pinned.jsch
-                    jsch.addIdentity(identity, null)
+                    jsch.addIdentity(sshIdentity, null)
                     next = jsch.getSession(profile.username, profile.host, profile.sshPort)
                     session = next
                     VerifiedSshHostKey.configurePinnedHostKey(next, profile.verifiedHostKey)
@@ -139,6 +143,10 @@ internal class KeystoreSshTunnelManager(
                                     if (loadingIdentity) ConnectionIssueStore.Reason.KEYSTORE
                                     else ConnectionIssueStore.Reason.SERVICE
                                 else -> ConnectionIssueStore.Reason.AUTH
+                            }
+                            if (action == SshFailurePolicy.Action.RETRY_LOCAL_HOURLY) {
+                                // Retry with a fresh handle after a transient local error.
+                                identity = null
                             }
                             onProblem?.invoke(reason)
                             ConnectionStateHolder.setState(ConnectionState.RETRYING)
