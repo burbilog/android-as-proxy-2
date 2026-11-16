@@ -1,3 +1,10 @@
+> **Historical S1-A stage documentation.**
+> Its statement that device enrollment and account creation do not exist
+> describes the original read-only milestone, **not** current AAP2.
+> The released S2 `aap2ctl` includes enroll, approve, revoke, cleanup,
+> list and doctor. Use [INSTALL.md](INSTALL.md) and
+> [S2_APPROVAL.md](S2_APPROVAL.md) for supported administration.
+>
 # S1-A — aap2ctl (read-only server preflight)
 
 This is **the first, intentionally non-mutating server CLI stage**.
