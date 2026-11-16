@@ -4,20 +4,39 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-// Version overrides are intentionally non-secret; signing is local and separate.
-val aap2VersionCodeOverride = System.getenv("AAP2_VERSION_CODE")
-val aap2VersionCode = aap2VersionCodeOverride?.toIntOrNull() ?: 20000
-require(aap2VersionCodeOverride == null ||
-    (aap2VersionCodeOverride.toIntOrNull() != null && aap2VersionCode > 0)) {
-    "AAP2_VERSION_CODE must be a positive integer"
+// The checked-in version is shared by GitHub and F-Droid builds.
+// Environment overrides are for local throwaway test APKs only.
+val releaseVersion = java.util.Properties().apply {
+    rootProject.file("version.properties").inputStream().use { load(it) }
 }
-val aap2VersionName = System.getenv("AAP2_VERSION_NAME") ?: "2.0.0-dev"
+val publishedCode = releaseVersion.getProperty("versionCode").toInt()
+val publishedName = releaseVersion.getProperty("versionName").trim()
+require(publishedCode > 0 && publishedName.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+"))) {
+    "Invalid version.properties"
+}
+val aap2VersionCodeOverride = System.getenv("AAP2_VERSION_CODE")
+val aap2VersionCode = aap2VersionCodeOverride?.toIntOrNull() ?: publishedCode
+require(aap2VersionCode > 0) { "AAP2_VERSION_CODE must be a positive integer" }
+val aap2VersionName = System.getenv("AAP2_VERSION_NAME") ?: publishedName
 require(aap2VersionName.isNotBlank()) { "AAP2_VERSION_NAME must not be blank" }
-
 
 android {
     namespace = "net.isaeff.android.asproxy"
     compileSdk = 35
+
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("github") {
+            dimension = "distribution"
+            resValue("bool", "aap2_builtin_update", "true")
+            resValue("string", "aap2_distribution", "GitHub")
+        }
+        create("fdroid") {
+            dimension = "distribution"
+            resValue("bool", "aap2_builtin_update", "false")
+            resValue("string", "aap2_distribution", "F-Droid")
+        }
+    }
 
     defaultConfig {
         applicationId = "net.isaeff.android.asproxy2"
