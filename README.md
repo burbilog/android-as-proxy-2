@@ -4,7 +4,7 @@ AAP2 turns a spare Android handset into a self-hosted SOCKS5 exit. The phone ope
 
 The server does not expose a public SOCKS5 port, and the Android app does not need a long-term SSH password. AAP2 can coexist with the original AAP1 app; its Android application ID is `net.isaeff.android.asproxy2`.
 
-**Status:** initial v2 release candidate. Real Android 11 and Android 14 devices, disposable Debian 13 OpenSSH integration, and signed in-place updates have been tested. Long-term reliability across OEM battery policies and unattended networks is device-dependent and remains a separate acceptance test.
+**Status:** v2.0.6 stable release. Real Android 11 and Android 14 devices, disposable Debian 13 OpenSSH integration, and signed in-place updates have been tested. Long-term reliability across OEM battery policies and unattended networks is device-dependent and remains a separate acceptance test.
 
 ## Architecture
 
@@ -130,6 +130,7 @@ On the maintainer's own workstation the [Makefile](docs/A1_LOCAL_MAKE.md) provid
 - A one-time code is **not** a substitute for independently verifying the SSH host key. All permanent keys require explicit administrator approval.
 - The permanent Android private key stays in Android Keystore; the server permits only loopback reverse forwarding on the device's assigned port.
 - Server account cleanup and explicit device revocation are separate. The cleanup timer never revokes approved keys.
+- Expired, **unapproved** invitations still reserve a server-side SOCKS5 port until the administrator explicitly revokes their enrollment ID. JSON (`-j`) integrations must treat every state other than `revoked` as reserved; see [manual S2 port policy](server/S2_APPROVAL.md#reserved-socks5-ports-manual-reclamation-policy).
 - The app is intended for authorized use on networks and services you are permitted to access. Do not treat an active reverse listener as proof that phone-side Internet connectivity is healthy.
 
 See [server/README.md](server/README.md), [S2 approval](server/S2_APPROVAL.md) and [A1 Android enrollment](docs/A1_ANDROID_ENROLLMENT.md) for the detailed security and test contracts.
