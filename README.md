@@ -6,7 +6,7 @@ The server does not expose a public SOCKS5 port, and the Android app does not ne
 
 **Maintainers and future coding agents:** follow the durable [release policy](docs/RELEASE_POLICY.md) before preparing any APK, release candidate, GitHub Latest release or F-Droid submission. See also [AGENTS.md](AGENTS.md) for a short handoff entry point.
 
-**Latest published stable APK:** v2.0.6. The source in `master` also contains preparations for v2.1.0 (About screen, F-Droid build variant and shared version metadata). Real Android 11 and Android 14 devices, disposable Debian 13 OpenSSH integration, and signed in-place updates have been tested for earlier releases. Long-term reliability across OEM battery policies and unattended networks is device-dependent and remains a separate acceptance test.
+**Published stable APK:** always check [GitHub Latest](https://github.com/burbilog/android-as-proxy-2/releases/latest); do not infer it from `master`. **Historical snapshot (2026-11-16):** v2.0.6 was Latest, while `master` contained the still-unreleased v2.1.0 work (About screen, F-Droid build variant and shared version metadata). Real Android 11 and Android 14 devices, disposable Debian 13 OpenSSH integration, and signed in-place updates have been tested for earlier releases. Long-term reliability across OEM battery policies and unattended networks is device-dependent and remains a separate acceptance test.
 
 ## Maintainer quick start: build and publish
 
