@@ -3,6 +3,11 @@ package net.isaeff.android.asproxy
 import androidx.core.content.FileProvider
 import java.io.File
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertDoesNotExist
+import androidx.compose.ui.test.performTextInput
+import java.security.KeyStore
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -11,6 +16,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -24,6 +30,58 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class A1ConnectionDetailsUiTest {
     @get:Rule val composeRule = createAndroidComposeRule<MainActivity>()
+
+    /**
+     * Destructive test runs ONLY after disposable CI S2 has revoked the first
+     * approved identity. Nothing is reset by the preceding diagnostics test.
+     * A subsequent S2 invitation must generate a fresh Android Keystore key.
+     */
+    @Test fun resetRequiresTypedConfirmationAndErasesLocalIdentity() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val original = requireNotNull(DirectBootTunnelProfile.load(context))
+        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        assertTrue(store.containsAlias(AndroidKeystoreIdentity.ALIAS))
+
+        composeRule.onNodeWithTag("a1-reset-open").assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag("a1-reset-dialog").assertIsDisplayed()
+        composeRule.onNodeWithTag("a1-reset-confirm").assertIsNotEnabled()
+        composeRule.onNodeWithTag("a1-reset-phrase").performTextInput("RESE")
+        composeRule.onNodeWithTag("a1-reset-confirm").assertIsNotEnabled()
+        composeRule.onNodeWithTag("a1-reset-cancel").performClick()
+        composeRule.onNodeWithTag("a1-reset-dialog").assertDoesNotExist()
+        assertEquals(original.username, requireNotNull(
+            DirectBootTunnelProfile.load(context)).username)
+        assertTrue(store.containsAlias(AndroidKeystoreIdentity.ALIAS))
+
+        composeRule.onNodeWithTag("a1-reset-open").performClick()
+        composeRule.onNodeWithTag("a1-reset-confirm").assertIsNotEnabled()
+        composeRule.onNodeWithTag("a1-reset-phrase").performTextInput("RESET")
+        composeRule.onNodeWithTag("a1-reset-confirm").assertIsEnabled()
+        composeRule.onNodeWithTag("a1-reset-confirm").performClick()
+
+        composeRule.waitUntil(20_000) {
+            !DirectBootTunnelProfile.hasProfile(context) &&
+                ConnectionStateHolder.connectionState.value == ConnectionState.DISCONNECTED
+        }
+        composeRule.onNodeWithTag("a1-reset-dialog").assertDoesNotExist()
+        composeRule.onNodeWithTag("a1-reset-open").assertDoesNotExist()
+        composeRule.onNodeWithTag("a1-main-status").assertTextEquals("Disconnected")
+        composeRule.onNodeWithTag("a1-connect").assertDoesNotExist()
+
+        store.load(null)
+        assertFalse("Reset retained the former AAP2 private key",
+            store.containsAlias(AndroidKeystoreIdentity.ALIAS))
+        assertFalse(DirectBootTunnelProfile.wantsConnection(context))
+        assertTrue(EnrollmentPending.load(context) == null)
+        assertTrue("Old Keystore identity unexpectedly usable",
+            runCatching { AndroidKeystoreIdentity.getExisting(context) }.isFailure)
+
+        // Simulated package update MUST NOT resurrect the cleared profile.
+        BootCompletedReceiver().onReceive(context, android.content.Intent(
+            android.content.Intent.ACTION_MY_PACKAGE_REPLACED))
+        assertFalse(DirectBootTunnelProfile.wantsConnection(context))
+        assertFalse(DirectBootTunnelProfile.hasProfile(context))
+    }
 
     @Test fun approvedIdentityVisibleAndFullDiagnosticsFitOnePhoneScreen() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
