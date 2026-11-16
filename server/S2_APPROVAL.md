@@ -69,6 +69,17 @@ rules independently before inviting the phone. The strict group and
 key restrictions for the sampled context are still checked before
 any temporary PIN is activated.
 
+**Live sshd reload is a separate mandatory installation step.** The
+`aap2ctl` policy checks and `sshd -T -C` read the configuration on
+disk; they do not reload or inspect the already-running daemon. After
+reviewing the Match blocks, keep a working administrator session open,
+run `/usr/sbin/sshd -t && systemctl reload ssh`, and verify a fresh
+administrator login before asking anyone to enroll. Failure to reload
+can accept the temporary PIN but close SFTP immediately: see
+[INSTALL.md troubleshooting](INSTALL.md#troubleshooting-password-accepted-but-sftp-immediately-closes).
+The `JSchChangedHostKeyException` on the unauthenticated fingerprint
+probe is intentional and must not be confused with this SFTP failure.
+
 The first six digits are **not authentication secrets**: they select a
 short-lived Unix account. The ten-digit PIN, verified SSH host-key
 fingerprint and explicit administrator approval remain unchanged. The
@@ -304,13 +315,10 @@ python3 -m py_compile server/aap2ctl
 python3 -m unittest discover -s server -p 'test_*.py' -v
 \`\`\`
 
-**Not included yet:** the Android three-field enrollment UI, the
-independent pre-PIN host-key verification screen, native phone-side SFTP
-upload and automatic permanent login after approval, server-reachable
-multi-device demo on real Debian 13. The current Zebra uses existing
-P0 test provisioning; this PR does not modify its running connection.
-
-**Known limitation:** \`sshd -T -C\` verifies disk configuration only;
-the administrator must separately confirm that the running sshd loaded
-it. A separate disposable Debian 13 VM integration gate is required
-before live server deployment.
+**Deployment note:** Native Android enrollment and SSH key approval have
+passed disposable Android 11/OpenSSH integration testing and physical
+device testing, including a successful Japanese phone connection.
+`sshd -T -C` verifies disk configuration only: the administrator must
+also reload the live daemon and verify real SFTP, as described in
+[INSTALL.md](INSTALL.md). Individual server SSH policies and unattended
+phone operation still require local acceptance tests.
