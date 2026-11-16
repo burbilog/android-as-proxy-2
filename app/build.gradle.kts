@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -6,7 +8,7 @@ plugins {
 
 // The checked-in version is shared by GitHub and F-Droid builds.
 // Environment overrides are for local throwaway test APKs only.
-val releaseVersion = java.util.Properties().apply {
+val releaseVersion = Properties().apply {
     rootProject.file("version.properties").inputStream().use { load(it) }
 }
 val publishedCode = releaseVersion.getProperty("versionCode").toInt()
