@@ -47,7 +47,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import net.isaeff.android.asproxy.ui.theme.AAPTheme
 import kotlinx.coroutines.launch
 import java.io.File
+import java.security.SecureRandom
 
 /**
  * AAP2 has only one supported provisioning path: verified host fingerprint
@@ -94,7 +95,8 @@ fun MainScreen() {
     }
     var showDetails by remember { mutableStateOf(false) }
     var showResetDialog by remember { mutableStateOf(false) }
-    var resetPhrase by remember { mutableStateOf("") }
+    var resetCode by remember { mutableStateOf("") }
+    var resetInput by remember { mutableStateOf("") }
 
     // Updates are explicitly requested by the user, not polled or downloaded
     // in the background. The existing SSH foreground service keeps running
@@ -110,7 +112,8 @@ fun MainScreen() {
                 profile = runCatching { DirectBootTunnelProfile.load(context) }.getOrNull()
                 showResetDialog = false
                 showDetails = false
-                resetPhrase = ""
+                resetInput = ""
+                resetCode = ""
                 waitingForInstallPermission = null
                 updateMessage = "Local enrollment erased. Ask your administrator to revoke the old server account."
                 EnrollmentReset.dismissResult()
@@ -193,7 +196,13 @@ fun MainScreen() {
     if (showResetDialog && profile != null) {
         val resetting = resetStatus == EnrollmentReset.Status.RUNNING
         AlertDialog(
-            onDismissRequest = { if (!resetting) showResetDialog = false },
+            onDismissRequest = {
+                if (!resetting) {
+                    showResetDialog = false
+                    resetInput = ""
+                    resetCode = ""
+                }
+            },
             modifier = Modifier.testTag("a1-reset-dialog"),
             containerColor = MaterialTheme.colorScheme.errorContainer,
             title = {
@@ -224,18 +233,25 @@ fun MainScreen() {
                         color = MaterialTheme.colorScheme.error,
                         fontWeight = FontWeight.Bold
                     )
-                    Text("Type RESET below to unlock the destructive button.")
+                    Text("To confirm, enter this 4-digit code:")
+                    Text(
+                        resetCode,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.testTag("a1-reset-code")
+                    )
                     OutlinedTextField(
-                        value = resetPhrase,
-                        onValueChange = { if (it.length <= 16) resetPhrase = it },
-                        label = { Text("Type RESET") },
+                        value = resetInput,
+                        onValueChange = { value ->
+                            if (value.length <= 4 && value.all { it in '0'..'9' }) {
+                                resetInput = value
+                            }
+                        },
+                        label = { Text("4-digit confirmation code") },
                         singleLine = true,
                         enabled = !resetting,
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Characters,
-                            autoCorrect = false
-                        ),
-                        modifier = Modifier.fillMaxWidth().testTag("a1-reset-phrase")
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth().testTag("a1-reset-input")
                     )
                     if (resetStatus == EnrollmentReset.Status.FAILED) {
                         Text("Reset failed; try again.", color = MaterialTheme.colorScheme.error)
@@ -257,7 +273,7 @@ fun MainScreen() {
                             AAPLog.append("Local reset request failed: ${e.javaClass.simpleName}")
                         }
                     },
-                    enabled = resetPhrase == "RESET" && !resetting,
+                    enabled = resetCode.length == 4 && resetInput == resetCode && !resetting,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.error,
                         contentColor = MaterialTheme.colorScheme.onError
@@ -267,7 +283,11 @@ fun MainScreen() {
             },
             dismissButton = {
                 TextButton(
-                    onClick = { showResetDialog = false; resetPhrase = "" },
+                    onClick = {
+                        showResetDialog = false
+                        resetInput = ""
+                        resetCode = ""
+                    },
                     enabled = !resetting,
                     modifier = Modifier.testTag("a1-reset-cancel")
                 ) { Text("Keep current connection") }
@@ -413,7 +433,10 @@ fun MainScreen() {
                 ) {
                     TextButton(
                         onClick = {
-                            resetPhrase = ""
+                            resetInput = ""
+                            // Generate a new code on EVERY opening, not on recomposition.
+                            // It is a local confirmation challenge, not authentication.
+                            resetCode = SecureRandom().nextInt(10_000).toString().padStart(4, '0')
                             EnrollmentReset.dismissResult()
                             showResetDialog = true
                         },
