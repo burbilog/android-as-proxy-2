@@ -81,6 +81,99 @@ curl --proxy socks5h://127.0.0.1:11010 https://www.cloudflare.com/cdn-cgi/trace
 
 The reported Internet egress address should be the **phone's** network IP, not the SSH server's. `socks5h` also resolves destination names through the phone-side proxy.
 
+
+## Using AAP2 across restrictive networks (Hysteria 2 relay)
+
+If a direct SSH connection is blocked or unreliable in the user's country,
+the user can reach an **intermediate VM in a network where Hysteria 2 works**,
+then use the AAP2 reverse SSH tunnel from that VM to an Android phone in the
+**desired Internet exit country**. The VM is a relay, **not** the Internet
+exit: websites see the phone's network IP.
+
+```text
+Person / browser (restrictive network)
+  |  SOCKS5 at 127.0.0.1:11010
+  v
+Hysteria 2 client on the person's computer
+  |  encrypted Hysteria 2 connection (QUIC/UDP)
+  |  -- crosses the restricted network boundary -->
+  v
+Transit VM in a reachable / less-restricted country
+  |  Hysteria 2 server forwards TCP to 127.0.0.1:11010
+  |  AAP2 reverse SSH listener (loopback ONLY)
+  |  <==== existing SSH connection initiated by the phone ====
+  v
+Android phone running AAP2 in the desired exit country
+  |  phone's Wi-Fi or mobile data connection
+  v
+Destination website (sees the Android phone's public IP)
+```
+
+The phone initiates **outbound SSH to the transit VM** and requests a
+restricted reverse forward (`-R`). The user independently initiates a
+Hysteria 2 connection **to the same VM**. Neither AAP2's SOCKS5 port
+nor the phone needs a publicly accessible inbound port. This is useful
+when the user and the desired exit country are different, or when the
+direct path to the SSH server is filtered.
+
+### Forward the AAP2 SOCKS5 port with Hysteria 2
+
+First set up the AAP2 server and phone as described above. For example,
+`aap2ctl list` on the transit VM might report an approved phone with
+`127.0.0.1:11010 (UP)`. Confirm the port works **from the VM** before
+configuring the relay.
+
+Install and configure the Hysteria 2 server on that VM and an authenticated
+Hysteria 2 client on the person's computer according to
+[Hysteria 2's documentation](https://v2.hysteria.network/docs/).
+Add this section to the **existing Hysteria 2 client YAML** (keep its
+`server`, `auth`, TLS and other required settings):
+
+```yaml
+tcpForwarding:
+  - listen: 127.0.0.1:11010
+    remote: 127.0.0.1:11010
+```
+
+- `listen`: TCP socket on the **user's computer**, accepting local
+  SOCKS5 connections. Keep it bound to loopback.
+- `remote`: TCP destination **as seen by the Hysteria 2 server on the
+  transit VM**. It is the VM's AAP2 SSH reverse-forward listener, not
+  the Android phone's IP address.
+- If local port `11010` is occupied, change **only** `listen` (for
+  example, `127.0.0.1:11011`) and use that local port in applications.
+  Leave `remote` at the AAP2-assigned port.
+
+This uses the Hysteria 2 client's built-in
+[TCP forwarding mode](https://v2.hysteria.network/docs/advanced/Full-Client-Config/#tcp-forwarding);
+no extra `ssh -L` connection is required on the user's computer.
+Reload or restart the **Hysteria 2 client** using the usual service
+management for that installation. No AAP2 configuration change is needed.
+
+Check from the user's computer:
+
+```sh
+curl -fsS --max-time 20 \
+  --proxy socks5h://127.0.0.1:11010 \
+  https://www.cloudflare.com/cdn-cgi/trace
+```
+
+The `ip=` / `loc=` fields should correspond to the **Android phone's
+Internet connection**, not the transit VM. `socks5h` asks the SOCKS5
+proxy to resolve destination hostnames remotely. A successful `(UP)`
+listener alone does not guarantee end-to-end Internet access.
+
+**Scope and security:** This example forwards **TCP connections to a
+SOCKS5 service**; it is not an automatic whole-device VPN. Configure each
+application to use the local SOCKS5 port (and check for DNS/WebRTC or
+other traffic bypassing the proxy). SOCKS5 UDP ASSOCIATE is **not**
+carried by this TCP-only forwarding rule. Hysteria 2 depends on a
+working UDP/QUIC path and may itself be blocked on some networks.
+Protect Hysteria 2 with authentication and proper TLS verification;
+never expose the VM's AAP2 `11010` listener or the user's local
+SOCKS5 port on a public interface. Only use networks and services
+you are authorized to access.
+
 ## Updating Android
 
 The **GitHub build** offers **Update** on its main screen, even before activation. This downloads `aap2.apk` directly from the latest **stable** GitHub Release, checks the Android package name and increasing `versionCode`, then opens Android's standard package installer, which cryptographically verifies the APK signature and signer compatibility. Android will ask for installation confirmation and may first ask you to allow installations from AAP2.
