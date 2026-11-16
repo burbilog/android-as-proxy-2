@@ -79,6 +79,7 @@ fun MainScreen() {
     val context = LocalContext.current
     val connectionState by ConnectionStateHolder.connectionState.collectAsState()
     val traffic by ConnectionStateHolder.trafficBytes.collectAsState()
+    val problem by ConnectionStateHolder.problem.collectAsState()
     val resetStatus by EnrollmentReset.status.collectAsState()
     // Returning from EnrollmentActivity does not inherently recompose this screen.
     // Refresh profile visibility on resume, without ever changing the stored profile.
@@ -88,6 +89,7 @@ fun MainScreen() {
         mutableStateOf(runCatching { DirectBootTunnelProfile.load(context) }.getOrNull())
     }
     var showDetails by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { ConnectionIssueStore.load(context) }
     var showAbout by remember { mutableStateOf(false) }
     val hasGithubUpdater = context.resources.getBoolean(R.bool.aap2_builtin_update)
     var showResetDialog by remember { mutableStateOf(false) }
@@ -143,6 +145,7 @@ fun MainScreen() {
                 }.getOrNull()
                 configured = DirectBootTunnelProfile.hasProfile(context)
                 profile = currentProfile
+                ConnectionIssueStore.load(context)
                 // A successful activation after Reset must not keep showing
                 // the previous enrollment's "erased" notice (or other stale
                 // status). Do not clear errors on unrelated Activity resumes.
@@ -273,6 +276,10 @@ fun MainScreen() {
                 modifier = Modifier.testTag("a1-main-status"),
                 style = MaterialTheme.typography.titleMedium
             )
+            if (problem != null) {
+                Text(problem!!, color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag("a1-connection-problem"))
+            }
             if (connectionState == ConnectionState.CONNECTED) {
                 Text("SSH tunnel connected. This does not verify Internet access through SOCKS5.")
             }
