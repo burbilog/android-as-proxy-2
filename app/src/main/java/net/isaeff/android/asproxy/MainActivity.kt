@@ -382,6 +382,24 @@ fun MainScreen() {
                     ) { Text(if (updateBusy) "Loading…" else "Update") }
                 }
             }
+                if (configured) {
+                    TextButton(
+                        onClick = {
+                            try {
+                                // App-specific settings, no permission and no automatic
+                                // Doze exemption request during enrollment.
+                                context.startActivity(
+                                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                        Uri.parse("package:${context.packageName}"))
+                                )
+                                updateMessage = "In Android App info, open Battery settings if needed."
+                            } catch (e: Exception) {
+                                updateMessage = "Cannot open app settings: " + e.javaClass.simpleName
+                            }
+                        },
+                        modifier = Modifier.testTag("aap2-battery-settings")
+                    ) { Text("Battery settings (optional)") }
+                }
                 if (updateMessage.isNotBlank()) {
                     Text(updateMessage, modifier = Modifier.testTag("a1-update-status"))
                 }

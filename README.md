@@ -73,7 +73,7 @@ Each approved phone gets a distinct server-side SOCKS5 port listening **only on 
 - A Debian 13 SSH server (documented S2 target), Python 3.9+, OpenSSH and systemd.
 - Administrator access to the server and an **independent trusted copy** of its full SSH host-key fingerprint.
 
-Android power-saving policies can stop foreground services on some handsets. Validate your particular device before remote unattended use. Keeping a phone plugged in continuously also requires attention to battery health.
+Android power-saving policies can stop foreground services on some handsets. Validate your particular device before remote unattended use. Keeping a phone plugged in continuously also requires attention to battery health. Once enrolled, AAP2 exposes an **optional Battery settings** link in its scrollable main screen: it opens Android's app-specific settings, where the user can adjust the Battery section if the OEM provides it. AAP2 never requires an extra system permission dialog during enrollment.
 
 ## 1. Prepare the server
 
@@ -278,6 +278,8 @@ The app's **About** screen is available before activation and links to the
 [issue tracker](https://github.com/burbilog/android-as-proxy-2/issues).
 It identifies the installed version and GitHub/F-Droid channel, and
 explains why an OpenSSH server and administrator are required.
+
+For a short map of instructions for a phone user, server administrator or future maintainer, see the [documentation index](docs/README.md).
 
 ## Security notes
 

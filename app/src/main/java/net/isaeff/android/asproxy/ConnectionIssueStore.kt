@@ -54,6 +54,7 @@ internal object ConnectionIssueStore {
                 .setStyle(NotificationCompat.BigTextStyle().bigText(reason.message))
                 .setContentIntent(intent)
                 .setAutoCancel(false)
+                .setOngoing(true)
                 .build()
             manager.notify(NOTIFICATION_ID, note)
         }
