@@ -6,6 +6,11 @@ SSH identity lives in Android Keystore, and changing or uninstalling the
 app can make remote recovery expensive. Treat deployed enrollments and
 the signing certificate as persistent user data.
 
+See [the November 2026 code-review decisions](docs/CODE_REVIEW_DECISIONS_2026-11.md)
+before changing Android connectivity, enrollment UX, SOCKS access policy or
+the phone's local network access. Full TCP reachability from the Android
+side is intentional; keep the remote nontechnical user's steps minimal.
+
 ## Read before modifying or publishing releases
 
 **Authoritative project policy:** [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md).
