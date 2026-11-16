@@ -13,9 +13,8 @@ is claimed. Never replace a proven GitHub installation with an unverified APK.
 Both variants share AAP2's exact SSH, enrollment, SOCKS5 and Keystore code,
 application ID `net.isaeff.android.asproxy2` and the version declared in
 [version.properties](../version.properties). A published version should be
-tagged `v<versionName>` and built from that commit. Update
-`version.properties` only once per *public version*; never carry a separate
-F-Droid version number or a second code branch.
+tagged `v<versionName>` and built from that commit. Update `version.properties` for each **public tag**, including an RC;
+never carry a separate F-Droid version number or a second code branch.
 
 - **GitHub** (`github`): includes the explicitly user-initiated
   `Update` button, HTTPS APK downloader, `REQUEST_INSTALL_PACKAGES` and
@@ -39,11 +38,14 @@ Build examples with JDK 17 / Android SDK 35:
 The local release signer uses `scripts/build-signed-apk.sh github`
 and `scripts/build-signed-apk.sh fdroid` (the first is the default),
 building and signing both unsigned variants with the same existing PKCS12. Do not use the debug key or publish unsigned APKs.
-The official **GitHub-only** flow remains `make release`,
-`make publish`, `make verify-release`; it never depends on a
-successful F-Droid build or F-Droid publication. To prepare both channel
-candidates from the same source version use `make release-both`, or
-run `make fdroid-candidate` separately after `make release`.
+The official GitHub flow is `make release TYPE=release`,
+`make publish TYPE=release`, `make verify-release TYPE=release`
+(and the same commands with `TYPE=rcN` for a GitHub Pre-release);
+all public targets require TYPE. It never depends on a successful
+F-Droid build or F-Droid publication. To prepare both channel
+candidates from the same source version use
+`make release-both TYPE=release`, or run
+`make fdroid-candidate TYPE=release` independently.
 When a matching signed F-Droid candidate is present, `make publish`
 can include both `aap2.apk` and `aap2-fdroid.apk`; otherwise
 it publishes the GitHub APK alone. The release tags and versions remain
@@ -110,7 +112,7 @@ test accounts. Never publish a live activation code or account endpoint.
 Before submitting to F-Droid:
 
 1. Produce a tagged stable GitHub release, optionally using
-   `make release-both` for **two** locally signed same-version APKs.
+   `make release-both TYPE=release` for **two** locally signed same-version APKs.
    Confirm the long-term certificate and in-place upgrade from v2.0.6.
 2. Verify `assembleFdroidRelease` contains no APK updater permission,
    update FileProvider or executable downloader; inspect manifest and APK.
