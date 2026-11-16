@@ -55,9 +55,22 @@ AllowUsers/AllowGroups/AuthenticationMethods, then validate the result:
 `doctor` is read-only. Exit code 2 (PENDING) is expected before real
 AAP2 users exist: it is not a substitute for effective `sshd -T -C`
 checks with actual account and connection context after enrollment.
-Keep the current session open, check the effective SSH policy, then
-manually reload `ssh.service`. Verify you can open a **new** administrative
-SSH session before closing the original session.
+
+**Critical: apply the SSH policy to the running daemon before issuing a PIN.**
+Both `sshd -t` and `sshd -T -C` examine the **configuration on disk**.
+A successful check does **not** mean the already-running sshd has loaded
+the new `Match Group aap2-enroll` blocks. With a validated config, keep
+the existing administrative SSH session open and explicitly reload:
+
+```sh
+/usr/sbin/sshd -t && systemctl reload ssh
+```
+
+Open a **new** administrative SSH connection and verify that it still works
+before closing the original one. The installer deliberately does **not**
+reload SSH automatically; its repeatable execution must not affect existing
+SSH sessions or custom daemon policies. After any future manual SSH Match
+change, repeat the syntax check, reload, and new-session verification.
 
 Never run `server/test-s1-live.sh` on a real VM: it destroys and replaces
 SSH configuration and belongs exclusively to ephemeral CI containers.
@@ -78,6 +91,58 @@ allocated SOCKS5 listening port remains bound to server loopback.
 Do not publish the activation code or capture its output in shared logs.
 See [S2_APPROVAL.md](S2_APPROVAL.md) for the full operator workflow,
 restricted forwarding checks and revocation.
+
+## Troubleshooting: password accepted, but SFTP immediately closes
+
+If the phone reports only `Enrollment incomplete: JSchException`, the
+temporary account's password authentication may still have succeeded.
+For example, sshd can log `Accepted password for aap2e... ` followed
+immediately by `session closed`, while the phone never uploads its public
+key. **Successful SSH authentication is not proof that SFTP started.**
+
+A strong indicator is the local SFTP client failing with:
+
+```text
+Received message too long 1416128883
+```
+
+`1416128883` is `0x54686973` (ASCII `This`), the first four bytes
+of `This account is currently not available.` printed by
+`/usr/sbin/nologin`. That means the client received shell text
+instead of the binary SFTP protocol. AAP2 deliberately gives temporary
+accounts the `/usr/sbin/nologin` shell: **do not change it**. Their
+access must be forced into `internal-sftp` by the live daemon's Match
+policy.
+
+First check that the disk policy is correct, then reload the live daemon
+as described above. If a still-valid invitation exists, test the
+actual SFTP service (enter the *ten-digit PIN* when prompted, not in the
+command line):
+
+```sh
+# Replace the example account with the active "Setup username".
+sftp -o PubkeyAuthentication=no aap2e123456@127.0.0.1
+```
+
+A working session reaches `sftp>` and can run:
+
+```text
+ls
+get config.json /tmp/aap2-test-config.json
+bye
+```
+
+Do not publish the PIN or unredacted `sftp -vvv` logs. If SFTP works
+locally, retry the phone's verified activation while the invitation is
+valid. If the PIN has expired, revoke the abandoned invitation before
+issuing a new one. The on-disk `sshd -T -C` check alone cannot
+substitute for this live test.
+
+The pre-auth `JSchChangedHostKeyException` reported by sshd during
+the phone's **Check server fingerprint** step is usually **expected**:
+AAP2 intentionally rejects the probe after reading the host key, before
+sending any PIN. Do not delete known host keys or disable host-key
+verification merely because this appears in server logs.
 
 ## Expired invitations and port reservations
 
