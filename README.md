@@ -4,6 +4,8 @@ AAP2 turns a spare Android handset into a self-hosted SOCKS5 exit. The phone ope
 
 The server does not expose a public SOCKS5 port, and the Android app does not need a long-term SSH password. AAP2 can coexist with the original AAP1 app; its Android application ID is `net.isaeff.android.asproxy2`.
 
+**Maintainers and future coding agents:** follow the durable [release policy](docs/RELEASE_POLICY.md) before preparing any APK, release candidate, GitHub Latest release or F-Droid submission. See also [AGENTS.md](AGENTS.md) for a short handoff entry point.
+
 **Latest published stable APK:** v2.0.6. The source in `master` also contains preparations for v2.1.0 (About screen, F-Droid build variant and shared version metadata). Real Android 11 and Android 14 devices, disposable Debian 13 OpenSSH integration, and signed in-place updates have been tested for earlier releases. Long-term reliability across OEM battery policies and unattended networks is device-dependent and remains a separate acceptance test.
 
 ## Architecture
