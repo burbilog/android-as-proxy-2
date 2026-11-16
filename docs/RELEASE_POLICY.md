@@ -73,7 +73,8 @@ it has not.
   incompatible change or migration warrants it. If protocol,
   application ID or persisted identity changes, document the migration
   and rollback risks before any release.
-- `version.properties` is the **canonical stable-version source**.
+- `version.properties` is the **canonical on-tag version source**,
+  including RC tags.
   Both `github` and `fdroid` flavors use the **same**
   `versionName`, integer `versionCode`, application ID
   (`net.isaeff.android.asproxy2`) and source commit for a given release.
@@ -87,9 +88,14 @@ it has not.
   stable version **and** higher than the previous publicly installable
   version it must upgrade. Reserve codes and verify the whole chain
   before publishing; do not rely on lexical sorting of version names.
-  For example, if final `2.1.0` keeps `21000`, all intended
-  installable `2.1.0-rcN` codes must be strictly below `21000`,
-  mutually increasing, and above the previous stable code.
+  **Reserve one consecutive block of 100 codes per stable release
+  cycle.** The stable code ends in `00`; each `rcN` uses the
+  preceding hundred block's code ending in `NN` (N=1..99).
+  Thus `2.1.0-rc1=20901`, `2.1.0-rc2=20902`,
+  `2.1.0=21000`, `2.1.1-rc1=21001`, `2.1.1=21100`.
+  These codes are assigned by **release sequence**, not by a formula
+  derived from semantic major/minor/patch numbers. Check all existing
+  public releases before allocating the next block.
 - Local `make build` APKs intentionally use higher, disposable version
   codes and `-local-` names. They are **not release candidates**.
   A phone running such a build might be unable to install a lower-code
@@ -97,18 +103,35 @@ it has not.
   compatible test devices; never uninstall an enrolled phone to solve a
   versionCode collision.
 
-**Implementation gap as of 2026-11-16:** `app/build.gradle.kts`
-requires the checked-in stable version name to match `X.Y.Z`, and
-`make release` / `make publish` implement **stable releases only**.
-In particular, `make publish` passes `--latest`. There is **no
-approved automatic RC publication flow yet**. Before the first RC,
-implement and test an explicit, separately guarded Pre-release
-build/sign/publish path that generates a correct increasing RC
-versionCode/`versionName`, pins a source commit, uses the original
-signer, marks the GitHub release as **Pre-release**, and cannot become
-`Latest`. Do **not** work around this by invoking `make publish` or
-manually marking an untested candidate Latest. Keep both flavors'
-version metadata consistent if both RC flavors are built.
+**Implemented release workflow:** `make` without arguments prints a
+side-effect-free release cheat sheet. Public operations take an explicit
+`TYPE=release` or `TYPE=rc1` through `rc99`:
+
+```sh
+make release TYPE=rc1
+make publish TYPE=rc1
+make verify-release TYPE=rc1
+
+make release TYPE=release
+make publish TYPE=release
+make verify-release TYPE=release
+```
+
+`TYPE` is validated **against the exact name and code in
+version.properties before building**. Release candidates are
+Pre-releases with `--latest=false`; stable releases are marked Latest.
+The stable publication command never silently changes to RC or vice
+versa. `make publish` without TYPE is an error, not a stable default.
+The release backend validates that both tag and GitHub Release are unused
+and that the version/RC order and versionCode increase, comparing the
+actual APK from the previous published release. Public signed
+candidates are archived separately from disposable local test APKs,
+under `~/aap2-releases/public/vX.Y.Z[-rcN]/`.
+
+**Historical exception:** v2.0.x predate the 100-code policy; the
+next release checks the real earlier APK versionCode and certificate
+rather than deriving them from old tags. For detailed instructions
+and metadata paths, see [A1_LOCAL_MAKE.md](A1_LOCAL_MAKE.md).
 
 ## Signing and upgrades are invariants
 
@@ -176,39 +199,44 @@ if the maintainer explicitly approves and the release notes disclose
 the exceptions and residual risks. Signing, version monotonicity,
 package identity and non-destructive upgrades **never** become optional.
 
-## Current stable GitHub publication procedure
+## Public GitHub publication procedure (RC and stable)
 
 The maintainer's local signing environment is authoritative; an agent
 with GitHub repository access cannot replace it. Follow
 [A1_LOCAL_MAKE.md](A1_LOCAL_MAKE.md) for exact setup, requirements
-and safeguards. As currently implemented:
+and safeguards. Current implementation, **not permission to publish**:
 
 ```sh
+# First commit the desired version.properties and matching
+# docs/RELEASE_NOTES_X.Y.Z[-rcN].md, review and merge to master.
 git switch master
 git pull --ff-only origin master
+make
 
-# Bump version.properties and prepare reviewed release notes in Git
-# and merge those changes BEFORE running the release targets.
+# Example release candidate (versionName=2.1.0-rc1, code=20901)
+make release TYPE=rc1
+# Test the signed candidate and inspect its source/signing metadata.
+make publish TYPE=rc1
+make verify-release TYPE=rc1
 
-make release
-# Or, if an upstream-signed F-Droid flavor is also ready:
-# make release-both
-
-# Inspect signed artifacts and complete the acceptance gates FIRST.
-make publish
-make verify-release
+# Later stable release (versionName=2.1.0, code=21000):
+make release TYPE=release
+# Complete field acceptance and deliberate stable approval.
+make publish TYPE=release
+make verify-release TYPE=release
 ```
 
-The commands above are a **procedure, not permission to publish**.
-`make release` requires a clean, synchronized `master`, uses the
-canonical version and the local signing key, checks signer continuity
-against the local archived APK and records source provenance.
-`make publish` requires the matching release notes and source commit;
-it publishes a regular GitHub **Latest** release. It can include a
-separately signed same-source `aap2-fdroid.apk` if available, but
-does not require one. `make verify-release` compares GitHub download
-bytes to the archived APKs. Review the current scripts before running
-them; they may have changed since this policy was written.
+These examples represent **two different committed versions** of
+`version.properties`, not commands to run sequentially from the
+same checkout without changing it. Both flavors share that file.
+`make release-both TYPE=...` can prepare a same-commit F-Droid
+candidate; GitHub does not depend on its success. The backend requires
+clean, synchronized `master` for prepare/publish, signs locally,
+compares the previous public certificate, and checks source/version
+provenance. `verify-release` compares downloaded assets from the
+**exact tag**, including RCs, to the locally archived candidate.
+Review the current scripts before running them; they may have
+changed since this policy was written.
 
 Do **not** reuse an existing tag, overwrite or silently replace an
 existing release APK, downgrade versionCode, or re-sign old assets.
