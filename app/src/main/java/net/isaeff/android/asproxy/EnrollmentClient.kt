@@ -156,6 +156,7 @@ internal class EnrollmentClient(private val context: Context) {
         jsch.addIdentity(identity, null)
         val session: Session = jsch.getSession(info.permanentUser, info.host, info.sshPort)
         try {
+            VerifiedSshHostKey.configurePinnedHostKey(session, info.verifiedHostKey)
             session.setConfig("StrictHostKeyChecking", "yes")
             session.setConfig("PreferredAuthentications", "publickey")
             session.setConfig("NumberOfPasswordPrompts", "0")
