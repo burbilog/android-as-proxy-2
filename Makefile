@@ -5,8 +5,8 @@ SHELL := /bin/sh
 .DEFAULT_GOAL := help
 
 RELEASE_DIR ?= $(HOME)/aap2-releases
-PUBLISHED_CODE := $(shell sed -n 's/^versionCode=\([0-9][0-9]*\)$/\1/p' version.properties)
-PUBLISHED_VERSION := $(shell sed -n 's/^versionName=\(.*\)$/\1/p' version.properties)
+PUBLISHED_CODE := $(shell sed -n 's/^versionCode=\([0-9][0-9]*\)$$/\1/p' version.properties)
+PUBLISHED_VERSION := $(shell sed -n 's/^versionName=\(.*\)$$/\1/p' version.properties)
 VERSION ?= $(PUBLISHED_VERSION)
 Z ?=
 S2 ?=
@@ -17,7 +17,7 @@ PORT ?=
 # default. An unsuccessful build does not consume a version number.
 LATEST_CODE = $(shell find "$(RELEASE_DIR)" -maxdepth 1 -type f -name 'aap2-[0-9]*.apk' -printf '%f\n' 2>/dev/null | sed -n 's/^aap2-\([0-9][0-9]*\)\.apk$$/\1/p' | sort -n | tail -1)
 # Local builds use a fresh number; public releases use the exact version.properties.
-VERSION_CODE ?= $(shell printf '%s\n' '$(or $(LATEST_CODE),0)' '$(PUBLISHED_CODE)' | sort -n | tail -1 | awk '{print $1 + 1}')
+VERSION_CODE ?= $(shell printf '%s\n' '$(or $(LATEST_CODE),0)' '$(PUBLISHED_CODE)' | sort -n | tail -1 | awk '{print $$1 + 1}')
 VERSION_NAME ?= $(PUBLISHED_VERSION)-local-$(VERSION_CODE)
 CODE ?= $(PUBLISHED_CODE)
 APK = $(RELEASE_DIR)/aap2-$(LATEST_CODE).apk
@@ -98,7 +98,7 @@ test:
 release: sync
 	@set -eu; \
 	  version="$(VERSION)"; \
-	  [ "$version" = "$(PUBLISHED_VERSION)" ] || \
+	  [ "$$version" = "$(PUBLISHED_VERSION)" ] || \
 	    { echo 'VERSION must match version.properties' >&2; exit 1; }; \
 	  printf '%s\n' "$$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || \
 	    { echo 'Invalid version in version.properties' >&2; exit 1; }; \
@@ -129,7 +129,7 @@ release: sync
 publish:
 	@set -eu; \
 	  version="$(VERSION)"; code="$(CODE)"; \
-	  [ "$version" = "$(PUBLISHED_VERSION)" ] && [ "$code" = "$(PUBLISHED_CODE)" ] || \
+	  [ "$$version" = "$(PUBLISHED_VERSION)" ] && [ "$$code" = "$(PUBLISHED_CODE)" ] || \
 	    { echo 'VERSION/CODE must match version.properties' >&2; exit 1; }; \
 	  printf '%s\n' "$$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || \
 	    { echo 'Invalid version in version.properties' >&2; exit 1; }; \
