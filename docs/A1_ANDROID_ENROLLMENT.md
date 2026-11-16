@@ -82,9 +82,10 @@ An enrolled AAP2 phone now shows **Reset enrollment / Change server** at the
 bottom of the main screen. This is a destructive operation and is intentionally
 not a one-tap button:
 
-- The red error-container confirmation states the current server and
-  Connection ID, warns that the session and the Android Keystore SSH identity
-  will be permanently destroyed, and explains separate server revocation.
+- The red error-container confirmation puts the **four-digit challenge and
+  numeric entry at the very top without scrolling**. Compact warnings below
+  identify the current server and Connection ID, explain that the local
+  Keystore SSH identity is destroyed, and require separate server revocation.
 - **ERASE AAP2 ENROLLMENT** is disabled until the user enters the
   randomly generated **four-digit code displayed in that dialog**, using the
   numeric keyboard. Each reopening gets a fresh code; a wrong or incomplete
