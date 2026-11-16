@@ -1,3 +1,17 @@
 <resources>
-    <string name="app_name">AAP 2 (Development)</string>
+    <string name="app_name">AAP2</string>
+    <string name="about_title">About AAP2</string>
+    <string name="about_open_source">Open-source software</string>
+    <string name="about_description">Android as Proxy 2 turns this phone into a SOCKS5 Internet exit over a verified, outbound SSH connection to your own server.</string>
+    <string name="about_license">Licensed under GNU GPL v3.0. Source code is available for inspection, modification and redistribution under the license terms.</string>
+    <string name="about_requires_server">AAP2 requires an administrator-managed OpenSSH server and a one-time activation code. It is not an instant VPN service.</string>
+    <string name="about_privacy">AAP2 has no advertising, analytics, or account registration. Connection diagnostics remain on this device unless you choose to share a log.</string>
+    <string name="about_battery">For unattended use, check this phone’s battery optimization and Wi-Fi sleep behavior. Connected means the SSH tunnel is up, not that every Internet destination is reachable.</string>
+    <string name="about_fdroid_updates">This F-Droid build receives updates through your F-Droid client; it cannot install GitHub APKs.</string>
+    <string name="about_github_updates">This GitHub build can check for a newer stable release using its manual Update button.</string>
+    <string name="about_sources">Source code on GitHub</string>
+    <string name="about_issues">Report an issue</string>
+    <string name="about_install_guide">Setup guide</string>
+    <string name="about_gpl">Read GNU GPLv3 license</string>
+    <string name="about_close">Close</string>
 </resources>

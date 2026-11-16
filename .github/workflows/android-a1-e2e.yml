@@ -38,11 +38,15 @@ jobs:
       - name: Configure Gradle
         uses: gradle/actions/setup-gradle@v4
       - name: Build A1 APK and Android instrumentation
+        env:
+          # The in-place update fixture tests a deliberate 20000 -> 20001 step.
+          AAP2_VERSION_CODE: '20000'
+          AAP2_VERSION_NAME: '2.0.0-ci'
         run: |
           chmod +x ./gradlew
           sh -n scripts/ci-a1-server.sh
           bash -n scripts/ci-a1-android.sh
-          ./gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
+          ./gradlew --no-daemon :app:assembleGithubDebug :app:assembleGithubDebugAndroidTest
       - name: Install disposable CI SSH/PAM prerequisites
         run: |
           sudo apt-get update -qq

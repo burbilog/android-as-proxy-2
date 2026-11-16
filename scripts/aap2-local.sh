@@ -77,10 +77,10 @@ build() {
     fi
 
     echo "Building $BRANCH at $(git -C "$SRC" rev-parse --short HEAD)"
-    ( cd "$SRC" && sh ./gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest )
+    ( cd "$SRC" && sh ./gradlew --no-daemon :app:assembleGithubDebug :app:assembleGithubDebugAndroidTest )
 
-    app="$SRC/app/build/outputs/apk/debug/app-debug.apk"
-    tests="$SRC/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+    app="$SRC/app/build/outputs/apk/github/debug/app-github-debug.apk"
+    tests="$SRC/app/build/outputs/apk/androidTest/github/debug/app-github-debug-androidTest.apk"
     [ -s "$app" ] && [ -s "$tests" ] || {
         echo "Missing app or instrumentation APK after build" >&2; exit 1;
     }
