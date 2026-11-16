@@ -32,11 +32,13 @@ Build examples with JDK 17 / Android SDK 35:
 ./gradlew --no-daemon :app:assembleFdroidRelease :app:testFdroidDebugUnitTest
 ```
 
-The GitHub release signer uses `scripts/build-signed-apk.sh` and builds
-`:app:assembleGithubRelease`, aligns and signs the unsigned APK with
-the existing PKCS12. Do not use the debug key or publish unsigned APKs.
+The local release signer uses `scripts/build-signed-apk.sh github`
+and `scripts/build-signed-apk.sh fdroid` (the first is the default),
+building and signing both unsigned variants with the same existing PKCS12. Do not use the debug key or publish unsigned APKs.
 The official release flow is still `make release`, `make publish`,
-`make verify-release`, now reading the same source version.
+`make verify-release`: it signs/archives both variants, confirms identical
+certificate fingerprints, and publishes both assets plus SHA256SUMS
+from the **same source commit**. It reads a single source version.
 
 Local throwaway testing may override `AAP2_VERSION_CODE` and
 `AAP2_VERSION_NAME`; **official releases must not**. The Gradle defaults
@@ -55,14 +57,31 @@ uninstall/reinstall on a remote enrolled phone: that removes its local
 Keystore identity and requires new S2 enrollment and separate revocation
 of the old server-side account.
 
-Preferred long-term goal: F-Droid reproducible-build verification of the
-GitHub release APK with the maintainer's original signature, so both
-channels can publish update-compatible packages when verification succeeds.
-This is **not yet proven**: Gradle, ZIP alignment, aapt/apksigner, build-tools
-versions and all inputs must be fixed and compared. F-Droid may instead
-sign itself; in that case switching channels necessarily requires
-re-enrollment. Do not claim interoperability before comparison of actual
-certificate SHA256 fingerprints and a real in-place update test.
+Preferred long-term goal: **reproducibly verify the F-Droid flavor**
+against a separately signed upstream `aap2-fdroid.apk` (not
+`aap2.apk`, whose GitHub updater makes its contents different).
+A public release can include **both** APKs from the same commit and
+`version.properties`, signed locally with the same original key:
+
+- `aap2.apk`: GitHub flavor; direct installation/manual Update.
+- `aap2-fdroid.apk`: F-Droid flavor; upstream-signed candidate for
+  independent F-Droid reproducibility verification.
+
+The F-Droid infrastructure does not receive the signing key. If its
+builder can reproduce and verify `aap2-fdroid.apk` against the tagged
+source, it may publish the upstream-signed candidate; this would preserve
+the same signer across both distribution channels. It is **not yet
+proven**. Verify the actual certificate SHA256 and perform a real
+in-place update before claiming cross-channel upgrade compatibility.
+If F-Droid instead signs its own APK, switching from the GitHub
+installation will still require clean re-enrollment; same version
+numbers alone do not bypass Android's signature rule.
+
+Byte-for-byte equivalence between `aap2.apk` and
+`aap2-fdroid.apk` is **not** expected or required: their variant
+permissions and updater code intentionally differ. Only F-Droid's
+independent build of the *fdroid* flavor should match the upstream
+signed *fdroid* flavor (apart from its APK signature).
 
 The `fdroid` variant can be built and maintained separately even if
 F-Droid rejects, delays or removes an application. GitHub releases are
@@ -80,16 +99,18 @@ test accounts. Never publish a live activation code or account endpoint.
 
 Before submitting to F-Droid:
 
-1. Produce a tagged stable GitHub version and confirm the long-term
-   signing certificate and in-place update from v2.0.6.
+1. Produce a tagged stable GitHub release with **two** locally signed
+   same-version APKs, confirm the same long-term certificate and an
+   in-place GitHub upgrade from v2.0.6.
 2. Verify `assembleFdroidRelease` contains no APK updater permission,
    update FileProvider or executable downloader; inspect manifest and APK.
 3. Create an F-Droid build recipe using the `fdroid` flavor, pinned
-   dependencies and the static version from `version.properties`.
-   Keep the recipe separate from the GitHub signing/release workflow.
-4. Test a reproducible binary match against the signed GitHub APK if
-   upstream developer signing is desired; otherwise communicate signer
-   incompatibility clearly to users.
+   dependencies, the static version from `version.properties`, and
+   `aap2-fdroid.apk` as the upstream signed binary candidate.
+   Keep the recipe/build separate from GitHub signing/release workflow.
+4. Test the F-Droid-built `fdroid` APK against the upstream
+   `aap2-fdroid.apk` for reproducibility (ignoring APK signature);
+   otherwise communicate signer incompatibility clearly to users.
 5. Add real screenshots and submit through F-Droid's standard
    review process. The 3-month development guidance has exceptions for
    apps with proven users; AAP1's >1-year history can support a
