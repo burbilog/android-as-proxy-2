@@ -43,7 +43,7 @@ The installer creates dedicated restricted accounts/groups, installs the Python 
 On the server, issue a single manual activation code:
 
 ```sh
-aap2ctl enroll "MyPhone" --server ssh.example.org --manual-code
+aap2ctl enroll "MyPhone" --server ssh.example.org
 ```
 
 The command displays an 18-digit activation code, the server endpoint and its SSH host-key fingerprints. The PIN is temporary. Share the code privately; never put it into a log, issue, screenshot or published command output.
