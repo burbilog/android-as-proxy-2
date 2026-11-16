@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -213,27 +212,10 @@ fun MainScreen() {
                 )
             },
             text = {
-                Column(
-                    modifier = Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(
-                        "This will DISCONNECT AAP2 and permanently erase the current " +
-                            "server, verified host key and phone SSH identity. " +
-                            "You will need a NEW activation code and admin approval."
-                    )
-                    Text(
-                        "Server: ${profile?.host} · Connection ID: " +
-                            ConnectionIdentity.id(profile!!.username),
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        "IMPORTANT: this does NOT revoke the old server account. " +
-                            "Ask its administrator to run aap2ctl revoke ID.",
-                        color = MaterialTheme.colorScheme.error,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text("To confirm, enter this 4-digit code:")
+                // Never put the challenge or its input inside a scrollable
+                // warning. Both must be immediately visible on a small phone.
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Enter these 4 digits to erase this enrollment:")
                     Text(
                         resetCode,
                         style = MaterialTheme.typography.headlineMedium,
@@ -247,11 +229,28 @@ fun MainScreen() {
                                 resetInput = value
                             }
                         },
-                        label = { Text("4-digit confirmation code") },
+                        label = { Text("Enter code") },
                         singleLine = true,
                         enabled = !resetting,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth().testTag("a1-reset-input")
+                    )
+                    Text(
+                        "Disconnects AAP2 and deletes its SSH key. " +
+                            "A new activation is required.",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.testTag("a1-reset-warning")
+                    )
+                    Text(
+                        "Server: ${profile.host} · ID: " +
+                            ConnectionIdentity.id(profile.username),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        "Old server access is NOT revoked. Ask its admin to revoke this ID.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold
                     )
                     if (resetStatus == EnrollmentReset.Status.FAILED) {
                         Text("Reset failed; try again.", color = MaterialTheme.colorScheme.error)
