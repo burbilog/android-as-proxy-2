@@ -60,6 +60,7 @@ class SocksForegroundService : Service() {
                 }
                 shutdownTransport()
                 EnrollmentReset.clearLocalCredentials(this)
+                ConnectionIssueStore.clear(this)
                 EnrollmentReset.succeeded()
                 AAPLog.append("Local enrollment reset; old server access requires admin revoke")
             } catch (e: Exception) {
@@ -76,6 +77,7 @@ class SocksForegroundService : Service() {
             if (DirectBootTunnelProfile.hasProfile(this)) {
                 DirectBootTunnelProfile.setDesiredRunning(this, false)
             }
+            ConnectionIssueStore.clear(this)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -86,7 +88,8 @@ class SocksForegroundService : Service() {
         val bootProfile = try {
             DirectBootTunnelProfile.load(this)
         } catch (e: Exception) {
-            Log.e("AAP2-P0", "BOOT_PROFILE_INVALID " + e.javaClass.simpleName)
+            Log.e("AAP2", "BOOT_PROFILE_INVALID " + e.javaClass.simpleName)
+            ConnectionIssueStore.report(this, ConnectionIssueStore.Reason.SERVICE)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -117,7 +120,14 @@ class SocksForegroundService : Service() {
             proxy.start()
             socksServer = proxy
             keystoreTunnelManager = KeystoreSshTunnelManager(this, profile, proxy.boundPort).apply {
-                onFatalError = { stopSelf() }
+                onFatalError = { reason ->
+                    ConnectionIssueStore.report(this@SocksForegroundService, reason)
+                    stopSelf()
+                }
+                onProblem = { reason ->
+                    ConnectionIssueStore.report(this@SocksForegroundService, reason)
+                }
+                onHealthy = { ConnectionIssueStore.clear(this@SocksForegroundService) }
                 start()
             }
             running = true
@@ -125,7 +135,8 @@ class SocksForegroundService : Service() {
             Log.i("AAP2-P0", "BOOT_TUNNEL_STARTED port=" + profile.remotePort)
             return START_STICKY
         } catch (e: Exception) {
-            Log.e("AAP2-P0", "BOOT_TUNNEL_FAILED " + e.javaClass.simpleName)
+            Log.e("AAP2", "BOOT_TUNNEL_FAILED " + e.javaClass.simpleName)
+            ConnectionIssueStore.report(this, ConnectionIssueStore.Reason.SERVICE)
             ConnectionStateHolder.setState(ConnectionState.DISCONNECTED)
             stopSelf()
             return START_NOT_STICKY
