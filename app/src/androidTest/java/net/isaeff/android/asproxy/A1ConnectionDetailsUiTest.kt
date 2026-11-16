@@ -7,6 +7,8 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextClearance
+import androidx.compose.ui.semantics.SemanticsProperties
 import java.security.KeyStore
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onNodeWithTag
@@ -55,7 +57,12 @@ class A1ConnectionDetailsUiTest {
         composeRule.onNodeWithTag("a1-reset-open").assertIsDisplayed().performClick()
         composeRule.onNodeWithTag("a1-reset-dialog").assertIsDisplayed()
         composeRule.onNodeWithTag("a1-reset-confirm").assertIsNotEnabled()
-        composeRule.onNodeWithTag("a1-reset-phrase").performTextInput("RESE")
+        composeRule.onNodeWithTag("a1-reset-code").performScrollTo().assertIsDisplayed()
+        val firstCode = composeRule.onNodeWithTag("a1-reset-code")
+            .fetchSemanticsNode().config[SemanticsProperties.Text].single().text
+        assertTrue("Reset challenge must be exactly four ASCII digits",
+            firstCode.matches(Regex("[0-9]{4}")))
+        composeRule.onNodeWithTag("a1-reset-input").performScrollTo().performTextInput("123")
         composeRule.onNodeWithTag("a1-reset-confirm").assertIsNotEnabled()
         composeRule.onNodeWithTag("a1-reset-cancel").performClick()
         composeRule.onNodeWithTag("a1-reset-dialog").assertDoesNotExist()
@@ -63,9 +70,19 @@ class A1ConnectionDetailsUiTest {
             DirectBootTunnelProfile.load(context)).username)
         assertTrue(store.containsAlias(AndroidKeystoreIdentity.ALIAS))
 
+        // Each opening gets a fresh challenge. Wrong four digits never
+        // unlock the destructive button; the exact displayed code does.
         composeRule.onNodeWithTag("a1-reset-open").assertIsDisplayed().performClick()
         composeRule.onNodeWithTag("a1-reset-confirm").assertIsNotEnabled()
-        composeRule.onNodeWithTag("a1-reset-phrase").performTextInput("RESET")
+        composeRule.onNodeWithTag("a1-reset-code").performScrollTo()
+        val code = composeRule.onNodeWithTag("a1-reset-code")
+            .fetchSemanticsNode().config[SemanticsProperties.Text].single().text
+        assertTrue(code.matches(Regex("[0-9]{4}")))
+        val wrong = if (code == "0000") "0001" else "0000"
+        composeRule.onNodeWithTag("a1-reset-input").performScrollTo().performTextInput(wrong)
+        composeRule.onNodeWithTag("a1-reset-confirm").assertIsNotEnabled()
+        composeRule.onNodeWithTag("a1-reset-input").performTextClearance()
+        composeRule.onNodeWithTag("a1-reset-input").performTextInput(code)
         composeRule.onNodeWithTag("a1-reset-confirm").assertIsEnabled()
         composeRule.onNodeWithTag("a1-reset-confirm").performClick()
 
