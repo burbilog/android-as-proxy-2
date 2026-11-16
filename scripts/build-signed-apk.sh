@@ -9,7 +9,7 @@ TOOLS=${AAP2_BUILD_TOOLS:-"$SDK/build-tools/35.0.0"}
 KEYSTORE=${AAP2_KEYSTORE:-"$HOME/aap2/aap2-release.p12"}
 ALIAS=${AAP2_KEY_ALIAS:-aap2}
 OUTPUT_DIR="$ROOT/app/build/outputs/apk/local-release"
-UNSIGNED="$ROOT/app/build/outputs/apk/release/app-release-unsigned.apk"
+UNSIGNED="$ROOT/app/build/outputs/apk/github/release/app-github-release-unsigned.apk"
 ALIGNED="$OUTPUT_DIR/aap2-aligned-unsigned.apk"
 OUTPUT="$OUTPUT_DIR/aap2.apk"
 
@@ -26,7 +26,7 @@ for tool in zipalign apksigner; do
 done
 
 cd "$ROOT"
-./gradlew --no-daemon :app:assembleRelease
+./gradlew --no-daemon :app:assembleGithubRelease
 if [ ! -f "$UNSIGNED" ]; then
     printf 'Unsigned release not found: %s\n' "$UNSIGNED" >&2
     exit 1
