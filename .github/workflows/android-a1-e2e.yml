@@ -42,7 +42,7 @@ jobs:
           chmod +x ./gradlew
           sh -n scripts/ci-a1-server.sh
           bash -n scripts/ci-a1-android.sh
-          ./gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
+          ./gradlew --no-daemon :app:assembleGithubDebug :app:assembleGithubDebugAndroidTest
       - name: Install disposable CI SSH/PAM prerequisites
         run: |
           sudo apt-get update -qq
