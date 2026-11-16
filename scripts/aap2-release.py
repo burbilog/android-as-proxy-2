@@ -114,7 +114,7 @@ def check_published_sequence(candidate, releases):
 
 def gh_releases():
     result = run(["gh", "release", "list", "--repo", REPO, "--limit", "1000",
-                  "--json", "tagName,isDraft,isPrerelease"], capture=True)
+                  "--json", "tagName,isDraft,isPrerelease,isLatest"], capture=True)
     releases = json.loads(result.stdout)
     require(isinstance(releases, list), "invalid GitHub releases response")
     require(len(releases) < 1000,
