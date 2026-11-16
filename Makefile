@@ -124,9 +124,13 @@ test:
 
 # One shared release backend for RC and stable, with the same signature,
 # provenance and versionCode checks. The script checks TYPE before any work.
-# Pass user-supplied TYPE as an environment variable (not shell interpolation).
-TYPE ?=
+# Accept TYPE only from an explicit make command-line assignment, never
+# an ambient shell variable or local.mk default. No shell interpolation.
+ifeq ($(origin TYPE),command line)
 export AAP2_RELEASE_TYPE := $(TYPE)
+else
+export AAP2_RELEASE_TYPE :=
+endif
 export AAP2_RELEASE_DIR := $(RELEASE_DIR)
 
 release:
