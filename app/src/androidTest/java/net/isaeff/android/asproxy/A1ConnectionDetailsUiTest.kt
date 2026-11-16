@@ -42,7 +42,17 @@ class A1ConnectionDetailsUiTest {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         assertTrue(store.containsAlias(AndroidKeystoreIdentity.ALIAS))
 
-        composeRule.onNodeWithTag("a1-reset-open").performScrollTo().assertIsDisplayed().performClick()
+        // The destructive control is fixed in a distinct bottom footer and
+        // visually separated from the everyday Update action.
+        composeRule.onNodeWithTag("a1-reset-footer").assertIsDisplayed()
+        val footerTop = composeRule.onNodeWithTag("a1-reset-footer")
+            .fetchSemanticsNode().boundsInRoot.top
+        val updateBottom = composeRule.onNodeWithTag("a1-update")
+            .fetchSemanticsNode().boundsInRoot.bottom
+        assertTrue("Reset footer must be below the Update row",
+            footerTop > updateBottom)
+
+        composeRule.onNodeWithTag("a1-reset-open").assertIsDisplayed().performClick()
         composeRule.onNodeWithTag("a1-reset-dialog").assertIsDisplayed()
         composeRule.onNodeWithTag("a1-reset-confirm").assertIsNotEnabled()
         composeRule.onNodeWithTag("a1-reset-phrase").performTextInput("RESE")
@@ -53,7 +63,7 @@ class A1ConnectionDetailsUiTest {
             DirectBootTunnelProfile.load(context)).username)
         assertTrue(store.containsAlias(AndroidKeystoreIdentity.ALIAS))
 
-        composeRule.onNodeWithTag("a1-reset-open").performScrollTo().performClick()
+        composeRule.onNodeWithTag("a1-reset-open").assertIsDisplayed().performClick()
         composeRule.onNodeWithTag("a1-reset-confirm").assertIsNotEnabled()
         composeRule.onNodeWithTag("a1-reset-phrase").performTextInput("RESET")
         composeRule.onNodeWithTag("a1-reset-confirm").assertIsEnabled()
