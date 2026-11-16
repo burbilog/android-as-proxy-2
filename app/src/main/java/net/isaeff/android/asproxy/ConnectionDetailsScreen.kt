@@ -76,7 +76,7 @@ internal data class ConnectionDetailsInfo(
                 sshAccount = profile.username,
                 server = "${profile.host}:${profile.sshPort}",
                 serverSocks = "127.0.0.1:${profile.remotePort}",
-                phoneSocks = "127.0.0.1:11080",
+                phoneSocks = "127.0.0.1:${Aap2Ports.LOCAL_SOCKS5}",
                 hostFingerprint = VerifiedSshHostKey.sha256Fingerprint(profile.verifiedHostKey),
                 phoneKeyFingerprint = publicFingerprint,
                 device = phone,
