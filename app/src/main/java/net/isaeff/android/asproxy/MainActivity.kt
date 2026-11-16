@@ -138,8 +138,18 @@ fun MainScreen() {
     DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
+                val previouslyEnrolled = profile != null
+                val currentProfile = runCatching {
+                    DirectBootTunnelProfile.load(context)
+                }.getOrNull()
                 configured = DirectBootTunnelProfile.hasProfile(context)
-                profile = runCatching { DirectBootTunnelProfile.load(context) }.getOrNull()
+                profile = currentProfile
+                // A successful activation after Reset must not keep showing
+                // the previous enrollment's "erased" notice (or other stale
+                // status). Do not clear errors on unrelated Activity resumes.
+                if (!previouslyEnrolled && currentProfile != null) {
+                    updateMessage = ""
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
