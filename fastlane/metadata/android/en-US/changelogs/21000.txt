@@ -1,0 +1,1 @@
+User-facing release preparation: About screen with GitHub source, GPLv3 license, setup help and issue reporting. Clearer connection status and activation guidance. Independent GitHub and F-Droid build channels; F-Droid has no APK downloader or install-packages permission. Both channels use a single version source.
