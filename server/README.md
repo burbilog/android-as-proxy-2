@@ -20,9 +20,15 @@ The installer provisions AAP2-owned groups/directories, the Python CLI and
 the one-minute cleanup systemd timer. Repeat runs preserve device state.
 It **never** edits/reloads `sshd_config`, PAM or the firewall. The only
 manual SSH integration is to review and append the provided
-`sshd-aap2-match.conf` template at the correct position, check the
-effective policy and confirm independent administrator access after a
-manual sshd reload, while keeping the original SSH session open. Follow [INSTALL.md](INSTALL.md) for the short procedure.
+`sshd-aap2-match.conf` template at the correct position, verify the
+on-disk policy and **explicitly reload the running sshd** with
+`/usr/sbin/sshd -t && systemctl reload ssh`. Keep the original
+administrative SSH session open; verify a fresh login before closing it.
+**Neither `sshd -T -C` nor `aap2ctl doctor` proves that the live daemon
+loaded the new Match policy.** Without reload, SFTP enrollment can fail
+after successful password authentication because sshd starts
+`/usr/sbin/nologin` rather than `internal-sftp`. See the
+[installation and SFTP troubleshooting guide](INSTALL.md#troubleshooting-password-accepted-but-sftp-immediately-closes).
 
 ## Expired enrollment reservations
 

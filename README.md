@@ -36,7 +36,7 @@ sh server/install.sh
 aap2ctl doctor
 ```
 
-The installer creates dedicated restricted accounts/groups, installs the Python standard-library CLI `aap2ctl` and enables the PIN cleanup timer. **It does not edit or reload sshd_config, PAM or firewall rules.** Review and apply the provided [SSH Match policy](server/sshd-aap2-match.conf) manually. Keep an existing administrative SSH session open when validating SSH configuration and any later reload.
+The installer creates dedicated restricted accounts/groups, installs the Python standard-library CLI `aap2ctl` and enables the PIN cleanup timer. **It does not edit or reload sshd_config, PAM or firewall rules.** Review and apply the provided [SSH Match policy](server/sshd-aap2-match.conf) manually. **After editing the Match rules, run `/usr/sbin/sshd -t && systemctl reload ssh` yourself**, keeping the current administrative SSH session open; verify that a *new* SSH login works before closing it. `sshd -T -C` and `aap2ctl doctor` only check the configuration on disk, not whether the running sshd has reloaded it. See the [SFTP troubleshooting note](server/INSTALL.md#troubleshooting-password-accepted-but-sftp-immediately-closes) if activation authenticates but fails immediately.
 
 ## 2. Enroll the phone
 
