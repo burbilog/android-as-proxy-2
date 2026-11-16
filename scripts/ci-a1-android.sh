@@ -193,7 +193,15 @@ grep -q 'OK (1 test)' <<<"$DETAILS_OUTPUT" ||
   { echo 'A1 one-screen support details UI FAILED' >&2; exit 1; }
 echo 'A1 PASS: main screen identifies approved account; one-screen full public diagnostics'
 
-run_test a1_1c_resetRevokedUiFixtureWithoutDeletingKeystore
+# A real Compose confirmation resets the previously revoked S2 account.
+# The next invitation must create a NEW Android Keystore identity, without
+# using Android settings, pm clear, or an unguarded test-only preference wipe.
+RESET_OUTPUT=$(timeout 120 adb shell am instrument -w \
+  -e class "${DETAILS_TEST}#resetRequiresTypedConfirmationAndErasesLocalIdentity" "$RUNNER")
+printf '%s\n' "$RESET_OUTPUT"
+grep -q 'OK (1 test)' <<<"$RESET_OUTPUT" ||
+  { echo 'A1 UI reset confirmation / Keystore teardown FAILED' >&2; exit 1; }
+echo 'A1 PASS: typed RESET stopped service, erased enrollment and private SSH key'
 
 # Keep the original interrupted-SFTP/Resume, signed-update and Direct Boot
 # regression suite, using another independent disposable S2 invitation.
