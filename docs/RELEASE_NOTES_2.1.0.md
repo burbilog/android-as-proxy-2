@@ -5,7 +5,7 @@ User-facing release work after stable v2.0.6:
 - New About page with GitHub source, support, licensing, current version and distribution channel.
 - Clearer activation guidance and a definition of what Connected means.
 - Correct application name (remove the former Development label).
-- GitHub and F-Droid variants build from the same source and version.properties.
+- GitHub and F-Droid variants build from the same source and version.properties, with separately signed but same-version candidate APKs.
 - GitHub builds keep explicit manual in-app APK updates, now available before enrollment.
 - F-Droid builds contain no APK download/install implementation or install-packages permission. Updates come from the F-Droid client.
 - No changes to server API, SSH host-key verification, enrollment identity, SOCKS5 or reset semantics.
