@@ -27,6 +27,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -137,8 +138,18 @@ fun MainScreen() {
     DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
+                val previouslyEnrolled = profile != null
+                val currentProfile = runCatching {
+                    DirectBootTunnelProfile.load(context)
+                }.getOrNull()
                 configured = DirectBootTunnelProfile.hasProfile(context)
-                profile = runCatching { DirectBootTunnelProfile.load(context) }.getOrNull()
+                profile = currentProfile
+                // A successful activation after Reset must not keep showing
+                // the previous enrollment's "erased" notice (or other stale
+                // status). Do not clear errors on unrelated Activity resumes.
+                if (!previouslyEnrolled && currentProfile != null) {
+                    updateMessage = ""
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -275,11 +286,14 @@ fun MainScreen() {
         )
     } else {
     Scaffold(topBar = { TopAppBar(title = { Text("Android As Proxy 2") }) }) { padding ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            // Everyday actions scroll independently. Destructive reset lives
+            // in a separate, permanently bottom-aligned footer.
+            Column(
+                modifier = Modifier.weight(1f).fillMaxWidth()
+                    .verticalScroll(rememberScrollState()).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
             Text(
                 when (connectionState) {
                     ConnectionState.CONNECTED -> "Connected"
@@ -383,22 +397,34 @@ fun MainScreen() {
                     ) { Text(if (updateBusy) "Loading…" else "Update") }
                 }
             }
-            if (profile != null) {
-                TextButton(
-                    onClick = {
-                        resetPhrase = ""
-                        EnrollmentReset.dismissResult()
-                        showResetDialog = true
-                    },
-                    enabled = !updateBusy && resetStatus != EnrollmentReset.Status.RUNNING,
-                    modifier = Modifier.testTag("a1-reset-open"),
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
-                ) { Text("Reset enrollment / Change server") }
+                if (updateMessage.isNotBlank()) {
+                    Text(updateMessage, modifier = Modifier.testTag("a1-update-status"))
+                }
             }
-            if (updateMessage.isNotBlank()) {
-                Text(updateMessage, modifier = Modifier.testTag("a1-update-status"))
+            if (profile != null) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                        .testTag("a1-reset-footer"),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    TextButton(
+                        onClick = {
+                            resetPhrase = ""
+                            EnrollmentReset.dismissResult()
+                            showResetDialog = true
+                        },
+                        enabled = !updateBusy &&
+                            resetStatus != EnrollmentReset.Status.RUNNING,
+                        modifier = Modifier.testTag("a1-reset-open"),
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
+                        )
+                    ) { Text("Reset enrollment / Change server") }
+                }
             }
         }
     }
