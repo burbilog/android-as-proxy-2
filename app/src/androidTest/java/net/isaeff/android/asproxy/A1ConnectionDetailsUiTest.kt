@@ -5,9 +5,6 @@ import java.io.File
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performTextInput
-import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.semantics.SemanticsProperties
 import java.security.KeyStore
 import androidx.compose.ui.test.assertTextEquals
@@ -55,51 +52,68 @@ class A1ConnectionDetailsUiTest {
             footerTop > updateBottom)
 
         composeRule.onNodeWithTag("a1-reset-open").assertIsDisplayed().performClick()
-        composeRule.onNodeWithTag("a1-reset-dialog").assertIsDisplayed()
-        composeRule.onNodeWithTag("a1-reset-confirm").assertIsNotEnabled()
-        // No scrolling: the user must see the code AND the input immediately.
+        composeRule.onNodeWithTag("a1-reset-screen").assertIsDisplayed()
+        composeRule.onNodeWithTag("a1-reset-confirm").assertIsDisplayed().assertIsNotEnabled()
+        // Neither code entry nor the destructive action can be hidden by an
+        // Android keyboard: the screen contains no TextField or IME input.
         composeRule.onNodeWithTag("a1-reset-code").assertIsDisplayed()
         composeRule.onNodeWithTag("a1-reset-input").assertIsDisplayed()
-        val inputBottom = composeRule.onNodeWithTag("a1-reset-input")
+        composeRule.onNodeWithTag("a1-reset-digit-0").assertIsDisplayed()
+        val confirmBottom = composeRule.onNodeWithTag("a1-reset-confirm")
             .fetchSemanticsNode().boundsInRoot.bottom
-        val warningTop = composeRule.onNodeWithTag("a1-reset-warning")
-            .fetchSemanticsNode().boundsInRoot.top
-        assertTrue("Reset input must be above long warnings", inputBottom < warningTop)
+        val screenBottom = composeRule.onNodeWithTag("a1-reset-screen")
+            .fetchSemanticsNode().boundsInRoot.bottom
+        assertTrue("Destructive button must be within the visible screen",
+            confirmBottom <= screenBottom)
         val firstCode = composeRule.onNodeWithTag("a1-reset-code")
             .fetchSemanticsNode().config[SemanticsProperties.Text].single().text
         assertTrue("Reset challenge must be exactly four ASCII digits",
             firstCode.matches(Regex("[0-9]{4}")))
-        composeRule.onNodeWithTag("a1-reset-input").performTextInput("123")
-        composeRule.onNodeWithTag("a1-reset-input").assertIsDisplayed()
+        // Three digits cannot enable a destructive reset.
+        for (digit in "123") {
+            composeRule.onNodeWithTag("a1-reset-digit-$digit").performClick()
+        }
         composeRule.onNodeWithTag("a1-reset-confirm").assertIsNotEnabled()
         composeRule.onNodeWithTag("a1-reset-cancel").performClick()
-        composeRule.onNodeWithTag("a1-reset-dialog").assertDoesNotExist()
+        composeRule.onNodeWithTag("a1-reset-screen").assertDoesNotExist()
         assertEquals(original.username, requireNotNull(
             DirectBootTunnelProfile.load(context)).username)
         assertTrue(store.containsAlias(AndroidKeystoreIdentity.ALIAS))
 
-        // Each opening gets a fresh challenge. Wrong four digits never
-        // unlock the destructive button; the exact displayed code does.
+        // Hardware/software Back must return to the normal screen, not
+        // erase data. There is no IME dismissal to consume Back first.
         composeRule.onNodeWithTag("a1-reset-open").assertIsDisplayed().performClick()
-        composeRule.onNodeWithTag("a1-reset-confirm").assertIsNotEnabled()
-        composeRule.onNodeWithTag("a1-reset-code").assertIsDisplayed()
-        composeRule.onNodeWithTag("a1-reset-input").assertIsDisplayed()
+        androidx.test.espresso.Espresso.pressBack()
+        composeRule.onNodeWithTag("a1-reset-screen").assertDoesNotExist()
+        assertEquals(original.username, requireNotNull(
+            DirectBootTunnelProfile.load(context)).username)
+
+        // Wrong four digits never unlock; use the onscreen Delete button,
+        // then enter exactly the random four digits to authorize deletion.
+        composeRule.onNodeWithTag("a1-reset-open").assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag("a1-reset-confirm").assertIsDisplayed().assertIsNotEnabled()
         val code = composeRule.onNodeWithTag("a1-reset-code")
             .fetchSemanticsNode().config[SemanticsProperties.Text].single().text
         assertTrue(code.matches(Regex("[0-9]{4}")))
         val wrong = if (code == "0000") "0001" else "0000"
-        composeRule.onNodeWithTag("a1-reset-input").performTextInput(wrong)
+        for (digit in wrong) {
+            composeRule.onNodeWithTag("a1-reset-digit-$digit").performClick()
+        }
         composeRule.onNodeWithTag("a1-reset-confirm").assertIsNotEnabled()
-        composeRule.onNodeWithTag("a1-reset-input").performTextClearance()
-        composeRule.onNodeWithTag("a1-reset-input").performTextInput(code)
-        composeRule.onNodeWithTag("a1-reset-confirm").assertIsEnabled()
-        composeRule.onNodeWithTag("a1-reset-confirm").performClick()
+        repeat(4) {
+            composeRule.onNodeWithTag("a1-reset-backspace").performClick()
+        }
+        composeRule.onNodeWithTag("a1-reset-confirm").assertIsNotEnabled()
+        for (digit in code) {
+            composeRule.onNodeWithTag("a1-reset-digit-$digit").performClick()
+        }
+        composeRule.onNodeWithTag("a1-reset-confirm").assertIsEnabled().performClick()
 
         composeRule.waitUntil(20_000) {
             !DirectBootTunnelProfile.hasProfile(context) &&
                 ConnectionStateHolder.connectionState.value == ConnectionState.DISCONNECTED
         }
-        composeRule.onNodeWithTag("a1-reset-dialog").assertDoesNotExist()
+        composeRule.onNodeWithTag("a1-reset-screen").assertDoesNotExist()
         composeRule.onNodeWithTag("a1-reset-open").assertDoesNotExist()
         composeRule.onNodeWithTag("a1-main-status").assertTextEquals("Disconnected")
         composeRule.onNodeWithTag("a1-connect").assertDoesNotExist()

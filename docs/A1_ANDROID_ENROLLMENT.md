@@ -82,14 +82,17 @@ An enrolled AAP2 phone now shows **Reset enrollment / Change server** at the
 bottom of the main screen. This is a destructive operation and is intentionally
 not a one-tap button:
 
-- The red error-container confirmation puts the **four-digit challenge and
-  numeric entry at the very top without scrolling**. Compact warnings below
-  identify the current server and Connection ID, explain that the local
-  Keystore SSH identity is destroyed, and require separate server revocation.
-- **ERASE AAP2 ENROLLMENT** is disabled until the user enters the
-  randomly generated **four-digit code displayed in that dialog**, using the
-  numeric keyboard. Each reopening gets a fresh code; a wrong or incomplete
-  code does nothing. Cancel/Back makes no changes.
+- A separate full-screen confirmation keeps the random **four-digit
+  challenge**, entered digits, compact numeric keypad and red **ERASE AAP2
+  ENROLLMENT** button anchored at the bottom. There is **no TextField or
+  system keyboard**, so no IME can obscure the destructive button.
+- The short warning above explains SSH-key loss, the current server and
+  Connection ID, and the need for separate server revocation. Only the
+  warning section can scroll on very small screens.
+- Each opening gets a fresh code; wrong or incomplete digits leave the
+  destructive button disabled. **Cancel** and Android Back return to the
+  main screen and preserve the enrollment. Back never dismisses a keyboard
+  because this screen never opens one.
 - Reset is dispatched to `SocksForegroundService`, which persists
   `desired_running=false`, tears down the running SSH session and local
   SOCKS5 listener, then clears pending state, deletes the **specific**

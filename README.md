@@ -93,10 +93,12 @@ GitHub's `releases/latest` endpoint intentionally does not include pre-releases;
 
 On an already-enrolled phone, tap **Reset enrollment / Change server** in its
 own bottom footer, away from the everyday Connect/Details/Update controls.
-A compact red warning identifies the current server and connection ID.
-The four-digit challenge and numeric input are at the **top of the dialog**,
-visible without scrolling. To unlock **ERASE AAP2 ENROLLMENT**,
-the user must enter the **random four-digit code shown in the dialog** using the numeric keypad. A new code is generated each time the dialog is opened; an incorrect or incomplete code cannot unlock the destructive button. Cancel makes **no changes**.
+A full-screen confirmation displays the current server and connection ID,
+plus a **random four-digit code**. The phone's system keyboard does **not**
+appear: digits are entered on AAP2's own compact keypad. The red **ERASE AAP2
+ENROLLMENT** button remains pinned below the keypad and is disabled until all
+four digits match. **Cancel** or Android Back returns to the main screen
+without changing the connection. A new code is generated on every opening.
 
 After confirmation, AAP2 disables boot/update auto-reconnect, closes the
 current reverse SSH tunnel and SOCKS5 listener, and permanently deletes only
