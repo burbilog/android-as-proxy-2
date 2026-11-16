@@ -1,3 +1,10 @@
+> **Historical S0 security-design/test stage.**
+> For current Debian 13 installation, use [INSTALL.md](INSTALL.md) and the
+> current [SSH Match template](sshd-aap2-match.conf). The example port
+> `10909` below belongs to an early isolated test, **not** the port
+> allocated by today's S2 server (per-device range `11010..11509`).
+> Do not treat the stage-specific pending checks as the release status.
+>
 # S0 — OpenSSH restrictions (manual integration)
 
 This is a **tested design under development**, not an installer. No project
