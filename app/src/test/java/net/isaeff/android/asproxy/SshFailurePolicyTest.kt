@@ -22,6 +22,8 @@ class SshFailurePolicyTest {
         assertEquals(SshFailurePolicy.Action.RETRY_AUTH_HOURLY,
             classify("JSchException", "Auth fail"))
         assertEquals(SshFailurePolicy.Action.RETRY_AUTH_HOURLY,
+            classify("JSchException", "Auth fail for methods 'publickey'"))
+        assertEquals(SshFailurePolicy.Action.RETRY_AUTH_HOURLY,
             classify("JSchAuthCancelException"))
         assertEquals(SshFailurePolicy.Action.RETRY_AUTH_HOURLY,
             classify("JSchException", "Too many authentication failures"))
