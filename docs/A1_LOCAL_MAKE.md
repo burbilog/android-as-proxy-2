@@ -204,8 +204,12 @@ make release-both TYPE=release
 The same source commit and version.properties are used for both
 flavors; both are signed with the original local developer key.
 The F-Droid flavor contains no in-app installer permission or
-GitHub updater. It can be built without a GitHub APK, but publication
-on GitHub still requires its own signed GitHub flavor. An optional
+GitHub updater. `make fdroid-candidate` can be built **without querying
+GitHub Releases** or preparing a GitHub-flavor APK; when no matching
+GitHub candidate exists locally, the command warns that the signing
+certificate's continuity against a previous public release must be
+verified separately before distribution. Public GitHub publication
+still requires its own signed GitHub flavor. An optional
 `aap2-fdroid.apk` is attached to the GitHub Release only if it is
 ready before publication, passes verification, and has the same
 source commit/version/signing certificate. F-Droid store acceptance
