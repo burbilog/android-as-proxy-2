@@ -1,3 +1,11 @@
+> **Historical P0 local-development instructions.**
+> This page describes the old disposable debug-test workflow, including
+> `RESET-AAP2` for the developer's local shell script; it is **not** the
+> shipped phone's four-digit enrollment-reset screen and not a public
+> installation guide. For current setup see the [AAP2 README](../README.md),
+> [server installation](../server/INSTALL.md) and
+> [maintainer Makefile](A1_LOCAL_MAKE.md).
+>
 # One-command local AAP2 build, signing and deployment
 
 This is a **development/test** workflow. Both APKs are compiled as Android
