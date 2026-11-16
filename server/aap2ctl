@@ -399,8 +399,7 @@ def print_config(args):
 # permitted. The state root and chroots are never writable by those accounts.
 ID_RE = re.compile(r'(?:[0-9a-f]{12}|[0-9]{6})')
 PORT_LOW, PORT_HIGH = 11010, 11509
-PIN_TTL = 600
-MANUAL_PIN_TTL = 1200  # Manual entry of address/code/PIN may take longer
+PIN_TTL = 1200  # Manual entry of server address and activation code
 SAFE_ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C'}
 LOCK = STATE / '.lock'
 
@@ -741,14 +740,12 @@ def enroll(args):
                 reserved_ports.add(previous['remote_port'])
                 for user in previous['users'].values():
                     reserved_uid.add(user['uid'])
-        # Short numeric setup codes are public account selectors, not PINs.
-        # Existing 12-hex enrolled identities remain valid forever.
-        manual_code = getattr(args, 'manual_code', False)
-        enrollment_id = ('{:06d}'.format(secrets.randbelow(1000000))
-                         if manual_code else secrets.token_hex(6))
+        # Always allocate six decimal digits for the Android activation code.
+        # Existing 12-hex identities remain readable/revocable; never reuse
+        # their accounts, keys or enrollment metadata.
+        enrollment_id = '{:06d}'.format(secrets.randbelow(1000000))
         while (STATE / enrollment_id).exists():
-            enrollment_id = ('{:06d}'.format(secrets.randbelow(1000000))
-                             if manual_code else secrets.token_hex(6))
+            enrollment_id = '{:06d}'.format(secrets.randbelow(1000000))
         usernames = {role: identity_for(enrollment_id, role)
                      for role in (GROUP_ENROLL, GROUP_PROXY)}
         for username in usernames.values():
@@ -763,7 +760,7 @@ def enroll(args):
         euid = unused_uid(reserved_uid)
         puid = unused_uid(reserved_uid | {euid})
         port = unused_port(reserved_ports)
-        ttl = MANUAL_PIN_TTL if manual_code else PIN_TTL
+        ttl = PIN_TTL
         expiry = int(time.time()) + ttl
         record = {
             'schema': 1, 'id': enrollment_id, 'device_name': name,
@@ -845,10 +842,7 @@ def enroll(args):
                    if args.server_addr == '127.0.0.1' else [])
             ),
         }
-        if manual_code:
-            invitation['activation_code'] = activation_code(enrollment_id, pin)
-        else:
-            invitation['one_time_pin'] = pin
+        invitation['activation_code'] = activation_code(enrollment_id, pin)
         emit_json('enroll', True, invitation=invitation)
         return 0
 
@@ -857,12 +851,8 @@ def enroll(args):
     print()
     print('PHONE - enter these fields:')
     print('Server: {}'.format(args.server))
-    if manual_code:
-        print('Phone activation code (type digits only): {}'.format(
-            activation_code(enrollment_id, pin)))
-    else:
-        print('Setup username: {}'.format(usernames[GROUP_ENROLL]))
-        print('One-time PIN (type all 10 digits): {}'.format(pin))
+    print('Phone activation code (type digits only): {}'.format(
+        activation_code(enrollment_id, pin)))
     print()
     print('VERIFY SERVER - match SHA256 fingerprint AND key type on phone:')
     for key in host_keys:
@@ -870,8 +860,7 @@ def enroll(args):
     print()
     print('ADMIN - after phone says "Waiting for administrator approval":')
     print('Enrollment ID: {}'.format(enrollment_id))
-    if manual_code:
-        print('Setup username: {}'.format(usernames[GROUP_ENROLL]))
+    print('Setup username: {}'.format(usernames[GROUP_ENROLL]))
     print('Next: aap2ctl approve {}'.format(enrollment_id))
     return 0
 
@@ -1382,11 +1371,9 @@ def main():
     doc.add_argument('--server-addr', default='127.0.0.1', help='sshd local address')
     doc.add_argument('--server-port', default='22', help='sshd *guest-local* port')
     doc.set_defaults(func=doctor)
-    en = sub.add_parser('enroll', help='create temporary PIN/SFTP invitation (NO approval yet)')
+    en = sub.add_parser('enroll', help='issue one 18-digit Android activation code (NO approval yet)')
     en.add_argument('device_name', help='admin-facing device label')
     en.add_argument('--server', required=True, help='SSH host[:port] shown to phone')
-    en.add_argument('--manual-code', action='store_true',
-                    help='generate one 18-digit code for manual Android entry')
     en.add_argument('--help-all', action=EnrollAdvancedHelp, nargs=0,
                     help='show all options including SSH Match context probes')
     en.add_argument('--client-addr', default='198.51.100.1', help=argparse.SUPPRESS)
