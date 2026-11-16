@@ -116,7 +116,9 @@ class SocksForegroundService : Service() {
     private fun startKeystoreTunnel(profile: DirectBootTunnelProfile.Config): Int {
         try {
             startForeground(NOTIFICATION_ID, createNotification())
-            val proxy = Socks5ProxyServer(11080)
+            val proxy = Socks5ProxyServer(11080, onConnectionLimit = { rejected ->
+                AAPLog.append("SOCKS connection limit reached: rejected " + rejected)
+            })
             proxy.start()
             socksServer = proxy
             keystoreTunnelManager = KeystoreSshTunnelManager(this, profile, proxy.boundPort).apply {
