@@ -1,5 +1,9 @@
 # AAP2 local Makefile (marduk)
 
+**Release decisions are governed by [RELEASE_POLICY.md](RELEASE_POLICY.md).**
+This page documents the currently implemented stable-only local tooling;
+`make publish` creates a GitHub Latest release and is **not** a release-candidate publisher.
+
 The root `Makefile` is a small maintainer shortcut for local **release-signed
 GitHub-channel** APK builds and physical testing. Both GitHub and F-Droid
 use a single checked-in `version.properties` for official versionCode and
