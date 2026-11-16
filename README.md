@@ -125,7 +125,7 @@ For developers:
 python3 -m unittest discover -s server -p 'test_*.py'
 ```
 
-The Android project uses JDK 17 and Android SDK 35. Both channels read the same `version.properties` versionCode/versionName, and retain the existing Android package ID. The F-Droid variant excludes the in-app APK installer and its permission. See [F-Droid preparation](docs/FDROID.md). A distributable APK **must** be signed with one long-term local key, never a CI debug key. See [release-signing guidance](docs/P0_RELEASE_SIGNING.md).
+The Android project uses JDK 17 and Android SDK 35. Both channels read the same `version.properties` versionCode/versionName, and retain the existing Android package ID. The F-Droid variant excludes the in-app APK installer and its permission. GitHub releases can be published independently of any F-Droid build or listing; `make release-both` optionally prepares both signed variants from the same version. See [F-Droid preparation](docs/FDROID.md). A distributable APK **must** be signed with one long-term local key, never a CI debug key. See [release-signing guidance](docs/P0_RELEASE_SIGNING.md).
 
 On the maintainer's own workstation the [Makefile](docs/A1_LOCAL_MAKE.md) provides short commands: `make build`, `make install`, `make status`, `make curl` and `make check`. Signing keys, device serials and private server configuration remain outside Git.
 
