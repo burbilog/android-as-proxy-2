@@ -76,6 +76,36 @@ first attempt's emulator process disappeared). This does **not** close the
 separate long-term OEM/Doze Wi-Fi auto-reassociation gate. No forced Wi-Fi
 scan, wake lock, separate monitor, or log parsing was added.
 
+## On-device confirmed reset / move to another server
+
+An enrolled AAP2 phone now shows **Reset enrollment / Change server** at the
+bottom of the main screen. This is a destructive operation and is intentionally
+not a one-tap button:
+
+- The red error-container confirmation states the current server and
+  Connection ID, warns that the session and the Android Keystore SSH identity
+  will be permanently destroyed, and explains separate server revocation.
+- **ERASE AAP2 ENROLLMENT** is disabled until the user types uppercase
+  `RESET` *exactly*. Cancel/Back makes no changes.
+- Reset is dispatched to `SocksForegroundService`, which persists
+  `desired_running=false`, tears down the running SSH session and local
+  SOCKS5 listener, then clears pending state, deletes the **specific**
+  `aap2-ssh-ecdsa-p256-v1` Android Keystore key and its creation marker,
+  and finally clears the device-protected SSH profile. An interrupted reset
+  fails closed; it does not silently resume the former tunnel.
+- The main screen returns to **Activate AAP2** for a new independent
+  fingerprint verification, activation code and administrator approval.
+  No app uninstall, Android settings, `adb pm clear` or AAP1 changes.
+
+**Local reset never revokes server-side access.** The operator must use
+`aap2ctl revoke OLD_ID` on the old S2; otherwise that server still contains
+the old authorized SSH public key. The dialog displays the old ID to assist
+with this task.
+
+Disposable Android E2E tests check cancellation, incorrect/complete typed
+confirmation, actual removal of the former Keystore alias, disabled
+`MY_PACKAGE_REPLACED` auto-restore, and a second independent S2 enrollment.
+
 ## Connection identification and one-screen support diagnostics
 
 After activation, MainActivity always displays **Connection ID** (the suffix

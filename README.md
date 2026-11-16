@@ -83,11 +83,30 @@ The reported Internet egress address should be the **phone's** network IP, not t
 
 ## Updating Android
 
-An enrolled phone offers **Update** on its main screen. This downloads `aap2.apk` directly from the latest **stable** GitHub Release, checks the Android package name, increasing `versionCode` and existing app signer, then opens Android's standard package installer. Android will ask for installation confirmation and may first ask you to allow installations from AAP2.
+An enrolled phone offers **Update** on its main screen. This downloads `aap2.apk` directly from the latest **stable** GitHub Release, checks the Android package name and increasing `versionCode`, then opens Android's standard package installer, which cryptographically verifies the APK signature and signer compatibility. Android will ask for installation confirmation and may first ask you to allow installations from AAP2.
 
 There is **no automatic polling, background download or silent installation**. If the user wanted the connection running before the update, AAP2 attempts to restore it after `MY_PACKAGE_REPLACED`. An explicit **Disconnect** remains off after updating.
 
 GitHub's `releases/latest` endpoint intentionally does not include pre-releases; release-candidate builds should be installed and tested separately.
+
+## Switching servers / resetting enrollment
+
+On an already-enrolled phone, tap **Reset enrollment / Change server** at the
+bottom of the main screen. A prominent destructive warning names the
+currently trusted server and connection ID. To unlock **ERASE AAP2 ENROLLMENT**,
+the user must manually type `RESET` exactly. Cancel makes **no changes**.
+
+After confirmation, AAP2 disables boot/update auto-reconnect, closes the
+current reverse SSH tunnel and SOCKS5 listener, and permanently deletes only
+its own local pinned host key, profile, pending enrollment and Android
+Keystore SSH identity. It then returns to **Activate AAP2**, where a *new*
+18-digit code can enroll against another server. No root, Android Settings,
+ADB, uninstall or `pm clear` is needed. AAP1 and other apps are untouched.
+
+**Critical:** local reset does NOT revoke the old server's SSH public key or
+delete its account. The old server administrator must separately run
+`aap2ctl revoke OLD_ID` (the reset warning shows the current ID). Do this
+when retiring a phone/server connection.
 
 ## Building and testing
 

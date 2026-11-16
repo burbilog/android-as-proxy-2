@@ -18,7 +18,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -38,6 +45,9 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -73,6 +83,7 @@ fun MainScreen() {
     val context = LocalContext.current
     val connectionState by ConnectionStateHolder.connectionState.collectAsState()
     val traffic by ConnectionStateHolder.trafficBytes.collectAsState()
+    val resetStatus by EnrollmentReset.status.collectAsState()
     // Returning from EnrollmentActivity does not inherently recompose this screen.
     // Refresh profile visibility on resume, without ever changing the stored profile.
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -81,6 +92,8 @@ fun MainScreen() {
         mutableStateOf(runCatching { DirectBootTunnelProfile.load(context) }.getOrNull())
     }
     var showDetails by remember { mutableStateOf(false) }
+    var showResetDialog by remember { mutableStateOf(false) }
+    var resetPhrase by remember { mutableStateOf("") }
 
     // Updates are explicitly requested by the user, not polled or downloaded
     // in the background. The existing SSH foreground service keeps running
@@ -89,6 +102,24 @@ fun MainScreen() {
     var updateBusy by remember { mutableStateOf(false) }
     var updateMessage by remember { mutableStateOf("") }
     var waitingForInstallPermission by remember { mutableStateOf<File?>(null) }
+    LaunchedEffect(resetStatus) {
+        when (resetStatus) {
+            EnrollmentReset.Status.DONE -> {
+                configured = DirectBootTunnelProfile.hasProfile(context)
+                profile = runCatching { DirectBootTunnelProfile.load(context) }.getOrNull()
+                showResetDialog = false
+                showDetails = false
+                resetPhrase = ""
+                waitingForInstallPermission = null
+                updateMessage = "Local enrollment erased. Ask your administrator to revoke the old server account."
+                EnrollmentReset.dismissResult()
+            }
+            EnrollmentReset.Status.FAILED -> {
+                updateMessage = "Reset failed. Existing connection was stopped; retry Reset enrollment."
+            }
+            else -> Unit
+        }
+    }
     val unknownSourcesSettings = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
@@ -146,6 +177,93 @@ fun MainScreen() {
         }
     }
 
+    // Explicit destructive confirmation. No one-tap reset, including when
+    // a connection is running. This affects only AAP2's own local identity.
+    if (showResetDialog && profile != null) {
+        val resetting = resetStatus == EnrollmentReset.Status.RUNNING
+        AlertDialog(
+            onDismissRequest = { if (!resetting) showResetDialog = false },
+            modifier = Modifier.testTag("a1-reset-dialog"),
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            title = {
+                Text(
+                    "DANGER: ERASE ENROLLMENT",
+                    color = MaterialTheme.colorScheme.error,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        "This will DISCONNECT AAP2 and permanently erase the current " +
+                            "server, verified host key and phone SSH identity. " +
+                            "You will need a NEW activation code and admin approval."
+                    )
+                    Text(
+                        "Server: ${profile?.host} · Connection ID: " +
+                            ConnectionIdentity.id(profile!!.username),
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "IMPORTANT: this does NOT revoke the old server account. " +
+                            "Ask its administrator to run aap2ctl revoke ID.",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text("Type RESET below to unlock the destructive button.")
+                    OutlinedTextField(
+                        value = resetPhrase,
+                        onValueChange = { if (it.length <= 16) resetPhrase = it },
+                        label = { Text("Type RESET") },
+                        singleLine = true,
+                        enabled = !resetting,
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Characters,
+                            autoCorrect = false
+                        ),
+                        modifier = Modifier.fillMaxWidth().testTag("a1-reset-phrase")
+                    )
+                    if (resetStatus == EnrollmentReset.Status.FAILED) {
+                        Text("Reset failed; try again.", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        EnrollmentReset.begin()
+                        try {
+                            context.startService(
+                                Intent(context, SocksForegroundService::class.java).apply {
+                                    action = SocksForegroundService.ACTION_RESET
+                                }
+                            )
+                        } catch (e: Exception) {
+                            EnrollmentReset.failed()
+                            AAPLog.append("Local reset request failed: ${e.javaClass.simpleName}")
+                        }
+                    },
+                    enabled = resetPhrase == "RESET" && !resetting,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    ),
+                    modifier = Modifier.testTag("a1-reset-confirm")
+                ) { Text(if (resetting) "Erasing…" else "ERASE AAP2 ENROLLMENT") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showResetDialog = false; resetPhrase = "" },
+                    enabled = !resetting,
+                    modifier = Modifier.testTag("a1-reset-cancel")
+                ) { Text("Keep current connection") }
+            }
+        )
+    }
+
     BackHandler(enabled = showDetails) { showDetails = false }
     val detailsProfile = profile
     if (showDetails && detailsProfile != null) {
@@ -158,7 +276,8 @@ fun MainScreen() {
     } else {
     Scaffold(topBar = { TopAppBar(title = { Text("Android As Proxy 2") }) }) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
+            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
@@ -263,6 +382,20 @@ fun MainScreen() {
                         modifier = Modifier.testTag("a1-update")
                     ) { Text(if (updateBusy) "Loading…" else "Update") }
                 }
+            }
+            if (profile != null) {
+                TextButton(
+                    onClick = {
+                        resetPhrase = ""
+                        EnrollmentReset.dismissResult()
+                        showResetDialog = true
+                    },
+                    enabled = !updateBusy && resetStatus != EnrollmentReset.Status.RUNNING,
+                    modifier = Modifier.testTag("a1-reset-open"),
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) { Text("Reset enrollment / Change server") }
             }
             if (updateMessage.isNotBlank()) {
                 Text(updateMessage, modifier = Modifier.testTag("a1-update-status"))

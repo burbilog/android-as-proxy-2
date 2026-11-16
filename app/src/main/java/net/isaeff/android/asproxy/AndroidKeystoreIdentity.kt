@@ -41,6 +41,27 @@ class AndroidKeystoreIdentity private constructor(
             return load(context, allowCreation = false, alias = alias)
         }
 
+        /**
+         * ONLY after an explicit on-screen RESET confirmation and after SSH
+         * shutdown. Delete exactly our own persistent key, never any other
+         * app or Android Keystore alias. Clear the "was created" marker last
+         * so failed deletion cannot silently reuse a supposedly reset key.
+         * Idempotent for retries after a partially completed local reset.
+         */
+        @Synchronized
+        fun deleteForUserReset(context: Context) {
+            val protectedContext = context.createDeviceProtectedStorageContext()
+            val prefs = protectedContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+            if (store.containsAlias(ALIAS)) {
+                store.deleteEntry(ALIAS)
+            }
+            check(!store.containsAlias(ALIAS)) { "AAP2 SSH identity could not be erased" }
+            check(prefs.edit().remove(WAS_CREATED).commit()) {
+                "Could not clear AAP2 SSH identity marker"
+            }
+        }
+
         private fun load(
             context: Context, allowCreation: Boolean, alias: String = ALIAS
         ): AndroidKeystoreIdentity {
