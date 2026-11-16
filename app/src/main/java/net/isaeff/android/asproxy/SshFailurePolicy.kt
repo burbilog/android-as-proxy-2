@@ -24,9 +24,10 @@ internal object SshFailurePolicy {
         if (pinnedHostKeyRejected) return Action.RETRY_HOST_IDENTITY_HOURLY
         if (!isJsch) return Action.RETRY_LOCAL_HOURLY
 
+        // mwiede/JSch 2.x emits e.g. "Auth fail for methods 'publickey'".
         val knownAuthRejection = exceptionClassName == "JSchAuthCancelException" ||
-            message == "Auth fail" || message?.startsWith("Auth fail:") == true ||
-            message == "Auth cancel" || message?.startsWith("Auth cancel:") == true ||
+            message == "Auth fail" || message?.startsWith("Auth fail for methods '") == true ||
+            message == "Auth cancel" || message?.startsWith("Auth cancel for methods '") == true ||
             message?.startsWith("Too many authentication failures") == true
         return if (knownAuthRejection) Action.RETRY_AUTH_HOURLY else Action.RETRY_NETWORK
     }
