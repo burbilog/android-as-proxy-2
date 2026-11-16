@@ -345,7 +345,7 @@ def verify(candidate, head, directory):
     tools = build_tools()
     meta = verify_archive(directory, candidate, head, tools)
     view = json.loads(run(["gh", "release", "view", candidate["tag"], "--repo", REPO,
-                           "--json", "tagName,isPrerelease,isLatest,assets"],
+                           "--json", "tagName,isPrerelease,assets"],
                           capture=True).stdout)
     require(view.get("tagName") == candidate["tag"], "GitHub release tag mismatch")
     require(bool(view.get("isPrerelease")) == (candidate["rc"] is not None),
