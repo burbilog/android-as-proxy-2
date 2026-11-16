@@ -268,7 +268,9 @@ def check_remote(candidate):
 
 def prepare(candidate, head, directory, channel):
     tools = build_tools()
-    previous = check_remote(candidate)
+    # F-Droid candidate preparation must not depend on GitHub Releases.
+    # It is an upstream-signed verification candidate, not a publication.
+    previous = check_remote(candidate) if channel == "github" else None
     destination = directory / ("aap2.apk" if channel == "github" else "aap2-fdroid.apk")
     require(not destination.exists(), "candidate already exists: {}".format(destination))
     directory.mkdir(parents=True, exist_ok=True)
@@ -284,11 +286,15 @@ def prepare(candidate, head, directory, channel):
     run(["sh", "scripts/build-signed-apk.sh", channel], env=env)
     source = ROOT / "app/build/outputs/apk/local-release" / destination.name
     actual = apk_details(source, tools, candidate, fdroid=(channel == "fdroid"))
-    check_against_previous(actual, previous, tools)
+    if channel == "github":
+        check_against_previous(actual, previous, tools)
     counterpart = meta["artifacts"].get("fdroid" if channel == "github" else "github")
     if counterpart is not None:
         require(actual["signerSha256"] == counterpart["signerSha256"],
                 "candidate signer differs between channels")
+    elif channel == "fdroid":
+        print("WARNING: F-Droid-only candidate signer is not yet compared with a "
+              "previous public APK; verify continuity before any distribution.")
     with source.open("rb") as reader, destination.open("xb") as writer:
         shutil.copyfileobj(reader, writer)
     meta["artifacts"][channel] = actual
