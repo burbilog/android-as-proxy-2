@@ -65,13 +65,13 @@ SSH configuration and belongs exclusively to ephemeral CI containers.
 ## Enroll a phone (after SSH policy passes)
 
 ```sh
-aap2ctl enroll MyPhone --manual-code --server ssh.example.org:22
+aap2ctl enroll MyPhone --server ssh.example.org:22
 aap2ctl approve ID
 aap2ctl list
 ```
 
 Only create the invitation when the phone operator is available:
-`--manual-code` prints a one-time 18-digit code with 20-minute lifetime.
+`enroll` always prints a single 18-digit code with a 20-minute lifetime.
 The Android app compares the complete SSH host fingerprint *before* it
 sends the PIN. Approve the uploaded client public key explicitly; the
 allocated SOCKS5 listening port remains bound to server loopback.
