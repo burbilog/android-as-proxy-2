@@ -1,8 +1,9 @@
 # AAP2 local Makefile (marduk)
 
 **Release decisions are governed by [RELEASE_POLICY.md](RELEASE_POLICY.md).**
-This page documents the currently implemented stable-only local tooling;
-`make publish` creates a GitHub Latest release and is **not** a release-candidate publisher.
+This page documents **both** GitHub release-candidate and stable publication
+through the same guarded `TYPE` interface. Use `make` with no arguments
+for a local, side-effect-free quick reference.
 
 The root `Makefile` is a small maintainer shortcut for local **release-signed
 GitHub-channel** APK builds and physical testing. Both GitHub and F-Droid
@@ -64,10 +65,13 @@ make status
 - `make status`: show the loopback SOCKS5 listener or `DISCONNECTED`.
 - `make check`: verify the newest archived APK signature, display
   Android package/version and SHA256.
-- `make test`: run `:app:testDebugUnitTest` locally.
+- `make test`: run release-tool Python guardrail tests and both Android
+  flavor unit-test suites locally.
 - `make sync`: fast-forward the current Git branch (no forced resets).
 - `make help`: compact command reference.
-- `make release`/`publish`/`verify-release`: prepare and publish a stable GitHub release with explicit safeguards (see below).
+- `make release TYPE=...` / `publish TYPE=...` /
+  `verify-release TYPE=...`: one guarded pipeline for RC and stable
+  GitHub releases (see below).
 
 Overrides work per invocation, e.g.:
 
@@ -76,64 +80,193 @@ make curl S2=your-ssh-server.example PORT=11011
 make install Z=YOUR_LOCAL_ADB_SERIAL
 ```
 
-## Stable public releases (single shared version)
+## Public releases: shared GitHub + F-Droid version
 
-The current GitHub and F-Droid source variants use the **same**
-`versionCode`/`versionName` from `version.properties`. Increase these
-exactly once for a new public version. Both variants keep the existing
-Android application ID. A local throwaway `make build` uses a higher
-version code and a `-local-` version name; this is **not** suitable for
-F-Droid or a stable GitHub release.
+The **sole checked-in source of public version metadata** is
+[version.properties](../version.properties). A public Git tag must
+contain the exact versionCode and versionName built into the APK;
+GitHub and F-Droid flavors share them and the same application ID.
+The tag is created only by publishing, after the reviewed version
+change and corresponding release notes are merged to master.
 
-To make the GitHub APK **without depending on F-Droid**, signed locally
-with the long-term certificate, for the version in the file:
+**Before starting after a long gap, run make with no arguments.**
+It displays local test, RC and stable commands; no download, build,
+signing or network operation occurs. Then inspect live GitHub Releases,
+the checked-in version, and the [release policy](RELEASE_POLICY.md).
 
-```zsh
+### Reserved blocks of 100 versionCodes
+
+Each new stable version receives the next multiple of 100, with
+the 99 preceding values reserved for that version's RC1..RC99.
+This is a **linear sequence of release cycles**, NOT a mathematical
+encoding of major/minor/patch into versionCode. It ensures increasing
+codes across RC and stable APKs even as semantic versions vary.
+
+| Version | versionCode | TYPE |
+| --- | ---: | --- |
+| 2.1.0-rc1 | 20901 | rc1 |
+| 2.1.0-rc2 | 20902 | rc2 |
+| 2.1.0-rc99 | 20999 | rc99 |
+| 2.1.0 | 21000 | release |
+| 2.1.1-rc1 | 21001 | rc1 |
+| 2.1.1 | 21100 | release |
+| 2.2.0-rc1 | 21101 | rc1 |
+| 2.2.0 | 21200 | release |
+
+These values assume the existing 2.1.0 stable reservation at 21000.
+Do not assign a new block until checking all previous **published**
+release tags and actual versionCodes. The release script does both
+before building or publishing. An RC with a later version number must
+have a higher code than **all previous public APKs**, even if that RC
+was never installed. No RC may be published after a newer RC or the
+stable version for that cycle.
+
+\`TYPE\` must be **exactly** \`release\` or \`rc1\` through \`rc99\`,
+without leading zeroes. Missing TYPE and invalid values fail before
+running GitHub operations or invoking a signing tool. The checked-in
+versionName must be exactly \`X.Y.Z\` for release, or \`X.Y.Z-rcN\`
+for a matching RC. versionCode must end with \`00\` for release or
+with \`NN\` matching the RC number. No implicit version bump.
+
+### Example: prepare and publish v2.1.0-rc1
+
+On a reviewed branch, change version.properties to:
+
+\`\`\`properties
+versionCode=20901
+versionName=2.1.0-rc1
+\`\`\`
+
+Prepare \`docs/RELEASE_NOTES_2.1.0-rc1.md\` describing what needs
+testing, limitations and incompatibilities. Merge those files and
+the implementation into master; wait for applicable CI to pass.
+On the maintainer workstation with the established, unchanged
+long-term signing key:
+
+\`\`\`zsh
 git switch master
-make release
-```
+git pull --ff-only origin master
+make
 
-This target first checks that local `master` matches `origin/master`,
-then reads `version.properties`, builds the GitHub variant with
-exactly those values, compares signer continuity against the previous
-archived signed APK and records the source commit. It refuses a public
-versionCode that does not exceed the most recent local archived code.
-No `VERSION_CODE` command-line override can change the official version.
+make release TYPE=rc1
+# Inspect the locally signed APK and test a non-production Android.
+make publish TYPE=rc1
+make verify-release TYPE=rc1
+\`\`\`
 
-Review and test the candidate, then publish via:
+The **RC** GitHub Release is marked Pre-release and explicitly
+\`--latest=false\`. Ordinary AAP2 in-app Update remains pointed at
+the previous stable Latest. RC installation requires an explicit
+tester action, never automatic promotion.
 
-```zsh
-make publish
-make verify-release
-```
+For RC2, commit \`2.1.0-rc2\` / \`20902\` and fresh matching release
+notes before building \`TYPE=rc2\`. Do not reuse an RC tag or overwrite
+its APK. An RC's versionCode must be **lower** than the final stable
+code so Android can upgrade it in place.
 
-`publish` also requires the source version and matching
-`docs/RELEASE_NOTES_<versionName>.md`; it checks APK identity,
-versionCode/versionName, signing certificate and source commit, then
-uploads `aap2.apk` and `SHA256SUMS` to GitHub. If a matching
-locally signed `aap2-fdroid.apk` candidate has also been prepared
-from the **same commit**, it verifies both candidates' certificates
-and includes that second asset. F-Droid failures do not block GitHub. The signer remains
-local. If an APK is not ready, this workflow **never** uploads one.
+### Promote to stable v2.1.0
 
-The other channel builds independently without the maintainer's signing
-secret:
+After physical acceptance of the release-signed candidate, change
+version.properties to the **reserved stable version**:
 
-```zsh
-./gradlew --no-daemon :app:assembleFdroidRelease
-```
+\`\`\`properties
+versionCode=21000
+versionName=2.1.0
+\`\`\`
 
-This command gives an unsigned APK for the F-Droid build system.
-`make fdroid-candidate` separately produces an **upstream-signed**
-F-Droid flavor candidate using the local developer key, for future
-reproducible verification. For convenience, `make release-both` performs
-both sequentially; if F-Droid preparation fails, the GitHub candidate
-remains available for `make publish`. F-Droid never receives that key. The source/versions remain
-the same, but the F-Droid variant has no GitHub APK updater or
-install-packages permission. See [F-Droid distribution](FDROID.md) for the signing
-compatibility warning: a default F-Droid-signed APK cannot update a
-GitHub-signed installation with the same application ID unless the
-upstream signature is verified and adopted reproducibly.
+Prepare and commit \`docs/RELEASE_NOTES_2.1.0.md\`, run required CI,
+and merge to master. Then:
 
-The repo never auto-creates a public release just by running Gradle, and
-never publishes debug-signed Android CI artifacts.
+\`\`\`zsh
+git switch master
+git pull --ff-only origin master
+make release TYPE=release
+# Verify installation over previous stable/RC on a spare physical Android.
+make publish TYPE=release
+make verify-release TYPE=release
+\`\`\`
+
+The **stable** release is published as normal GitHub Release with
+\`--latest\`, so it becomes available to AAP2's manual Update button.
+This is a deliberate release decision: \`make publish TYPE=release\`
+must never be run merely to obtain a testing URL.
+
+### Optional F-Droid candidate
+
+Independent of the GitHub distribution:
+
+\`\`\`zsh
+make fdroid-candidate TYPE=release
+# Or prepare both sequentially:
+make release-both TYPE=release
+\`\`\`
+
+The same source commit and version.properties are used for both
+flavors; both are signed with the original local developer key.
+The F-Droid flavor contains no in-app installer permission or
+GitHub updater. It can be built without a GitHub APK, but publication
+on GitHub still requires its own signed GitHub flavor. An optional
+\`aap2-fdroid.apk\` is attached to the GitHub Release only if it is
+ready before publication, passes verification, and has the same
+source commit/version/signing certificate. F-Droid store acceptance
+and reproducibility verification are **separate**, never required
+to publish GitHub. See [FDROID.md](FDROID.md).
+
+### Where files go, and the safety checks
+
+Local disposable \`make build\` archives stay under
+\`~/aap2-releases/aap2-VERSION_CODE.apk\`. Public candidates are
+stored **separately**, without overwriting files:
+
+\`\`\`text
+~/aap2-releases/public/v2.1.0-rc1/
+  aap2.apk
+  aap2-fdroid.apk        (optional)
+  release.json           (tag, type, exact code/name, source SHA, hashes, signer)
+\`\`\`
+
+The public release backend is \`scripts/aap2-release.py\`.
+All public actions require a clean, synchronized master branch
+(except verification). Before signing and before publishing it
+checks that no GitHub Release or remote Git tag already uses the
+requested name, that the proposed semver/RC sequence is strictly
+later than all existing published AAP2 versions, and that its
+versionCode is above the **actual previous public signed APK**.
+It checks the previous public signing certificate rather than
+mistaking the highest **local disposable** build for the previous
+public release.
+
+After building, it checks the APK package, exact versionCode/name,
+non-debuggability, signer continuity and SHA256. It stores the
+exact source commit and does not overwrite an archived candidate.
+At publication it rechecks the absence of the tag and source
+provenance, then uploads \`aap2.apk\`, optional \`aap2-fdroid.apk\`,
+and \`SHA256SUMS\` with the correct GitHub status. Verification
+downloads assets by **exact tag**, not \`releases/latest\`, and
+compares them to the local archive. All GitHub operations require
+working network access and the \`gh\` CLI (publishing requires
+authenticated access).
+
+\`make publish\` (without TYPE) **always fails**. It never
+defaults to a stable release. \`make\` / \`make help\` remain
+read-only. No helper edits tags or pushes files before the
+explicit publish action.
+
+GitHub's create-release API is not atomic: if publication stops
+after creating a tag or draft but before finishing assets,
+the script will refuse a repeated tag. Investigate manually;
+**do not delete/reuse tags or silently replace assets** to
+hide a partial publication. Fixes to an already published binary
+require a new version and tag.
+
+### Extra care for remote enrolled phones
+
+Use a spare physical Android for acceptance. Never uninstall
+AAP2, clear app data, force a downgrade or change signing
+certificates on a working remotely enrolled phone just to
+install an RC. Its Android Keystore SSH identity and host-key
+pin are persistent state. See [P0_RELEASE_SIGNING.md](P0_RELEASE_SIGNING.md).
+
+The repo never auto-creates a public release merely by running
+Gradle, \`make\`, or a debug CI workflow, and never publishes
+debug-signed artifacts.
