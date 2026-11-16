@@ -350,8 +350,18 @@ def verify(candidate, head, directory):
     require(view.get("tagName") == candidate["tag"], "GitHub release tag mismatch")
     require(bool(view.get("isPrerelease")) == (candidate["rc"] is not None),
             "GitHub release Prerelease flag mismatch")
+    listing = gh_releases()
+    published = next((r for r in listing if r.get("tagName") == candidate["tag"]), None)
+    require(published is not None, "GitHub release not listed")
+    require(bool(published.get("isPrerelease")) == (candidate["rc"] is not None),
+            "published release type differs from requested TYPE")
     if candidate["rc"] is not None:
-        require(not view.get("isLatest"), "DANGER: RC is marked Latest")
+        require(not published.get("isLatest"), "DANGER: RC is marked Latest")
+    else:
+        regular = [r for r in listing if not r.get("isPrerelease") and
+                   not r.get("isDraft") and rank_tag(r.get("tagName", "")) is not None]
+        if regular and max(regular, key=lambda r: rank_tag(r["tagName"]))["tagName"] == candidate["tag"]:
+            require(published.get("isLatest"), "newest stable release is not marked Latest")
     names = {a["name"] for a in view.get("assets", [])}
     require({"aap2.apk", "SHA256SUMS"} <= names, "published release missing required assets")
     with tempfile.TemporaryDirectory(prefix="aap2-verify-") as td:
