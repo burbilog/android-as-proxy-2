@@ -1,5 +1,12 @@
 # A1 — verified-host Android enrollment
 
+
+> **Current implementation:** AAP2 v2.0.6 uses one 18-digit activation
+> code from plain `aap2ctl enroll` and a full-screen four-digit phone reset.
+> Some dated test reports below name the former `--manual-code` server
+> option; that flag was removed before v2.0.6 and those reports are retained
+> as historical evidence, **not executable current instructions**.
+
 **Status:** integrated into `develop` for the first public AAP2 release. Android application ID: `net.isaeff.android.asproxy2`. The remote AAP1 installation is independent and untouched. Long-term OEM battery policy and live system-installer updates are separate physical tests.
 
 The Android client derives from the tested P0 Keystore/Direct Boot/strict-host-key implementation. S2 server-side invitation/approval/revocation is integrated into the same repository release. No PIN, SSH password or private key is ever installed on the server as an Android client credential.
