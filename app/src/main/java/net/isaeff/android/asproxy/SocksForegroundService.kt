@@ -27,6 +27,7 @@ import kotlinx.coroutines.launch
 class SocksForegroundService : Service() {
     companion object {
         const val ACTION_STOP = "net.isaeff.android.asproxy.action.STOP_SERVICE"
+        const val ACTION_RESET = "net.isaeff.android.asproxy.action.RESET_ENROLLMENT"
         const val ACTION_BOOT = "net.isaeff.android.asproxy.action.AUTO_CONNECT_ON_BOOT"
         const val ACTION_RESTORE = "net.isaeff.android.asproxy.action.AUTO_RESTORE_AFTER_UPDATE"
         private const val NOTIFICATION_ID = 1
@@ -50,6 +51,27 @@ class SocksForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_RESET) {
+            try {
+                // Disable future boot/retry/upgrade restarts before touching
+                // the live SSH session or deleting the private identity.
+                if (DirectBootTunnelProfile.hasProfile(this)) {
+                    DirectBootTunnelProfile.setDesiredRunning(this, false)
+                }
+                shutdownTransport()
+                EnrollmentReset.clearLocalCredentials(this)
+                EnrollmentReset.succeeded()
+                AAPLog.append("Local enrollment reset; old server access requires admin revoke")
+            } catch (e: Exception) {
+                // The desired_running flag is cleared first. Never report a
+                // partially completed reset as success.
+                EnrollmentReset.failed()
+                Log.e("AAP2-A1", "LOCAL_RESET_FAILED " + e.javaClass.simpleName)
+            } finally {
+                stopSelf()
+            }
+            return START_NOT_STICKY
+        }
         if (intent?.action == ACTION_STOP) {
             if (DirectBootTunnelProfile.hasProfile(this)) {
                 DirectBootTunnelProfile.setDesiredRunning(this, false)
@@ -144,15 +166,22 @@ class SocksForegroundService : Service() {
             .build()
     }
 
-    override fun onDestroy() {
+    /** Idempotent shutdown for reset and normal service destruction. */
+    private fun shutdownTransport() {
         running = false
         trafficJob?.cancel()
+        trafficJob = null
         keystoreTunnelManager?.destroy()
         keystoreTunnelManager = null
         socksServer?.close()
         socksServer = null
-        serviceScope.cancel()
         ConnectionStateHolder.setState(ConnectionState.DISCONNECTED)
+        ConnectionStateHolder.setTrafficBytes(0, 0)
+    }
+
+    override fun onDestroy() {
+        shutdownTransport()
+        serviceScope.cancel()
         AAPLog.append("AAP2 proxy stopped")
         super.onDestroy()
     }
