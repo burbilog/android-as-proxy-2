@@ -3,12 +3,13 @@
 S2 provides temporary PIN/SFTP device enrollment, explicit administrator
 key approval, restricted permanent loopback-only reverse SSH forwarding
 and per-device revocation. Android A1 enrollment and physical spare-device
-integration have passed their own gates. Treat remote deployment as a
-separate, deliberate pilot until the full release is published.
+integration have passed their own gates. AAP2 v2.0.6 is a published
+stable release; test unattended connectivity and OEM power behavior on
+each intended physical phone before relying on it remotely.
 
 ## Install
 
-On an existing Debian 13 SSH server, from a reviewed checkout of this branch,
+On an existing Debian 13 SSH server, from a reviewed checkout of `master` or a stable release tag,
 as root:
 
 ```sh
@@ -22,6 +23,17 @@ manual SSH integration is to review and append the provided
 `sshd-aap2-match.conf` template at the correct position, check the
 effective policy and confirm independent administrator access after a
 manual sshd reload, while keeping the original SSH session open. Follow [INSTALL.md](INSTALL.md) for the short procedure.
+
+## Expired enrollment reservations
+
+The one-minute timer retires expired temporary PIN/SFTP access, **not**
+the enrollment's reserved port or permanent placeholder. All states
+except `revoked`, including `expired`, reserve the port. Inspect
+`aap2ctl list --all` and explicitly `aap2ctl revoke ID` (interactive
+`REVOKE` confirmation) when retiring an abandoned invitation. For JSON
+integration using `-j`, do not treat an expired PIN, an absent TCP
+listener or `cleanup` as permission to reuse a port or auto-revoke a
+device. See [S2 approval policy](S2_APPROVAL.md#reserved-socks5-ports-manual-reclamation-policy).
 
 ## Reference
 

@@ -1,3 +1,11 @@
+> **Historical P0-A experiment (superseded by AAP2 v2.0.6).**
+> The pending tests and password-based UI mentioned below describe this
+> original proof-of-concept stage, not the shipped application. Real-device
+> Keystore, Direct Boot, host verification and S2 enrollment were subsequently
+> tested and integrated. Use the [current README](../README.md) for deployment
+> and [A1 enrollment acceptance](A1_ANDROID_ENROLLMENT.md) for later test results.
+> Keep this document only as an engineering test record.
+
 # P0-A: Android Keystore / JSch / Debian SSH proof
 
 **Status:** Test harness implemented; real Zebra TC21 verification pending. This is **not**

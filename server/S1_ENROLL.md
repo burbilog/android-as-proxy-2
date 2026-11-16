@@ -1,3 +1,11 @@
+> **Historical S1-B milestone, superseded by the released S2 server.**
+> Statements below that SFTP approval, Android activation or `revoke`
+> are not implemented refer only to the S1-B prototype. For actual AAP2
+> v2.0.6 operation use [INSTALL.md](INSTALL.md) and
+> [S2_APPROVAL.md](S2_APPROVAL.md), particularly its
+> [manual port-reclamation policy](S2_APPROVAL.md#reserved-socks5-ports-manual-reclamation-policy).
+> Expired registrations still reserve their ports until explicit revoke.
+>
 # AAP2 S1-B — temporary invitation and expiry (work in progress)
 
 This is the **server-side invitation lifecycle**, **not end-to-end enrollment**.
