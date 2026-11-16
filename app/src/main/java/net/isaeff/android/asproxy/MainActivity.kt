@@ -18,6 +18,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -190,13 +193,20 @@ fun MainScreen() {
                 )
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(
+                    modifier = Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     Text(
                         "This will DISCONNECT AAP2 and permanently erase the current " +
                             "server, verified host key and phone SSH identity. " +
                             "You will need a NEW activation code and admin approval."
                     )
-                    Text("Current server: ${profile?.host}", fontWeight = FontWeight.Bold)
+                    Text(
+                        "Server: ${profile?.host} · Connection ID: " +
+                            ConnectionIdentity.id(profile!!.username),
+                        fontWeight = FontWeight.Bold
+                    )
                     Text(
                         "IMPORTANT: this does NOT revoke the old server account. " +
                             "Ask its administrator to run aap2ctl revoke ID.",
@@ -266,7 +276,8 @@ fun MainScreen() {
     } else {
     Scaffold(topBar = { TopAppBar(title = { Text("Android As Proxy 2") }) }) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
+            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
