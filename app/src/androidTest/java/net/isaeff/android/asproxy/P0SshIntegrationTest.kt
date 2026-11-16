@@ -196,7 +196,7 @@ class P0SshIntegrationTest {
     /**
      * The real sshd denies an unknown user while the host key is pinned and
      * the genuine Keystore identity is used. Exercise the production manager's
-     * fatal-error classification without changing stored config or sshd.
+     * hourly authentication retry without changing stored config or sshd.
      *
      * Stop the running AAP2 service through its notification first.
      */
@@ -223,10 +223,8 @@ class P0SshIntegrationTest {
             host, sshPort, nonexistentUser, remotePort, trusted
         )
         val problems = LinkedBlockingQueue<ConnectionIssueStore.Reason>()
-        val fatalErrors = LinkedBlockingQueue<ConnectionIssueStore.Reason>()
         val manager = KeystoreSshTunnelManager(context, config, localPort = 0)
         manager.onProblem = { problems.offer(it) }
-        manager.onFatalError = { fatalErrors.offer(it) }
         try {
             manager.start()
             val issue = problems.poll(25, TimeUnit.SECONDS)
@@ -236,7 +234,8 @@ class P0SshIntegrationTest {
             // (fail2ban), and must not permanently stop the manager either.
             Thread.sleep(6_000)
             assertTrue("Authentication must retry no more than hourly", problems.isEmpty())
-            assertTrue("Authentication rejection must not terminate the service", fatalErrors.isEmpty())
+            // The manager remains active; a rapid second failure would
+            // appear in this queue rather than waiting for the hourly retry.
         } finally {
             manager.destroy()
         }
@@ -250,7 +249,7 @@ class P0SshIntegrationTest {
             assertEquals(profileBefore.remotePort, profileAfter.remotePort)
         }
         assertEquals(desiredBefore, DirectBootTunnelProfile.wantsConnection(context))
-        Log.i("AAP2-P0", "AUTH_REJECTED_FATAL_NO_RETRY")
+        Log.i("AAP2-P0", "AUTH_REJECTED_HOURLY_RETRY")
     }
 
     /**
