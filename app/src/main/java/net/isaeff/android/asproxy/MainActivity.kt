@@ -88,6 +88,8 @@ fun MainScreen() {
         mutableStateOf(runCatching { DirectBootTunnelProfile.load(context) }.getOrNull())
     }
     var showDetails by remember { mutableStateOf(false) }
+    var showAbout by remember { mutableStateOf(false) }
+    val hasGithubUpdater = context.resources.getBoolean(R.bool.aap2_builtin_update)
     var showResetDialog by remember { mutableStateOf(false) }
     var resetCode by remember { mutableStateOf("") }
     var resetInput by remember { mutableStateOf("") }
@@ -156,7 +158,10 @@ fun MainScreen() {
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (!granted) AAPLog.append("Notification permission denied")
+        if (!granted) {
+            AAPLog.append("Notification permission denied")
+            updateMessage = "Notifications are disabled. Allow AAP2 notifications in Android settings to see its connection status."
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -182,6 +187,7 @@ fun MainScreen() {
             }
         } catch (e: Exception) {
             AAPLog.append("Service control failed: ${e.javaClass.simpleName}")
+            updateMessage = "Unable to change connection: ${e.javaClass.simpleName}. See Show log."
         }
     }
 
@@ -194,7 +200,7 @@ fun MainScreen() {
         resetCode = ""
     }
 
-    BackHandler(enabled = showDetails && !showResetDialog) { showDetails = false }
+    BackHandler(enabled = showDetails && !showResetDialog && !showAbout) { showDetails = false }
     val detailsProfile = profile
     if (showResetDialog && resetProfile != null) {
         EnrollmentResetScreen(
@@ -227,6 +233,8 @@ fun MainScreen() {
                 }
             }
         )
+    } else if (showAbout) {
+        AboutScreen(onClose = { showAbout = false })
     } else if (showDetails && detailsProfile != null) {
         ConnectionDetailsScreen(
             profile = detailsProfile,
@@ -235,7 +243,17 @@ fun MainScreen() {
             onClose = { showDetails = false }
         )
     } else {
-    Scaffold(topBar = { TopAppBar(title = { Text("Android As Proxy 2") }) }) { padding ->
+    Scaffold(topBar = {
+        TopAppBar(
+            title = { Text("Android As Proxy 2") },
+            actions = {
+                TextButton(
+                    onClick = { showAbout = true },
+                    modifier = Modifier.testTag("aap2-open-about")
+                ) { Text("About") }
+            }
+        )
+    }) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             // Everyday actions scroll independently. Destructive reset lives
             // in a separate, permanently bottom-aligned footer.
@@ -255,6 +273,9 @@ fun MainScreen() {
                 modifier = Modifier.testTag("a1-main-status"),
                 style = MaterialTheme.typography.titleMedium
             )
+            if (connectionState == ConnectionState.CONNECTED) {
+                Text("SSH tunnel connected. This does not verify Internet access through SOCKS5.")
+            }
             if (profile != null) {
                 Text(
                     "Connection ID: ${ConnectionIdentity.id(profile!!.username)}",
@@ -270,7 +291,12 @@ fun MainScreen() {
                     " out"
             )
             if (!configured) {
-                Text("No verified server is configured. Activate using the code from your administrator.")
+                Text("To activate, ask your SSH server administrator for an 18-digit code. AAP2 is not a VPN service and needs a compatible server.")
+                TextButton(onClick = {
+                    if (!ProjectLinks.open(context, ProjectLinks.SETUP)) {
+                        updateMessage = "Cannot open the setup guide: no browser found."
+                    }
+                }) { Text("How to set up AAP2") }
                 Button(
                     onClick = {
                         context.startActivity(Intent(context, EnrollmentActivity::class.java))
@@ -316,6 +342,8 @@ fun MainScreen() {
                         onClick = { showDetails = true },
                         modifier = Modifier.testTag("a1-open-details")
                     ) { Text("Details") }
+                }
+                if (hasGithubUpdater) {
                     OutlinedButton(
                         onClick = {
                             updateBusy = true
