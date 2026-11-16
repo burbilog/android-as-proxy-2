@@ -10,7 +10,8 @@ the signing certificate as persistent user data.
 
 **Authoritative project policy:** [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md).
 
-Also read [README.md](README.md),
+Also read [docs/ACCESS_MODEL.md](docs/ACCESS_MODEL.md),
+[docs/README.md](docs/README.md), [README.md](README.md),
 [docs/A1_LOCAL_MAKE.md](docs/A1_LOCAL_MAKE.md),
 [docs/P0_RELEASE_SIGNING.md](docs/P0_RELEASE_SIGNING.md),
 and [docs/FDROID.md](docs/FDROID.md) before release-related work.

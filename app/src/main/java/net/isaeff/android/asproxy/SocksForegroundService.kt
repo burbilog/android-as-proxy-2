@@ -5,6 +5,9 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
@@ -39,11 +42,28 @@ class SocksForegroundService : Service() {
     private var keystoreTunnelManager: KeystoreSshTunnelManager? = null
     private var trafficJob: Job? = null
     private var running = false
+    private var shutdownReceiverRegistered = false
+    private val shutdownReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_SHUTDOWN) {
+                // Preserve desired_running so boot reconnects automatically.
+                stopSelf()
+            }
+        }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
+        // Android 9+ delivers ACTION_SHUTDOWN only to context-registered
+        // receivers; the old manifest-only receiver was ineffective.
+        try {
+            registerReceiver(shutdownReceiver, IntentFilter(Intent.ACTION_SHUTDOWN))
+            shutdownReceiverRegistered = true
+        } catch (e: RuntimeException) {
+            Log.w("AAP2", "Shutdown broadcast unavailable: " + e.javaClass.simpleName)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(CHANNEL_ID, "AAP 2 proxy", NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
@@ -116,7 +136,7 @@ class SocksForegroundService : Service() {
     private fun startKeystoreTunnel(profile: DirectBootTunnelProfile.Config): Int {
         try {
             startForeground(NOTIFICATION_ID, createNotification())
-            val proxy = Socks5ProxyServer(11080, onConnectionLimit = { rejected ->
+            val proxy = Socks5ProxyServer(Socks5ProxyServer.DEFAULT_LOCAL_PORT, onConnectionLimit = { rejected ->
                 AAPLog.append("SOCKS connection limit reached: rejected " + rejected)
             })
             proxy.start()
@@ -193,6 +213,10 @@ class SocksForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        if (shutdownReceiverRegistered) {
+            try { unregisterReceiver(shutdownReceiver) } catch (_: RuntimeException) { }
+            shutdownReceiverRegistered = false
+        }
         shutdownTransport()
         serviceScope.cancel()
         AAPLog.append("AAP2 proxy stopped")

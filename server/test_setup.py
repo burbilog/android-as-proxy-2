@@ -21,6 +21,20 @@ loader.exec_module(aap)
 
 
 class CheckTests(unittest.TestCase):
+    def test_atomic_metadata_fsyncs_inode_and_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'metadata.json'
+            original_fsync = os.fsync
+            with mock.patch.object(aap.os, 'fsync', wraps=original_fsync) as fsync:
+                aap.atomic_file(path, b'{"state":"active"}\n')
+                self.assertEqual(2, fsync.call_count,
+                                 'must flush data file and directory entry')
+            self.assertEqual(path.read_bytes(), b'{"state":"active"}\n')
+            with mock.patch.object(aap.os, 'fsync', wraps=original_fsync) as fsync:
+                aap.atomic_file(path, b'{"state":"approved"}\n')
+                self.assertEqual(2, fsync.call_count)
+            self.assertEqual(path.read_bytes(), b'{"state":"approved"}\n')
+
     def test_policy_matches_expected_exactly(self):
         for role in (aap.GROUP_ENROLL, aap.GROUP_PROXY):
             checks = aap.Checks()

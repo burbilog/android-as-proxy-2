@@ -29,13 +29,16 @@ import java.util.concurrent.atomic.AtomicLong
  * in one direction never delays the other direction (unlike the old polling SOCKS library).
  */
 class Socks5ProxyServer(
-    private val port: Int = 1080,
+    private val port: Int = DEFAULT_LOCAL_PORT,
     private val maxConnections: Int = 64,
     private val connectTimeoutMs: Int = 15_000,
     private val onConnectionLimit: ((Long) -> Unit)? = null,
     private val halfCloseIdleMs: Long = 180_000L,
-    private val readPollMs: Int = 30_000
+    private val readPollMs: Int = 30_000,
+    private val handshakeTimeoutMs: Int = 15_000
 ) : AutoCloseable {
+    companion object { const val DEFAULT_LOCAL_PORT = 11080 }
+
     private val limit = Semaphore(maxConnections)
     private val rejectedCounter = AtomicLong()
     val rejectedConnections: Long get() = rejectedCounter.get()
@@ -122,7 +125,7 @@ class Socks5ProxyServer(
         try {
             client.tcpNoDelay = true
             client.keepAlive = true
-            client.soTimeout = 15_000 // Handshake only; established tunnels have no idle timeout.
+            client.soTimeout = handshakeTimeoutMs // Handshake bounded separately from relay.
             val input = DataInputStream(client.getInputStream())
             val output = client.getOutputStream()
 
