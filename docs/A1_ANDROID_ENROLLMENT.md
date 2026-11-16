@@ -85,8 +85,10 @@ not a one-tap button:
 - The red error-container confirmation states the current server and
   Connection ID, warns that the session and the Android Keystore SSH identity
   will be permanently destroyed, and explains separate server revocation.
-- **ERASE AAP2 ENROLLMENT** is disabled until the user types uppercase
-  `RESET` *exactly*. Cancel/Back makes no changes.
+- **ERASE AAP2 ENROLLMENT** is disabled until the user enters the
+  randomly generated **four-digit code displayed in that dialog**, using the
+  numeric keyboard. Each reopening gets a fresh code; a wrong or incomplete
+  code does nothing. Cancel/Back makes no changes.
 - Reset is dispatched to `SocksForegroundService`, which persists
   `desired_running=false`, tears down the running SSH session and local
   SOCKS5 listener, then clears pending state, deletes the **specific**
@@ -102,8 +104,7 @@ not a one-tap button:
 the old authorized SSH public key. The dialog displays the old ID to assist
 with this task.
 
-Disposable Android E2E tests check cancellation, incorrect/complete typed
-confirmation, actual removal of the former Keystore alias, disabled
+Disposable Android E2E tests check cancellation, incorrect/complete four-digit confirmation, actual removal of the former Keystore alias, disabled
 `MY_PACKAGE_REPLACED` auto-restore, and a second independent S2 enrollment.
 
 ## Connection identification and one-screen support diagnostics
