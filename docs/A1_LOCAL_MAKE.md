@@ -81,8 +81,8 @@ Android application ID. A local throwaway `make build` uses a higher
 version code and a `-local-` version name; this is **not** suitable for
 F-Droid or a stable GitHub release.
 
-To make both official channel APKs, signed locally with the same
-long-term certificate, for the version in the file:
+To make the GitHub APK **without depending on F-Droid**, signed locally
+with the long-term certificate, for the version in the file:
 
 ```zsh
 git switch master
@@ -90,10 +90,9 @@ make release
 ```
 
 This target first checks that local `master` matches `origin/master`,
-then reads `version.properties`, builds both the GitHub and F-Droid
-variants with exactly those values, verifies their matching signer
-certificate, compares GitHub signer continuity against the last
-archived signed APK, and records the source commit. It refuses a public
+then reads `version.properties`, builds the GitHub variant with
+exactly those values, compares signer continuity against the previous
+archived signed APK and records the source commit. It refuses a public
 versionCode that does not exceed the most recent local archived code.
 No `VERSION_CODE` command-line override can change the official version.
 
@@ -105,10 +104,12 @@ make verify-release
 ```
 
 `publish` also requires the source version and matching
-`docs/RELEASE_NOTES_<versionName>.md`; it verifies both APK identities,
-matching versionCode/versionName and signer certificate, and the saved
-source commit, then uploads `aap2.apk`, `aap2-fdroid.apk` and
-`SHA256SUMS` to GitHub. The signer remains
+`docs/RELEASE_NOTES_<versionName>.md`; it checks APK identity,
+versionCode/versionName, signing certificate and source commit, then
+uploads `aap2.apk` and `SHA256SUMS` to GitHub. If a matching
+locally signed `aap2-fdroid.apk` candidate has also been prepared
+from the **same commit**, it verifies both candidates' certificates
+and includes that second asset. F-Droid failures do not block GitHub. The signer remains
 local. If an APK is not ready, this workflow **never** uploads one.
 
 The other channel builds independently without the maintainer's signing
@@ -119,9 +120,11 @@ secret:
 ```
 
 This command gives an unsigned APK for the F-Droid build system.
-`make release` additionally produces an **upstream-signed** F-Droid
-flavor candidate using the local developer key, for future reproducible
-verification. F-Droid never receives that key. The source/versions remain
+`make fdroid-candidate` separately produces an **upstream-signed**
+F-Droid flavor candidate using the local developer key, for future
+reproducible verification. For convenience, `make release-both` performs
+both sequentially; if F-Droid preparation fails, the GitHub candidate
+remains available for `make publish`. F-Droid never receives that key. The source/versions remain
 the same, but the F-Droid variant has no GitHub APK updater or
 install-packages permission. See [F-Droid distribution](FDROID.md) for the signing
 compatibility warning: a default F-Droid-signed APK cannot update a
