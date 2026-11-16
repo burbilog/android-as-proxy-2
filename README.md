@@ -8,6 +8,52 @@ The server does not expose a public SOCKS5 port, and the Android app does not ne
 
 **Latest published stable APK:** v2.0.6. The source in `master` also contains preparations for v2.1.0 (About screen, F-Droid build variant and shared version metadata). Real Android 11 and Android 14 devices, disposable Debian 13 OpenSSH integration, and signed in-place updates have been tested for earlier releases. Long-term reliability across OEM battery policies and unattended networks is device-dependent and remains a separate acceptance test.
 
+## Maintainer quick start: build and publish
+
+**Run make with no arguments** from the repository root. It shows the
+current checked-in version and a safe, self-contained guide for local
+builds, release candidates, stable releases and optional F-Droid APKs.
+It does **not** download, build or publish anything.
+
+Public APKs have an explicit release type:
+
+```sh
+# Local throwaway APK (never a public release):
+make build
+
+# GitHub Pre-release: testers only, does NOT become Latest
+make release TYPE=rc1
+make publish TYPE=rc1
+make verify-release TYPE=rc1
+
+# GitHub stable Release: becomes Latest (in-app Update target)
+make release TYPE=release
+make publish TYPE=release
+make verify-release TYPE=release
+
+# Optional F-Droid-flavor candidate, same source/version:
+make fdroid-candidate TYPE=release
+```
+
+**These are separate release cycles, not a single copy-paste script.**
+First commit the exact matching `versionName`/`versionCode` in
+[`version.properties`](version.properties) and reviewed
+`docs/RELEASE_NOTES_<versionName>.md` on master, pass CI and test
+the **locally release-signed** candidate on a spare physical Android.
+`TYPE` must be `release` or `rc1`–`rc99`; absent/invalid TYPE
+is rejected. Android versionCodes are reserved in blocks of 100:
+e.g. `2.1.0-rc1=20901`, `2.1.0-rc2=20902`,
+`2.1.0=21000`; next stable cycle uses `21100`.
+Existing Git tags/releases, signature mismatches and version-code
+downgrades are rejected. GitHub and F-Droid remain independent.
+A private long-term APK signing key is required on the maintainer's
+workstation; GitHub CI cannot publish these APKs.
+
+**Full policy and walkthrough:** [RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
+and [A1_LOCAL_MAKE.md](docs/A1_LOCAL_MAKE.md). The current source
+version is not necessarily the latest **published** APK; verify
+[GitHub Releases](https://github.com/burbilog/android-as-proxy-2/releases).
+
 ## Architecture
 
 ```text
@@ -222,7 +268,7 @@ python3 -m unittest discover -s server -p 'test_*.py'
 
 The Android project uses JDK 17 and Android SDK 35. Both channels read the same `version.properties` versionCode/versionName, and retain the existing Android package ID. The F-Droid variant excludes the in-app APK installer and its permission. GitHub releases can be published independently of any F-Droid build or listing; `make release-both` optionally prepares both signed variants from the same version. See [F-Droid preparation](docs/FDROID.md). A distributable APK **must** be signed with one long-term local key, never a CI debug key. See [release-signing guidance](docs/P0_RELEASE_SIGNING.md).
 
-On the maintainer's own workstation the [Makefile](docs/A1_LOCAL_MAKE.md) provides short commands: `make build`, `make install`, `make status`, `make curl` and `make check`. Signing keys, device serials and private server configuration remain outside Git.
+On the maintainer's own workstation the [Makefile](docs/A1_LOCAL_MAKE.md) provides `make` for a no-side-effects workflow summary, `make build` for local testing, and explicit `make release TYPE=rcN|release` / `make publish TYPE=rcN|release` for public releases. Publication is never implicit; signing keys, device serials and private server configuration remain outside Git.
 
 ## About and support
 
