@@ -1,7 +1,6 @@
 # S2 — SFTP key approval, restricted -R and device revocation
 
-**Deployment status:** S2 passed disposable Debian 13/Ubuntu OpenSSH tests
-and is being evaluated on a separate externally reachable Debian 13 pilot VM.
+**Deployment status:** S2 ships in the AAP2 v2.0.6 stable release. Disposable Debian 13/Ubuntu OpenSSH integration passed; individual unattended Android deployments still require field validation.
 Use [INSTALL.md](INSTALL.md) for installation; SSH Match remains manual. Do not copy this configuration into the existing
 \`aap2-test\` VM: it carries the working Zebra tunnel on port 10909. The S0
 Match configuration must be installed MANUALLY, independently of this CLI;
@@ -82,7 +81,7 @@ format is now always 18 digits; no extra option or legacy client mode.
 
 ## Administrator workflow
 
-After the server setup from [S1_ENROLL.md](S1_ENROLL.md), with a working
+After the current server setup from [INSTALL.md](INSTALL.md), with a working
 \`aap2-cleanup.timer\` and verified SSH policy:
 
 \`\`\`sh
@@ -108,7 +107,7 @@ aap2ctl revoke <enrollment-id>
 ### CLI output and list semantics
 
 `enroll` prints three short sections in order: **PHONE** (endpoint and
-one-time activation code or legacy credentials), **VERIFY SERVER**
+one-time activation code), **VERIFY SERVER**
 (full SHA256 host-key fingerprints and key types), and **ADMIN**
 (enrollment ID and the exact `approve` command). The one-time
 activation code is displayed **once**; the PIN is not written into
@@ -136,6 +135,55 @@ Historical `REVOKED` rows are never marked UP, even if their old port
 was assigned to another device. The temporary PIN expiry is shown for
 `ACTIVE` invitations only, never as an expiry date for an approved
 permanent key. An empty list explains how to display `enroll --help`.
+
+### Reserved SOCKS5 ports: manual reclamation policy
+
+**Intentional S2 policy (including JSON/API consumers):** each enrollment
+reserves the first available port in `127.0.0.1:11010..11509` (500 ports).
+The allocator skips ports currently bound on loopback **and** ports belonging
+to *every* metadata record whose state is not `revoked`. This includes
+`active`, `expired`, `approved`, `creating` and `revoking`.
+Port numbers are not monotonic counters and a disconnected phone does not
+release its reservation.
+
+After the 20-minute PIN expires, the cleanup timer removes the temporary
+SFTP/login account, **not** the unapproved permanent placeholder, its
+metadata, or its reserved port. This is deliberate fail-closed behavior:
+automatic cleanup must never guess that an enrollment is safe to revoke,
+especially if a device has already been approved. Expired, abandoned
+invitations therefore consume capacity until an administrator explicitly
+reclaims them. An exhausted pool causes future enrollment to fail, rather
+than stealing a reserved port.
+
+Inspect the records and device names with:
+
+```sh
+aap2ctl list --all
+aap2ctl list --all -j
+```
+
+For an identified abandoned invitation, the administrator can run
+`aap2ctl revoke ID`, inspect the displayed identity/port, and type the
+literal `REVOKE` to confirm. This validates the stored identities and
+removes the corresponding account/key safely. After the record becomes
+`revoked`, its former port can be allocated to a **new** enrollment if it
+is not currently bound by any listener. Do **not** revoke an approved,
+still-needed device merely because its listener is down. Ambiguous or
+tampered metadata fail closed and require manual inspection, not a
+force-clean or deletion of state files.
+
+**For integrations using `-j`/`--json`:** `aap2ctl list --all -j`
+returns `devices[]` with a lowercase `state` and numeric `remote_port`.
+Treat **every state other than `revoked` as a reserved port**, particularly
+`expired`. Neither `temporary_pin_expires_at`, `listener_up:false`
+nor `listener_up:null` means that the port is free.
+`aap2ctl cleanup -j` expires temporary logins but does **not** reclaim
+device reservations. Track abandoned invitations in your own inventory and
+surface them for deliberate administrator review; never auto-revoke them
+or reuse their ports based only on elapsed time or a JSON field.
+`revoke -j` still requires the same interactive `REVOKE` confirmation
+on stdin (prompt on stderr); JSON mode is **not** an unattended deletion API.
+Code should check both the process exit status and JSON `ok`/`status`.
 
 ### JSON output for scripts
 
