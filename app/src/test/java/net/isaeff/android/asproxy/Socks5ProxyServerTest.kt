@@ -7,6 +7,7 @@ import java.io.DataInputStream
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.RejectedExecutionException
@@ -162,6 +163,7 @@ class Socks5ProxyServerTest {
 
     @Test fun rejectedResponsePumpDoesNotEscapeWorkerOrLeakConnection() {
         val submissions = AtomicInteger()
+        val firstWorkerDone = CountDownLatch(1)
         val uncaught = LinkedBlockingQueue<Throwable>()
         // The first execute accepts the client; the second is the response
         // pump's submit. Reject it deterministically, as shutdownNow() can.
@@ -178,6 +180,10 @@ class Socks5ProxyServerTest {
                 if (submissions.incrementAndGet() == 2)
                     throw RejectedExecutionException("simulated concurrent shutdown")
                 super.execute(command)
+            }
+            override fun afterExecute(r: Runnable, t: Throwable?) {
+                super.afterExecute(r, t)
+                firstWorkerDone.countDown()
             }
         }
         ServerSocket(0, 16, InetAddress.getByName("127.0.0.1")).use { listener ->
@@ -196,6 +202,7 @@ class Socks5ProxyServerTest {
                 while (proxy.activeConnections != 0 && System.nanoTime() < deadline)
                     Thread.sleep(10)
                 assertEquals(0, proxy.activeConnections)
+                assertTrue(firstWorkerDone.await(5, TimeUnit.SECONDS))
                 // The worker's finally must have returned the semaphore slot.
                 Socket("127.0.0.1", proxy.boundPort).use { client ->
                     client.soTimeout = 5_000

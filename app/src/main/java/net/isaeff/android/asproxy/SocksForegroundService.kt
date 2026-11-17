@@ -78,6 +78,9 @@ class SocksForegroundService : Service() {
             if (DirectBootTunnelProfile.hasProfile(this)) {
                 DirectBootTunnelProfile.setDesiredRunning(this, false)
             }
+            // Cancel and seal the old manager before clearing its durable
+            // issue; onDestroy may run later, after a cancelled connect fails.
+            shutdownTransport()
             ConnectionIssueStore.clear(this)
             stopSelf()
             return START_NOT_STICKY

@@ -26,7 +26,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 internal class KeystoreSshTunnelManager(
     private val context: Context,
     private val profile: DirectBootTunnelProfile.Config,
-    private val localPort: Int
+    private val localPort: Int,
+    private val connectSession: (Session) -> Unit = { it.connect(30_000) }
 ) {
     var onProblem: ((ConnectionIssueStore.Reason) -> Unit)? = null
     var onHealthy: (() -> Unit)? = null
@@ -124,7 +125,7 @@ internal class KeystoreSshTunnelManager(
                     next.setConfig("NumberOfPasswordPrompts", "0")
                     next.setServerAliveInterval(15_000)
                     next.setServerAliveCountMax(2)
-                    next.connect(30_000)
+                    connectSession(next)
                     coroutineContext.ensureActive()
 
                     next.setPortForwardingR("127.0.0.1", profile.remotePort, "127.0.0.1", localPort)
