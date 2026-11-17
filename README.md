@@ -44,8 +44,10 @@ the **locally release-signed** candidate on a spare physical Android.
 is rejected. Android versionCodes are reserved in blocks of 100:
 e.g. `2.1.0-rc1=20901`, `2.1.0-rc2=20902`,
 `2.1.0=21000`; next stable cycle uses `21100`.
-Existing Git tags/releases, signature mismatches and version-code
-downgrades are rejected. GitHub and F-Droid remain independent.
+Existing Git tags/releases, dirty source trees, signature mismatches and
+version-code downgrades are rejected. Verification checks the remote tag's
+commit against the archived sourceCommit, as well as downloaded APK bytes.
+GitHub and F-Droid remain independent.
 A private long-term APK signing key is required on the maintainer's
 workstation; GitHub CI cannot publish these APKs.
 

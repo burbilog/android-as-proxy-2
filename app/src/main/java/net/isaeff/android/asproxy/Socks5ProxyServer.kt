@@ -36,6 +36,7 @@ class Socks5ProxyServer internal constructor(
     private val onConnectionLimit: ((Long) -> Unit)? = null,
     private val halfCloseIdleMs: Long = 180_000L,
     private val readPollMs: Int = 30_000,
+    private val handshakeTimeoutMs: Int = 15_000,
     workerExecutor: ExecutorService? = null
 ) : AutoCloseable {
     private val limit = Semaphore(maxConnections)
@@ -130,7 +131,7 @@ class Socks5ProxyServer internal constructor(
         try {
             client.tcpNoDelay = true
             client.keepAlive = true
-            client.soTimeout = 15_000 // Handshake only; established tunnels have no idle timeout.
+            client.soTimeout = handshakeTimeoutMs // Handshake only; not a relay idle timeout.
             val input = DataInputStream(client.getInputStream())
             val output = client.getOutputStream()
 

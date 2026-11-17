@@ -119,16 +119,16 @@ internal class KeystoreSshTunnelManager(
                     next = attempt
                     if (!publishWhileRunning { session = attempt }) break
                     coroutineContext.ensureActive()
-                    VerifiedSshHostKey.configurePinnedHostKey(next, profile.verifiedHostKey)
-                    next.setConfig("StrictHostKeyChecking", "yes")
-                    next.setConfig("PreferredAuthentications", "publickey")
-                    next.setConfig("NumberOfPasswordPrompts", "0")
-                    next.setServerAliveInterval(15_000)
-                    next.setServerAliveCountMax(2)
-                    connectSession(next)
+                    VerifiedSshHostKey.configurePinnedHostKey(attempt, profile.verifiedHostKey)
+                    attempt.setConfig("StrictHostKeyChecking", "yes")
+                    attempt.setConfig("PreferredAuthentications", "publickey")
+                    attempt.setConfig("NumberOfPasswordPrompts", "0")
+                    attempt.setServerAliveInterval(15_000)
+                    attempt.setServerAliveCountMax(2)
+                    connectSession(attempt)
                     coroutineContext.ensureActive()
 
-                    next.setPortForwardingR("127.0.0.1", profile.remotePort, "127.0.0.1", localPort)
+                    attempt.setPortForwardingR("127.0.0.1", profile.remotePort, "127.0.0.1", localPort)
                     coroutineContext.ensureActive()
                     if (!publishWhileRunning {
                             forwardReady = true
@@ -141,7 +141,7 @@ internal class KeystoreSshTunnelManager(
                     retryMs = 5_000L
                     while (isActive) {
                         delay(5_000L)
-                        if (!next.isConnected) throw JSchException("SSH connection lost")
+                        if (!attempt.isConnected) throw JSchException("SSH connection lost")
                     }
                 } catch (_: CancellationException) {
                     break

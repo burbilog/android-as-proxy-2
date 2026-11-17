@@ -38,7 +38,8 @@ class Socks5ProxyServerTest {
             val bytes = host.toByteArray(Charsets.US_ASCII)
             byteArrayOf(5, 1, 0, 3, bytes.size.toByte()) + bytes
         } else {
-            byteArrayOf(5, 1, 0, 1) + InetAddress.getByName(host).address
+            val raw = InetAddress.getByName(host).address
+            byteArrayOf(5, 1, 0, if (raw.size == 16) 4 else 1) + raw
         }
         out.write(target + byteArrayOf((port ushr 8).toByte(), port.toByte()))
         out.flush()
@@ -85,6 +86,62 @@ class Socks5ProxyServerTest {
         assertFalse("echo server hung", echoThread.isAlive)
         assertEquals(payload.size.toLong(), proxy.bytesToInternet)
         assertEquals(payload.size.toLong(), proxy.bytesFromInternet)
+    }
+
+    @Test fun incompleteSocksHandshakeTimesOutAndReleasesSlot() {
+        val proxy = Socks5ProxyServer(port = 0, maxConnections = 1,
+            handshakeTimeoutMs = 200).also { it.start(); proxies.add(it) }
+        Socket("127.0.0.1", proxy.boundPort).use { client ->
+            client.soTimeout = 2_000
+            client.getOutputStream().write(byteArrayOf(5, 1))
+            assertEquals(-1, client.getInputStream().read())
+        }
+        // Socket EOF and semaphore release can occur a few instructions apart.
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+        var reused = false
+        while (!reused && System.nanoTime() < deadline) {
+            try {
+                Socket("127.0.0.1", proxy.boundPort).use { client ->
+                    client.soTimeout = 500
+                    client.getOutputStream().write(byteArrayOf(5, 1, 2))
+                    if (client.getInputStream().read() == 5) {
+                        assertEquals(255, client.getInputStream().read())
+                        reused = true
+                    }
+                }
+            } catch (_: java.io.IOException) { }
+            if (!reused) Thread.sleep(10)
+        }
+        assertTrue("Incomplete handshake must free its connection slot", reused)
+    }
+
+    @Test fun ipv6LiteralConnectWhenLoopbackSupported() {
+        val address = InetAddress.getByName("::1")
+        val echoServer = try {
+            ServerSocket(0, 16, address)
+        } catch (e: java.io.IOException) {
+            org.junit.Assume.assumeNoException(e)
+            return
+        }
+        echoServer.use { listener ->
+            listener.soTimeout = 5_000
+            val echoThread = Thread {
+                listener.accept().use { peer ->
+                    peer.soTimeout = 5_000
+                    val data = ByteArray(4)
+                    DataInputStream(peer.getInputStream()).readFully(data)
+                    peer.getOutputStream().write(data)
+                }
+            }.apply { isDaemon = true; start() }
+            val proxy = startProxy()
+            connect(proxy, "::1", listener.localPort, domain = false).use { client ->
+                client.getOutputStream().write(byteArrayOf(1, 2, 3, 4))
+                assertArrayEquals(byteArrayOf(1, 2, 3, 4),
+                    ByteArray(4).also { DataInputStream(client.getInputStream()).readFully(it) })
+            }
+            echoThread.join(5_000)
+            assertFalse(echoThread.isAlive)
+        }
     }
 
     @Test fun rejectsUnsupportedCommands() {
