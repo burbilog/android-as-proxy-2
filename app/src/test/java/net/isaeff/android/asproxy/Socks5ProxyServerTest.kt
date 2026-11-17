@@ -8,6 +8,11 @@ import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.TimeUnit
 
 class Socks5ProxyServerTest {
@@ -152,6 +157,80 @@ class Socks5ProxyServerTest {
             }
             assertEquals(1L, proxy.rejectedConnections)
             assertEquals(listOf(1L), synchronized(warnings) { warnings.toList() })
+        }
+    }
+
+    @Test fun rejectedResponsePumpDoesNotEscapeWorkerOrLeakConnection() {
+        val submissions = AtomicInteger()
+        val uncaught = LinkedBlockingQueue<Throwable>()
+        // The first execute accepts the client; the second is the response
+        // pump's submit. Reject it deterministically, as shutdownNow() can.
+        val executor = object : ThreadPoolExecutor(
+            0, Int.MAX_VALUE, 60L, TimeUnit.SECONDS, SynchronousQueue<Runnable>(),
+            { task -> Thread(task, "AAP2-test-socks").apply {
+                isDaemon = true
+                uncaughtExceptionHandler = Thread.UncaughtExceptionHandler { _, e ->
+                    uncaught.offer(e)
+                }
+            } }
+        ) {
+            override fun execute(command: Runnable) {
+                if (submissions.incrementAndGet() == 2)
+                    throw RejectedExecutionException("simulated concurrent shutdown")
+                super.execute(command)
+            }
+        }
+        ServerSocket(0, 16, InetAddress.getByName("127.0.0.1")).use { listener ->
+            listener.soTimeout = 5_000
+            val proxy = Socks5ProxyServer(port = 0, maxConnections = 1,
+                workerExecutor = executor).also { it.start(); proxies.add(it) }
+            try {
+                connect(proxy, "127.0.0.1", listener.localPort, false).use { client ->
+                    listener.accept().use { peer ->
+                        peer.soTimeout = 5_000
+                        assertEquals(-1, client.getInputStream().read())
+                        assertEquals(-1, peer.getInputStream().read())
+                    }
+                }
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+                while (proxy.activeConnections != 0 && System.nanoTime() < deadline)
+                    Thread.sleep(10)
+                assertEquals(0, proxy.activeConnections)
+                // The worker's finally must have returned the semaphore slot.
+                Socket("127.0.0.1", proxy.boundPort).use { client ->
+                    client.soTimeout = 5_000
+                    client.getOutputStream().write(byteArrayOf(5, 1, 0))
+                    assertArrayEquals(byteArrayOf(5, 0),
+                        ByteArray(2).also(DataInputStream(client.getInputStream())::readFully))
+                }
+            } finally {
+                proxy.close()
+                assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS))
+            }
+            assertNull("Worker exception must not reach Android's uncaught handler",
+                uncaught.poll(500, TimeUnit.MILLISECONDS))
+            assertEquals(0, proxy.activeConnections)
+        }
+    }
+
+    @Test fun closeDuringActiveTransferClosesBothSides() {
+        ServerSocket(0, 16, InetAddress.getByName("127.0.0.1")).use { listener ->
+            val proxy = startProxy()
+            listener.soTimeout = 5_000
+            connect(proxy, "127.0.0.1", listener.localPort, false).use { client ->
+                listener.accept().use { peer ->
+                    peer.soTimeout = 5_000
+                    client.getOutputStream().write(42)
+                    assertEquals(42, peer.getInputStream().read())
+                    proxy.close()
+                    assertEquals(-1, client.getInputStream().read())
+                    assertEquals(-1, peer.getInputStream().read())
+                    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+                    while (proxy.activeConnections != 0 && System.nanoTime() < deadline)
+                        Thread.sleep(10)
+                    assertEquals(0, proxy.activeConnections)
+                }
+            }
         }
     }
 
