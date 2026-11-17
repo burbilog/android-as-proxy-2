@@ -30,6 +30,32 @@ class SshFailurePolicyTest {
         assertEquals(3_600_000L, SshFailurePolicy.HOURLY_RETRY_MS)
     }
 
+    @Test fun ambiguousUserauthFailureGetsOneNormalRetryBeforeHourlyThrottle() {
+        val sequence = SshFailurePolicy.RetrySequence()
+        val auth = classify("JSchException", "Auth fail for methods 'publickey'")
+        val network = SshFailurePolicy.Action.RETRY_NETWORK
+        assertEquals(network, sequence.next(auth))
+        assertEquals(auth, sequence.next(auth))
+        assertEquals(auth, sequence.next(auth))
+        assertEquals(network, sequence.next(network))
+        assertEquals(network, sequence.next(auth))
+        sequence.reset()
+        assertEquals(network, sequence.next(auth))
+    }
+
+    @Test fun hostKeyAndLocalFailuresAreNeverGrantedFastAuthRetry() {
+        val sequence = SshFailurePolicy.RetrySequence()
+        val auth = SshFailurePolicy.Action.RETRY_AUTH_HOURLY
+        val network = SshFailurePolicy.Action.RETRY_NETWORK
+        for (action in listOf(SshFailurePolicy.Action.RETRY_HOST_IDENTITY_HOURLY,
+                              SshFailurePolicy.Action.RETRY_LOCAL_HOURLY)) {
+            assertEquals(network, sequence.next(auth))
+            assertEquals(action, sequence.next(action))
+            assertEquals(network, sequence.next(auth))
+            sequence.reset()
+        }
+    }
+
     @Test fun transientLocalFailureRetriesSlowlyAndNetworkRetriesNormally() {
         assertEquals(SshFailurePolicy.Action.RETRY_NETWORK,
             classify("JSchException", "session is down"))
