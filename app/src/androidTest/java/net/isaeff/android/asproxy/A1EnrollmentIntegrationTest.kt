@@ -18,6 +18,21 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import com.jcraft.jsch.Identity
+import com.jcraft.jsch.IdentityRepository
+import com.jcraft.jsch.JSchException
+import com.jcraft.jsch.Session
+import com.jcraft.jsch.SocketFactory
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.util.UUID
+import java.util.Vector
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Run ONLY on a disposable Android emulator with CI's isolated S2 sshd.
@@ -281,6 +296,136 @@ class A1EnrollmentIntegrationTest {
         // Do NOT stop the service ourselves; server revoke owns teardown.
     }
 
+    private suspend fun stopAndJoin(manager: KeystoreSshTunnelManager) {
+        val job = manager.destroy()
+        ConnectionStateHolder.setState(ConnectionState.DISCONNECTED)
+        withTimeout(15_000) { job?.join() }
+    }
+
+    // Real JSch userauth against the already-approved disposable sshd:
+    // close its actual TCP socket after the server accepts the publickey
+    // query and the Keystore signs, before JSch sends the signed request.
+    private fun interruptUserauth(session: Session, interrupted: AtomicBoolean) {
+        val key = AndroidKeystoreIdentity.getExisting(context)
+        Socket().use { transport ->
+            val faultIdentity = object : Identity by key {
+                override fun getSignature(data: ByteArray): ByteArray =
+                    getSignature(data, key.getAlgName())
+
+                override fun getSignature(data: ByteArray, alg: String): ByteArray {
+                    val signed = key.getSignature(data, alg)
+                    interrupted.set(true)
+                    transport.close()
+                    return signed
+                }
+            }
+            session.setIdentityRepository(object : IdentityRepository {
+                override fun getName() = "AAP2 disposable userauth fault"
+                override fun getStatus() = IdentityRepository.RUNNING
+                override fun getIdentities() = Vector<Identity>().apply { add(faultIdentity) }
+                override fun add(identity: ByteArray) = false
+                override fun remove(blob: ByteArray) = false
+                override fun removeAll() = Unit
+            })
+            session.setSocketFactory(object : SocketFactory {
+                override fun createSocket(host: String, port: Int): Socket {
+                    transport.connect(InetSocketAddress(host, port), 10_000)
+                    return transport
+                }
+                override fun getInputStream(socket: Socket) = socket.getInputStream()
+                override fun getOutputStream(socket: Socket) = socket.getOutputStream()
+            })
+            session.connect(10_000)
+        }
+    }
+
+    private suspend fun verifyRc2SshRecovery(profile: DirectBootTunnelProfile.Config) {
+        val interrupted = AtomicBoolean()
+        val firstFailure = AtomicReference<JSchException?>()
+        val attempts = AtomicInteger()
+        val healthy = CountDownLatch(1)
+        val problems = LinkedBlockingQueue<ConnectionIssueStore.Reason>()
+        val socks = Socks5ProxyServer(0).also { it.start() }
+        val recovering = KeystoreSshTunnelManager(context, profile, socks.boundPort,
+            connectSession = { session ->
+                if (attempts.incrementAndGet() == 1) {
+                    try {
+                        interruptUserauth(session, interrupted)
+                    } catch (e: JSchException) {
+                        firstFailure.set(e)
+                        throw e
+                    }
+                } else session.connect(30_000)
+            })
+        recovering.onHealthy = { healthy.countDown() }
+        recovering.onProblem = { problems.offer(it) }
+        try {
+            recovering.start()
+            assertTrue("A transient userauth disconnect must recover without an hourly pause",
+                withContext(Dispatchers.IO) { healthy.await(25, TimeUnit.SECONDS) })
+            assertTrue("Test must actually interrupt a signed userauth request", interrupted.get())
+            assertTrue("JSch must expose the ambiguous Auth fail being tested",
+                firstFailure.get()?.message?.startsWith("Auth fail for methods '") == true)
+            assertEquals(2, attempts.get())
+            assertTrue("One ambiguous auth failure must not report server rejection", problems.isEmpty())
+        } finally {
+            try { stopAndJoin(recovering) } finally { socks.close() }
+        }
+        Log.i("AAP2-A1", "RC2_USERAUTH_TRANSPORT_FAILURE_FAST_RECOVERY")
+
+        // Genuine refusal still throttles after two consecutive failures.
+        val deniedAttempts = AtomicInteger()
+        val deniedProblems = LinkedBlockingQueue<ConnectionIssueStore.Reason>()
+        val unknown = "aap2_no_" + UUID.randomUUID().toString().replace("-", "").take(12)
+        val denied = KeystoreSshTunnelManager(context,
+            profile.copy(username = unknown), localPort = 0,
+            connectSession = { session ->
+                deniedAttempts.incrementAndGet()
+                session.connect(30_000)
+            })
+        denied.onProblem = { deniedProblems.offer(it) }
+        try {
+            denied.start()
+            assertEquals(ConnectionIssueStore.Reason.AUTH, withContext(Dispatchers.IO) {
+                deniedProblems.poll(25, TimeUnit.SECONDS)
+            })
+            assertEquals("Exactly two attempts before hourly throttle", 2, deniedAttempts.get())
+            delay(6_000)
+            assertEquals("No rapid third auth attempt", 2, deniedAttempts.get())
+            assertTrue(deniedProblems.isEmpty())
+        } finally {
+            stopAndJoin(denied)
+        }
+        Log.i("AAP2-A1", "RC2_REPEATED_AUTH_FAILURE_THROTTLED")
+
+        // A blocking operation can throw a non-cancellation exception even
+        // after its coroutine was cancelled. Control that ordering exactly.
+        val entering = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val staleProblems = LinkedBlockingQueue<ConnectionIssueStore.Reason>()
+        val stale = KeystoreSshTunnelManager(context, profile, localPort = 0,
+            connectSession = {
+                entering.countDown()
+                check(release.await(15, TimeUnit.SECONDS)) { "Fixture never released connect" }
+                throw IllegalStateException("simulated late connect failure")
+            })
+        stale.onProblem = { staleProblems.offer(it) }
+        try {
+            stale.start()
+            assertTrue(withContext(Dispatchers.IO) { entering.await(10, TimeUnit.SECONDS) })
+            val stopped = stale.destroy()
+            ConnectionStateHolder.setState(ConnectionState.DISCONNECTED)
+            release.countDown()
+            withTimeout(15_000) { stopped?.join() }
+            assertTrue("Cancelled manager must not report a late issue", staleProblems.isEmpty())
+            assertEquals(ConnectionState.DISCONNECTED, ConnectionStateHolder.connectionState.value)
+        } finally {
+            release.countDown()
+            stopAndJoin(stale)
+        }
+        Log.i("AAP2-A1", "RC2_CANCELLED_CONNECT_CANNOT_PUBLISH")
+    }
+
     @Test
     fun a1_3b_packageReplaceNeverOverridesExplicitDisconnect() = runBlocking<Unit> {
         val profile = requireNotNull(DirectBootTunnelProfile.load(context))
@@ -310,6 +455,9 @@ class A1EnrollmentIntegrationTest {
             originalIdentity, AndroidKeystoreIdentity.getExisting(context).getPublicKeyBlob())
         assertEquals(profile.remotePort, requireNotNull(DirectBootTunnelProfile.load(context)).remotePort)
         Log.i("AAP2-A1", "A1_PACKAGE_REPLACE_RESPECTS_MANUAL_DISCONNECT")
+        verifyRc2SshRecovery(profile)
+        assertFalse(DirectBootTunnelProfile.wantsConnection(context))
+        assertArrayEquals(originalIdentity, AndroidKeystoreIdentity.getExisting(context).getPublicKeyBlob())
 
         // Test fixture resumes by an explicit UI-equivalent Connect action;
         // the following cold-boot gate still needs the approved live tunnel.

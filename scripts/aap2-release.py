@@ -131,11 +131,36 @@ def ensure_tag_absent(tag):
         (result.stderr or "").strip()[:300]))
 
 
+def verify_remote_tag(tag, source_commit):
+    ref = "refs/tags/" + tag
+    peeled = ref + "^{}"
+    # Query the same repository as gh release view/download, not a possibly
+    # different origin configured in the local checkout.
+    result = run(["git", "ls-remote", "--exit-code", "--tags",
+                  "https://github.com/" + REPO + ".git", ref, peeled], capture=True)
+    refs = {}
+    for line in result.stdout.splitlines():
+        fields = line.split("\t")
+        require(len(fields) == 2, "malformed remote tag response")
+        sha, name = fields
+        require(name in (ref, peeled) and name not in refs and
+                re.fullmatch(r"[0-9a-f]{40}", sha) is not None,
+                "unexpected remote tag response")
+        refs[name] = sha
+    require(ref in refs, "published tag is missing")
+    require(refs.get(peeled, refs[ref]) == source_commit,
+            "published tag does not point to archived sourceCommit")
+
+
 def require_clean_master():
     require(run(["git", "branch", "--show-current"], capture=True).stdout.strip() == "master",
             "public releases require master; see docs/RELEASE_POLICY.md")
-    require(run(["git", "status", "--porcelain", "--untracked-files=no"],
-                capture=True).stdout.strip() == "", "tracked working tree is dirty")
+    require(run(["git", "status", "--porcelain", "--untracked-files=all"],
+                capture=True).stdout.strip() == "", "working tree is dirty (tracked or untracked files)")
+    # Ignored build products and local.properties are expected, but no ignored
+    # file under app/src may silently become an input to the public APK.
+    require(run(["git", "ls-files", "--others", "--", "app/src"],
+                capture=True).stdout.strip() == "", "untracked source file under app/src")
     run(["git", "fetch", "origin", "master"])
     head = run(["git", "rev-parse", "HEAD"], capture=True).stdout.strip()
     upstream = run(["git", "rev-parse", "origin/master"], capture=True).stdout.strip()
@@ -354,6 +379,7 @@ def verify(candidate, head, directory):
                            "--json", "tagName,isPrerelease,assets"],
                           capture=True).stdout)
     require(view.get("tagName") == candidate["tag"], "GitHub release tag mismatch")
+    verify_remote_tag(candidate["tag"], meta["sourceCommit"])
     require(bool(view.get("isPrerelease")) == (candidate["rc"] is not None),
             "GitHub release Prerelease flag mismatch")
     listing = gh_releases()

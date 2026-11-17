@@ -231,7 +231,8 @@ stored **separately**, without overwriting files:
 
 The public release backend is `scripts/aap2-release.py`.
 All public actions require a clean, synchronized master branch
-(except verification). Before signing and before publishing it
+(except verification), with no tracked changes, non-ignored untracked
+files, or any untracked files under `app/src`. Before signing and before publishing it
 checks that no GitHub Release or remote Git tag already uses the
 requested name, that the proposed semver/RC sequence is strictly
 later than all existing published AAP2 versions, and that its
@@ -246,7 +247,8 @@ exact source commit and does not overwrite an archived candidate.
 At publication it rechecks the absence of the tag and source
 provenance, then uploads `aap2.apk`, optional `aap2-fdroid.apk`,
 and `SHA256SUMS` with the correct GitHub status. Verification
-downloads assets by **exact tag**, not `releases/latest`, and
+checks that the remote GitHub tag resolves to the archived `sourceCommit`,
+then downloads assets by **exact tag**, not `releases/latest`, and
 compares them to the local archive. All GitHub operations require
 working network access and the `gh` CLI (publishing requires
 authenticated access).

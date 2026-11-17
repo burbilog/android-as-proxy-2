@@ -13,6 +13,7 @@ import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
@@ -28,13 +29,15 @@ import java.util.concurrent.atomic.AtomicLong
  * Each established connection uses two independent, blocking 64 KiB relays. A socket read
  * in one direction never delays the other direction (unlike the old polling SOCKS library).
  */
-class Socks5ProxyServer(
+class Socks5ProxyServer internal constructor(
     private val port: Int = 1080,
     private val maxConnections: Int = 64,
     private val connectTimeoutMs: Int = 15_000,
     private val onConnectionLimit: ((Long) -> Unit)? = null,
     private val halfCloseIdleMs: Long = 180_000L,
-    private val readPollMs: Int = 30_000
+    private val readPollMs: Int = 30_000,
+    private val handshakeTimeoutMs: Int = 15_000,
+    workerExecutor: ExecutorService? = null
 ) : AutoCloseable {
     private val limit = Semaphore(maxConnections)
     private val rejectedCounter = AtomicLong()
@@ -49,7 +52,7 @@ class Socks5ProxyServer(
     val activeConnections: Int get() = activeCounter.get()
     private val openSockets = ConcurrentHashMap.newKeySet<Socket>()
     private val threadNumber = AtomicInteger()
-    private val workers = Executors.newCachedThreadPool { runnable ->
+    private val workers = workerExecutor ?: Executors.newCachedThreadPool { runnable ->
         Thread(runnable, "AAP2-socks-${threadNumber.incrementAndGet()}").apply { isDaemon = true }
     }
 
@@ -99,6 +102,12 @@ class Socks5ProxyServer(
                     workers.execute {
                         try {
                             handleClient(client)
+                        } catch (e: Exception) {
+                            // A worker-side submit can race close()/shutdownNow().
+                            // Uncaught RuntimeExceptions on Android can kill the
+                            // entire process, not just the connection.
+                            if (running) java.util.logging.Logger.getLogger("AAP2-SOCKS")
+                                .warning("SOCKS worker failed: " + e.javaClass.simpleName)
                         } finally {
                             closeTracked(client)
                             limit.release()
@@ -122,7 +131,7 @@ class Socks5ProxyServer(
         try {
             client.tcpNoDelay = true
             client.keepAlive = true
-            client.soTimeout = 15_000 // Handshake only; established tunnels have no idle timeout.
+            client.soTimeout = handshakeTimeoutMs // Handshake only; not a relay idle timeout.
             val input = DataInputStream(client.getInputStream())
             val output = client.getOutputStream()
 
@@ -242,6 +251,7 @@ class Socks5ProxyServer(
             val peer = Socket()
             openSockets.add(peer)
             try {
+                if (!running) throw SocketException("SOCKS server stopped")
                 peer.tcpNoDelay = true
                 peer.keepAlive = true
                 // Limit an unusable first IPv6 address to 5 seconds.
@@ -251,6 +261,11 @@ class Socks5ProxyServer(
             } catch (e: IOException) {
                 last = e
                 closeTracked(peer)
+                if (!running) throw e
+            } catch (e: Exception) {
+                // The upstream may not yet have been handed to handleClient().
+                closeTracked(peer)
+                throw e
             }
         }
         throw last ?: SocketTimeoutException("No usable address before TCP deadline")

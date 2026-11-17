@@ -32,10 +32,15 @@ holding the Android device may have **no technical skills and little time**.
   to the already verified key; a newly added server key must not
   disconnect existing phones. Mismatch must **not** silently re-pin.
 - **Recover safely:** persist non-secret errors and understandable
-  status/notifications. Retry pinned-host-key rejection, authentication
-  rejection and temporary local/Keystore failures at most hourly, without
-  ever authenticating to a rejected host, re-pinning or replacing the phone
-  identity. Ordinary network failures use bounded backoff.
+  status/notifications. Retry pinned-host-key rejection and temporary
+  local/Keystore failures at most hourly, without ever authenticating to
+  a rejected host, re-pinning or replacing the phone identity. Because
+  JSch may discard transport exceptions during userauth and emit an
+  ambiguous Auth fail, allow one normal-backoff retry before throttling
+  the second consecutive authentication failure hourly. A healthy
+  tunnel or a non-auth failure resets the consecutive count.
+  Ordinary network failures use bounded backoff. Explicit STOP/RESET
+  seals the previous manager before clearing persistent issue state.
 - **Avoid stale Android profiles:** exclude device-protected and
   credential-protected app state from Android 12+ device transfer
   and cloud backup. Keystore identities are not transferable.

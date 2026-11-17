@@ -231,10 +231,13 @@ These examples represent **two different committed versions** of
 same checkout without changing it. Both flavors share that file.
 `make release-both TYPE=...` can prepare a same-commit F-Droid
 candidate; GitHub does not depend on its success. The backend requires
-clean, synchronized `master` for prepare/publish, signs locally,
-compares the previous public certificate, and checks source/version
-provenance. `verify-release` compares downloaded assets from the
-**exact tag**, including RCs, to the locally archived candidate.
+clean, synchronized `master` for prepare/publish (no tracked changes,
+non-ignored untracked files, or any untracked files under `app/src`),
+signs locally, compares the previous public certificate, and checks
+source/version provenance. `verify-release` checks that the remote GitHub
+tag (including an annotated tag's peeled commit) is the archived
+`sourceCommit`, then compares downloaded assets from the **exact tag**,
+including RCs, to the locally archived candidate.
 Review the current scripts before running them; they may have
 changed since this policy was written.
 

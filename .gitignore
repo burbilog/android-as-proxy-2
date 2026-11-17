@@ -26,3 +26,6 @@ local.properties
 *.p12
 *.pfx
 signing.properties
+
+# Offline Python release-tool and server tests.
+__pycache__/

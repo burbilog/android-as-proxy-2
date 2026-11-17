@@ -196,7 +196,7 @@ class P0SshIntegrationTest {
     /**
      * The real sshd denies an unknown user while the host key is pinned and
      * the genuine Keystore identity is used. Exercise the production manager's
-     * hourly authentication retry without changing stored config or sshd.
+     * two-attempt authentication throttle without changing stored config or sshd.
      *
      * Stop the running AAP2 service through its notification first.
      */
@@ -230,8 +230,8 @@ class P0SshIntegrationTest {
             val issue = problems.poll(25, TimeUnit.SECONDS)
             assertEquals("Unknown SSH user must surface a recoverable auth issue",
                 ConnectionIssueStore.Reason.AUTH, issue)
-            // An auth failure must never cause repeated rapid login attempts
-            // (fail2ban), and must not permanently stop the manager either.
+            // After two consecutive auth failures, the manager must wait
+            // hourly instead of causing repeated rapid attempts (fail2ban).
             Thread.sleep(6_000)
             assertTrue("Authentication must retry no more than hourly", problems.isEmpty())
             // The manager remains active; a rapid second failure would

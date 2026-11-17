@@ -69,6 +69,28 @@ jobs:
           fi
           grep -F 'TYPE is required' /tmp/aap2-ambient-type.log
 
+      - name: Verify Android enrollment is excluded from cloud and device transfer
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          app = ET.parse("app/src/main/AndroidManifest.xml").getroot().find("application")
+          ns = "{http://schemas.android.com/apk/res/android}"
+          assert app.get(ns + "allowBackup") == "false"
+          assert app.get(ns + "fullBackupContent") == "@xml/backup_rules"
+          assert app.get(ns + "dataExtractionRules") == "@xml/data_extraction_rules"
+          legacy = ET.parse("app/src/main/res/xml/backup_rules.xml").getroot()
+          domains = {(e.get("domain"), e.get("path")) for e in legacy.findall("exclude")}
+          assert {("root", "."), ("device_root", "."), ("external", ".")} <= domains
+          newer = ET.parse("app/src/main/res/xml/data_extraction_rules.xml").getroot()
+          for section in ("cloud-backup", "device-transfer"):
+              node = newer.find(section)
+              assert node is not None, section
+              excluded = {(e.get("domain"), e.get("path")) for e in node.findall("exclude")}
+              assert {(domain, ".") for domain in
+                      ("root", "device_root", "sharedpref", "device_sharedpref",
+                       "database", "device_database", "file", "device_file", "external")} <= excluded, section
+          PY
+
       - name: Build and unit tests
         run: |
           chmod +x ./gradlew
