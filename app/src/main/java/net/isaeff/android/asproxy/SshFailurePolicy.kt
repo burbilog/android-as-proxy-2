@@ -6,13 +6,30 @@ package net.isaeff.android.asproxy
  * triggers re-pinning, TOFU or an authentication attempt on the wrong server.
  *
  * JSch exposes ordinary server auth rejection mainly as a JSchException
- * message, so keep only a narrow list of known auth failures for hourly retry.
+ * message, but a transport exception during userauth can produce exactly the
+ * same message. Retry once normally before throttling consecutive auth failures.
  * Unknown JSch failures keep their existing bounded network backoff.
  */
 internal object SshFailurePolicy {
     enum class Action {
         RETRY_HOST_IDENTITY_HOURLY, RETRY_LOCAL_HOURLY,
         RETRY_AUTH_HOURLY, RETRY_NETWORK
+    }
+
+    /** Per tunnel loop; any non-auth outcome breaks the consecutive streak. */
+    class RetrySequence {
+        private var previousAuthFailure = false
+
+        fun next(classified: Action): Action {
+            val auth = classified == Action.RETRY_AUTH_HOURLY
+            val throttle = auth && previousAuthFailure
+            previousAuthFailure = auth
+            return if (auth && !throttle) Action.RETRY_NETWORK else classified
+        }
+
+        fun reset() {
+            previousAuthFailure = false
+        }
     }
 
     const val HOURLY_RETRY_MS = 60 * 60 * 1000L
